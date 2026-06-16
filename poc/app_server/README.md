@@ -93,6 +93,95 @@ poc/app_server/runs/thread-reuse-<timestamp>/
 - `turn-2/assistant-final.md`
 - `result.json`：包含 `thread_id`、两轮最终回复、`context_retained`、期望 token 和错误列表
 
+## POC-4：最小 HTTP Bridge
+
+在项目根目录启动：
+
+```powershell
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+```
+
+默认不会在服务启动时创建 app-server 子进程。只有调用 `POST /threads` 时，才会启动一个 `codex.cmd app-server --listen stdio://` 子进程并创建一个 app thread。
+
+可选配置：
+
+- `--codex-command <path>`：指定 Codex 命令，默认 `codex.cmd`
+- 环境变量 `CODEX_COMMAND`：指定 Codex 命令
+- 环境变量 `APP_SERVER_BRIDGE_TOKEN`：启用后，除 `/health` 外所有接口必须传 `X-Bridge-Token`
+
+接口：
+
+- `GET /health`
+- `POST /threads`
+- `POST /threads/{bridge_thread_id}/turns`
+- `GET /threads/{bridge_thread_id}`
+- `GET /threads/{bridge_thread_id}/events`
+- `GET /threads/{bridge_thread_id}/final`
+
+创建 thread：
+
+```powershell
+$thread = Invoke-RestMethod -Method Post http://127.0.0.1:8766/threads
+$thread
+```
+
+发送 turn：
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/turns" `
+  -ContentType "application/json" `
+  -Body '{"message":"请只回复 bridge-ok，不要修改文件。"}'
+```
+
+查看最近一轮最终回复：
+
+```powershell
+Invoke-RestMethod -Method Get "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/final"
+```
+
+连续会话验证示例：
+
+```powershell
+$thread = Invoke-RestMethod -Method Post http://127.0.0.1:8766/threads
+
+Invoke-RestMethod `
+  -Method Post `
+  "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/turns" `
+  -ContentType "application/json" `
+  -Body '{"message":"请记住这个词：bridge-session-test。只回复“已记住”。"}'
+
+Invoke-RestMethod `
+  -Method Post `
+  "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/turns" `
+  -ContentType "application/json" `
+  -Body '{"message":"刚才让你记住的词是什么？只回复这个词。"}'
+
+Invoke-RestMethod -Method Get "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/final"
+```
+
+产物目录：
+
+```text
+poc/app_server/bridge-runs/<bridge_thread_id>/
+```
+
+每轮 turn 会保存：
+
+- `turn-<n>/events.jsonl`
+- `turn-<n>/run-summary.json`
+- `turn-<n>/assistant-final.md`
+
+当前限制：
+
+- 只做 POC，不接入主系统
+- 单进程内存态，服务重启后 thread 丢失
+- 不支持 SSE
+- 不支持审批 UI
+- 不支持 diff UI
+- 不做持久化和恢复
+
 ## 协议推断
 
 当前根据 schema 推断的最小流程是：
