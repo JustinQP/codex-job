@@ -7,16 +7,17 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f7f9;
+      --bg: #f5f6f8;
       --panel: #ffffff;
-      --text: #172026;
-      --muted: #63717c;
-      --line: #d9e0e6;
+      --text: #18212a;
+      --muted: #61707d;
+      --line: #d7dee6;
       --accent: #1769aa;
       --accent-strong: #0f4c81;
       --danger: #b42318;
       --ok: #147a3f;
       --warn: #9a5b00;
+      --soft: #eef3f8;
       --shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
     }
 
@@ -32,7 +33,7 @@
     }
 
     main {
-      width: min(100%, 720px);
+      width: min(100%, 760px);
       margin: 0 auto;
       padding: 12px;
     }
@@ -43,13 +44,13 @@
       z-index: 5;
       margin: -12px -12px 12px;
       padding: 12px;
-      background: rgba(246, 247, 249, 0.96);
+      background: rgba(245, 246, 248, 0.96);
       border-bottom: 1px solid var(--line);
       backdrop-filter: blur(8px);
     }
 
     h1 {
-      margin: 0 0 8px;
+      margin: 0 0 10px;
       font-size: 20px;
       line-height: 1.2;
     }
@@ -88,7 +89,7 @@
     }
 
     textarea {
-      min-height: 104px;
+      min-height: 118px;
       resize: vertical;
     }
 
@@ -113,31 +114,24 @@
       background: var(--danger);
     }
 
+    button.template {
+      background: #fff;
+      color: var(--text);
+      border-color: var(--line);
+      text-align: left;
+      font-weight: 600;
+    }
+
     button:disabled {
       border-color: #aab4bd;
       background: #aab4bd;
       color: #eef2f6;
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .actions {
+    .status {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .status {
-      display: grid;
-      grid-template-columns: 1fr;
       gap: 6px;
-      color: var(--muted);
-      font-size: 13px;
     }
 
     .pill {
@@ -147,9 +141,10 @@
       gap: 6px;
       padding: 4px 8px;
       border-radius: 999px;
-      background: #eef3f8;
+      background: var(--soft);
       color: var(--muted);
       overflow-wrap: anywhere;
+      font-size: 13px;
     }
 
     .pill.ok {
@@ -167,9 +162,27 @@
       color: var(--danger);
     }
 
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .actions button {
+      flex: 0 1 auto;
+    }
+
     .thread-list {
       display: grid;
       gap: 8px;
+      margin-top: 10px;
     }
 
     .thread-item {
@@ -184,7 +197,20 @@
 
     .thread-item.active {
       border-color: var(--accent);
-      outline: 2px solid rgba(23, 105, 170, 0.15);
+      outline: 2px solid rgba(23, 105, 170, 0.18);
+    }
+
+    .thread-title {
+      display: block;
+      margin-bottom: 3px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .thread-meta,
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
     }
 
     .thread-id {
@@ -193,13 +219,46 @@
       font-size: 12px;
     }
 
-    .muted {
+    .result {
+      min-height: 44px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f9fbfc;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .result.error {
+      border-color: #f0b8b2;
+      background: #fff7f6;
+      color: var(--danger);
+    }
+
+    .notice {
+      min-height: 30px;
+      margin-top: 8px;
       color: var(--muted);
       font-size: 13px;
     }
 
+    .loading-note {
+      display: none;
+      margin-top: 8px;
+      padding: 8px 10px;
+      border: 1px solid #f2d59b;
+      border-radius: 6px;
+      background: #fff8e8;
+      color: var(--warn);
+      font-size: 13px;
+    }
+
+    .loading-note.show {
+      display: block;
+    }
+
     pre {
-      max-height: 280px;
+      max-height: 300px;
       overflow: auto;
       margin: 8px 0 0;
       padding: 10px;
@@ -211,20 +270,7 @@
       font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
     }
 
-    .result {
-      min-height: 44px;
-      padding: 10px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #f9fbfc;
-      overflow-wrap: anywhere;
-    }
-
-    .loading {
-      color: var(--warn);
-    }
-
-    @media (max-width: 520px) {
+    @media (max-width: 560px) {
       main {
         padding: 10px;
       }
@@ -238,7 +284,7 @@
         grid-template-columns: 1fr;
       }
 
-      button {
+      .actions button {
         flex: 1 1 calc(50% - 8px);
       }
     }
@@ -249,9 +295,13 @@
     <header>
       <h1>App Server Bridge</h1>
       <div class="status">
-        <div><span id="healthPill" class="pill warn">health unknown</span></div>
-        <div><span id="tokenPill" class="pill warn">token not configured</span></div>
-        <div><span id="currentThreadPill" class="pill">no thread selected</span></div>
+        <span id="healthPill" class="pill warn">health unknown</span>
+        <span id="tokenPill" class="pill warn">token not configured</span>
+        <span id="currentTitlePill" class="pill">title: none</span>
+        <span id="currentIdPill" class="pill">id: none</span>
+        <span id="modePill" class="pill">mode: unknown</span>
+        <span id="sandboxPill" class="pill">sandbox: unknown</span>
+        <span id="idlePill" class="pill">idle: unknown</span>
       </div>
     </header>
 
@@ -263,14 +313,18 @@
       <input id="token" autocomplete="off" type="password">
       <div class="actions">
         <button id="saveConfigBtn" class="secondary">保存配置</button>
-        <button id="healthBtn">检查健康状态</button>
+        <button id="healthBtn">检查 health</button>
       </div>
+      <div id="noticePanel" class="notice" aria-live="polite"></div>
     </section>
 
     <section>
       <h2>Thread</h2>
+      <label for="threadTitle">Thread 标题</label>
+      <input id="threadTitle" autocomplete="off" placeholder="Thread 标题">
       <div class="actions">
         <button id="createThreadBtn">创建 Thread</button>
+        <button id="renameThreadBtn" class="secondary">重命名当前 Thread</button>
         <button id="refreshThreadsBtn" class="secondary">刷新 Thread 列表</button>
         <button id="deleteThreadBtn" class="danger">删除当前 Thread</button>
       </div>
@@ -278,15 +332,28 @@
     </section>
 
     <section>
+      <h2>Prompt 模板</h2>
+      <div class="grid">
+        <button class="template" data-template="请阅读当前项目 README，用 5 句话总结项目用途。不要修改文件。">只读总结</button>
+        <button class="template" data-template="请审查当前项目最近改动，列出风险点和建议。不要修改文件。">代码审查</button>
+        <button class="template" data-template="继续刚才的话题，给出下一步建议。不要修改文件。">继续上文</button>
+        <button class="template" data-template="请只回复 ok，不要修改文件。">极简回复</button>
+      </div>
+    </section>
+
+    <section>
       <h2>发送消息</h2>
       <label for="message">Message</label>
       <textarea id="message">请只回复 mobile-ok，不要修改文件。</textarea>
+      <div class="muted"><span id="messageCount">0</span> 字</div>
+      <div id="loadingNote" class="loading-note">正在等待 App Server 返回，请不要刷新页面。</div>
       <div class="actions">
         <button id="sendBtn">发送</button>
-        <button id="finalBtn" class="secondary">获取当前 Thread final</button>
-        <button id="eventsBtn" class="secondary">获取当前 Thread events summary</button>
+        <button id="finalBtn" class="secondary">获取 final</button>
+        <button id="copyFinalBtn" class="secondary">复制 final</button>
+        <button id="eventsBtn" class="secondary">获取 events summary</button>
       </div>
-      <label>Assistant Preview</label>
+      <label>Assistant Final</label>
       <div id="assistantPreview" class="result"></div>
     </section>
 
@@ -300,11 +367,17 @@
 
     <section>
       <h2>Events Summary</h2>
+      <div class="actions">
+        <button id="copyEventsBtn" class="secondary">复制 events summary</button>
+      </div>
       <pre id="eventsSummary"></pre>
     </section>
 
     <section>
       <h2>最近错误</h2>
+      <div class="actions">
+        <button id="clearErrorBtn" class="secondary">清空错误</button>
+      </div>
       <div id="errorPanel" class="result muted">No errors.</div>
     </section>
   </main>
@@ -317,50 +390,65 @@
     };
 
     const state = {
-      baseUrl: localStorage.getItem(storageKeys.baseUrl) || window.location.origin,
+      baseUrl: normalizeBaseUrl(localStorage.getItem(storageKeys.baseUrl) || window.location.origin),
       token: localStorage.getItem(storageKeys.token) || '',
       selectedThreadId: localStorage.getItem(storageKeys.selectedThreadId) || '',
+      health: null,
       loading: false,
-      threads: []
+      threads: [],
+      assistantFinal: '',
+      eventsSummaryText: ''
     };
 
     const el = {
       baseUrl: document.getElementById('baseUrl'),
       token: document.getElementById('token'),
+      threadTitle: document.getElementById('threadTitle'),
       healthPill: document.getElementById('healthPill'),
       tokenPill: document.getElementById('tokenPill'),
-      currentThreadPill: document.getElementById('currentThreadPill'),
+      currentTitlePill: document.getElementById('currentTitlePill'),
+      currentIdPill: document.getElementById('currentIdPill'),
+      modePill: document.getElementById('modePill'),
+      sandboxPill: document.getElementById('sandboxPill'),
+      idlePill: document.getElementById('idlePill'),
       saveConfigBtn: document.getElementById('saveConfigBtn'),
       healthBtn: document.getElementById('healthBtn'),
       createThreadBtn: document.getElementById('createThreadBtn'),
+      renameThreadBtn: document.getElementById('renameThreadBtn'),
       refreshThreadsBtn: document.getElementById('refreshThreadsBtn'),
       deleteThreadBtn: document.getElementById('deleteThreadBtn'),
       threadList: document.getElementById('threadList'),
       message: document.getElementById('message'),
+      messageCount: document.getElementById('messageCount'),
+      loadingNote: document.getElementById('loadingNote'),
       sendBtn: document.getElementById('sendBtn'),
       finalBtn: document.getElementById('finalBtn'),
+      copyFinalBtn: document.getElementById('copyFinalBtn'),
       eventsBtn: document.getElementById('eventsBtn'),
       assistantPreview: document.getElementById('assistantPreview'),
       sessionTestBtn: document.getElementById('sessionTestBtn'),
       sessionTestResult: document.getElementById('sessionTestResult'),
+      copyEventsBtn: document.getElementById('copyEventsBtn'),
       eventsSummary: document.getElementById('eventsSummary'),
-      errorPanel: document.getElementById('errorPanel')
+      errorPanel: document.getElementById('errorPanel'),
+      clearErrorBtn: document.getElementById('clearErrorBtn'),
+      noticePanel: document.getElementById('noticePanel')
     };
-
-    function saveConfig() {
-      state.baseUrl = normalizeBaseUrl(el.baseUrl.value);
-      state.token = el.token.value.trim();
-      localStorage.setItem(storageKeys.baseUrl, state.baseUrl);
-      localStorage.setItem(storageKeys.token, state.token);
-      renderStatus();
-    }
 
     function normalizeBaseUrl(value) {
       const trimmed = String(value || '').trim();
       return trimmed ? trimmed.replace(/\/+$/, '') : window.location.origin;
     }
 
-    function headers(extra = {}) {
+    function shortId(value) {
+      return String(value || '').slice(0, 8);
+    }
+
+    function currentThread() {
+      return state.threads.find(thread => thread.bridge_thread_id === state.selectedThreadId) || null;
+    }
+
+    function requestHeaders(extra = {}) {
       const result = { ...extra };
       if (state.token) {
         result['X-Bridge-Token'] = state.token;
@@ -371,7 +459,7 @@
     async function api(path, options = {}) {
       const response = await fetch(`${state.baseUrl}${path}`, {
         ...options,
-        headers: headers(options.headers || {})
+        headers: requestHeaders(options.headers || {})
       });
       const contentType = response.headers.get('content-type') || '';
       const data = contentType.includes('application/json')
@@ -383,7 +471,7 @@
       return data;
     }
 
-    async function postJson(path, body) {
+    function postJson(path, body) {
       return api(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -391,25 +479,38 @@
       });
     }
 
-    async function deleteJson(path) {
+    function patchJson(path, body) {
+      return api(path, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(body)
+      });
+    }
+
+    function deleteJson(path) {
       return api(path, { method: 'DELETE' });
     }
 
-    function setLoading(isLoading) {
+    function saveConfig() {
+      state.baseUrl = normalizeBaseUrl(el.baseUrl.value);
+      state.token = el.token.value.trim();
+      localStorage.setItem(storageKeys.baseUrl, state.baseUrl);
+      localStorage.setItem(storageKeys.token, state.token);
+      renderStatus();
+      setNotice('配置已保存。');
+    }
+
+    function setLoading(isLoading, message = '') {
       state.loading = isLoading;
-      [
-        el.saveConfigBtn,
-        el.healthBtn,
-        el.createThreadBtn,
-        el.refreshThreadsBtn,
-        el.deleteThreadBtn,
-        el.sendBtn,
-        el.finalBtn,
-        el.eventsBtn,
-        el.sessionTestBtn
-      ].forEach(button => {
+      document.querySelectorAll('button').forEach(button => {
         button.disabled = isLoading;
       });
+      el.loadingNote.textContent = message || '正在等待 App Server 返回，请不要刷新页面。';
+      el.loadingNote.classList.toggle('show', isLoading && Boolean(message));
+    }
+
+    function setNotice(message) {
+      el.noticePanel.textContent = message || '';
     }
 
     function setError(error) {
@@ -420,13 +521,36 @@
       }
       const data = error.data || {};
       const err = data.error || {};
-      el.errorPanel.className = 'result';
+      el.errorPanel.className = 'result error';
       el.errorPanel.textContent = [
         `HTTP status: ${error.status || 'n/a'}`,
-        `code: ${err.code || 'n/a'}`,
-        `message: ${err.message || data.detail || error.message || 'Unknown error'}`,
+        `error.code: ${err.code || 'n/a'}`,
+        `error.message: ${err.message || data.detail || error.message || 'Unknown error'}`,
         `step: ${data.step || 'n/a'}`
       ].join('\n');
+    }
+
+    function localError(code, message, step) {
+      return {
+        status: 'local',
+        data: {
+          error: { code, message },
+          detail: message,
+          step
+        }
+      };
+    }
+
+    async function runAction(action, loadingMessage = '') {
+      setLoading(true, loadingMessage);
+      setNotice('');
+      try {
+        await action();
+      } catch (error) {
+        setError(error);
+      } finally {
+        setLoading(false);
+      }
     }
 
     function selectThread(threadId) {
@@ -435,6 +559,10 @@
         localStorage.setItem(storageKeys.selectedThreadId, state.selectedThreadId);
       } else {
         localStorage.removeItem(storageKeys.selectedThreadId);
+      }
+      const thread = currentThread();
+      if (thread && thread.title) {
+        el.threadTitle.value = thread.title;
       }
       renderStatus();
       renderThreads();
@@ -445,9 +573,32 @@
       el.token.value = state.token;
       el.tokenPill.textContent = state.token ? 'token configured' : 'token not configured';
       el.tokenPill.className = state.token ? 'pill ok' : 'pill warn';
-      el.currentThreadPill.textContent = state.selectedThreadId
-        ? `thread ${state.selectedThreadId}`
-        : 'no thread selected';
+
+      if (state.health) {
+        el.healthPill.textContent = `health ${state.health.status} · threads ${state.health.threads}`;
+        el.healthPill.className = state.health.status === 'ok' ? 'pill ok' : 'pill warn';
+        el.modePill.textContent = `mode: ${state.health.mode || 'unknown'}`;
+        el.sandboxPill.textContent = `sandbox: ${state.health.sandbox || 'unknown'}`;
+        el.idlePill.textContent = `idle: ${state.health.idle_timeout_seconds ?? 'unknown'}s`;
+      } else {
+        el.healthPill.textContent = 'health unknown';
+        el.healthPill.className = 'pill warn';
+        el.modePill.textContent = 'mode: unknown';
+        el.sandboxPill.textContent = 'sandbox: unknown';
+        el.idlePill.textContent = 'idle: unknown';
+      }
+
+      const thread = currentThread();
+      if (thread) {
+        el.currentTitlePill.textContent = `title: ${thread.title || '(untitled)'}`;
+        el.currentIdPill.textContent = `id: ${shortId(thread.bridge_thread_id)}`;
+      } else if (state.selectedThreadId) {
+        el.currentTitlePill.textContent = 'title: loading';
+        el.currentIdPill.textContent = `id: ${shortId(state.selectedThreadId)}`;
+      } else {
+        el.currentTitlePill.textContent = 'title: none';
+        el.currentIdPill.textContent = 'id: none';
+      }
     }
 
     function renderThreads() {
@@ -464,53 +615,69 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.className = `thread-item${thread.bridge_thread_id === state.selectedThreadId ? ' active' : ''}`;
-        button.innerHTML = `
-          <div class="thread-id">${escapeHtml(thread.bridge_thread_id)}</div>
-          <div class="muted">status=${escapeHtml(thread.status)} · turns=${escapeHtml(thread.turn_count)} · updated=${escapeHtml(thread.updated_at)}</div>
-        `;
+
+        const title = document.createElement('span');
+        title.className = 'thread-title';
+        title.textContent = thread.title || '(untitled)';
+
+        const id = document.createElement('div');
+        id.className = 'thread-id';
+        id.textContent = shortId(thread.bridge_thread_id);
+
+        const meta = document.createElement('div');
+        meta.className = 'thread-meta';
+        meta.textContent = `status=${thread.status} · turns=${thread.turn_count} · updated=${thread.updated_at}`;
+
+        button.appendChild(title);
+        button.appendChild(id);
+        button.appendChild(meta);
         button.addEventListener('click', () => selectThread(thread.bridge_thread_id));
         el.threadList.appendChild(button);
       });
     }
 
-    function escapeHtml(value) {
-      return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-    }
-
-    async function runAction(action) {
-      setLoading(true);
-      setError(null);
-      try {
-        await action();
-      } catch (error) {
-        setError(error);
-      } finally {
-        setLoading(false);
-      }
+    function updateMessageCount() {
+      el.messageCount.textContent = String(Array.from(el.message.value).length);
     }
 
     async function checkHealth() {
-      const health = await api('/health');
-      el.healthPill.textContent = `health ${health.status} · threads ${health.threads}`;
-      el.healthPill.className = 'pill ok';
+      state.health = await api('/health');
+      renderStatus();
+      setNotice('health 已更新。');
     }
 
     async function createThread() {
-      const thread = await postJson('/threads', {});
-      selectThread(thread.bridge_thread_id);
+      const title = el.threadTitle.value.trim();
+      const thread = await postJson('/threads', title ? { title } : {});
+      state.selectedThreadId = thread.bridge_thread_id;
+      localStorage.setItem(storageKeys.selectedThreadId, state.selectedThreadId);
       await refreshThreads();
+      selectThread(thread.bridge_thread_id);
+      setNotice('Thread 已创建。');
+    }
+
+    async function renameThread() {
+      ensureThread();
+      const title = el.threadTitle.value.trim();
+      if (!title) {
+        throw localError('invalid_title', 'Thread 标题不能为空。', 'validate_request');
+      }
+      await patchJson(`/threads/${encodeURIComponent(state.selectedThreadId)}`, { title });
+      await refreshThreads();
+      selectThread(state.selectedThreadId);
+      setNotice('Thread 已重命名。');
     }
 
     async function refreshThreads() {
       const result = await api('/threads');
       state.threads = result.threads || [];
       if (state.selectedThreadId && !state.threads.some(thread => thread.bridge_thread_id === state.selectedThreadId)) {
-        selectThread('');
+        state.selectedThreadId = '';
+        localStorage.removeItem(storageKeys.selectedThreadId);
+        el.assistantPreview.textContent = '';
+        el.eventsSummary.textContent = '';
+        state.assistantFinal = '';
+        state.eventsSummaryText = '';
       }
       renderThreads();
       renderStatus();
@@ -518,17 +685,35 @@
 
     async function deleteCurrentThread() {
       ensureThread();
+      if (!window.confirm('确认删除当前 Thread？')) {
+        return;
+      }
       await deleteJson(`/threads/${encodeURIComponent(state.selectedThreadId)}`);
       selectThread('');
+      el.threadTitle.value = '';
       el.assistantPreview.textContent = '';
       el.eventsSummary.textContent = '';
+      el.sessionTestResult.textContent = '';
+      state.assistantFinal = '';
+      state.eventsSummaryText = '';
       await refreshThreads();
+      setNotice('Thread 已删除。');
+    }
+
+    async function sendMessageFromInput() {
+      const message = el.message.value.trim();
+      if (!message) {
+        throw localError('invalid_message', 'Message 不能为空。', 'validate_request');
+      }
+      await sendMessage(message);
+      setNotice('消息已完成。');
     }
 
     async function sendMessage(message) {
       ensureThread();
       const result = await postJson(`/threads/${encodeURIComponent(state.selectedThreadId)}/turns`, { message });
-      el.assistantPreview.textContent = result.assistant_final_preview || '';
+      state.assistantFinal = result.assistant_final_preview || '';
+      el.assistantPreview.textContent = state.assistantFinal;
       await fetchFinal();
       await refreshThreads();
       return result;
@@ -537,15 +722,30 @@
     async function fetchFinal() {
       ensureThread();
       const result = await api(`/threads/${encodeURIComponent(state.selectedThreadId)}/final`);
-      el.assistantPreview.textContent = result.assistant_final || '';
+      state.assistantFinal = result.assistant_final || '';
+      el.assistantPreview.textContent = state.assistantFinal;
       return result;
     }
 
     async function fetchEventsSummary() {
       ensureThread();
       const result = await api(`/threads/${encodeURIComponent(state.selectedThreadId)}/events`);
-      el.eventsSummary.textContent = JSON.stringify(result.summary || result, null, 2);
+      state.eventsSummaryText = JSON.stringify(result.summary || result, null, 2);
+      el.eventsSummary.textContent = state.eventsSummaryText;
       return result;
+    }
+
+    async function copyText(label, text) {
+      if (!text) {
+        setNotice(`${label} 为空，未复制。`);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        setNotice(`${label} 已复制。`);
+      } catch (error) {
+        setNotice(`${label} 复制失败：${error.message || error}`);
+      }
     }
 
     async function runSessionTest() {
@@ -553,47 +753,50 @@
         await createThread();
       }
       el.sessionTestResult.textContent = 'running...';
-      el.sessionTestResult.className = 'result loading';
       await sendMessage('请记住这个词：mobile-session-test。只回复“已记住”。');
       await sendMessage('刚才让你记住的词是什么？只回复这个词。');
       const final = await fetchFinal();
-      const passed = String(final.assistant_final || '').includes('mobile-session-test');
+      const assistantFinal = String(final.assistant_final || '');
+      const passed = assistantFinal.includes('mobile-session-test');
       el.sessionTestResult.textContent = passed
-        ? `PASS\n${final.assistant_final}`
-        : `FAIL\n${final.assistant_final || ''}`;
-      el.sessionTestResult.className = 'result';
+        ? `PASS\n${assistantFinal}`
+        : `FAIL\n${assistantFinal}`;
+      setNotice(passed ? '连续会话测试 PASS。' : '连续会话测试 FAIL。');
     }
 
     function ensureThread() {
       if (!state.selectedThreadId) {
-        throw {
-          status: 'local',
-          data: {
-            error: {
-              code: 'no_thread',
-              message: '请先创建或选择 thread。'
-            },
-            step: 'select_thread'
-          }
-        };
+        throw localError('no_thread', '请先创建或选择 Thread。', 'select_thread');
       }
     }
 
     el.saveConfigBtn.addEventListener('click', () => {
       saveConfig();
-      setError(null);
     });
     el.healthBtn.addEventListener('click', () => runAction(checkHealth));
     el.createThreadBtn.addEventListener('click', () => runAction(createThread));
+    el.renameThreadBtn.addEventListener('click', () => runAction(renameThread));
     el.refreshThreadsBtn.addEventListener('click', () => runAction(refreshThreads));
     el.deleteThreadBtn.addEventListener('click', () => runAction(deleteCurrentThread));
-    el.sendBtn.addEventListener('click', () => runAction(() => sendMessage(el.message.value)));
+    el.sendBtn.addEventListener('click', () => runAction(sendMessageFromInput, '正在等待 App Server 返回，请不要刷新页面。'));
     el.finalBtn.addEventListener('click', () => runAction(fetchFinal));
+    el.copyFinalBtn.addEventListener('click', () => copyText('final', state.assistantFinal || el.assistantPreview.textContent));
     el.eventsBtn.addEventListener('click', () => runAction(fetchEventsSummary));
-    el.sessionTestBtn.addEventListener('click', () => runAction(runSessionTest));
+    el.copyEventsBtn.addEventListener('click', () => copyText('events summary', state.eventsSummaryText || el.eventsSummary.textContent));
+    el.sessionTestBtn.addEventListener('click', () => runAction(runSessionTest, '正在等待 App Server 返回，请不要刷新页面。'));
+    el.clearErrorBtn.addEventListener('click', () => setError(null));
+    el.message.addEventListener('input', updateMessageCount);
+    document.querySelectorAll('button.template').forEach(button => {
+      button.addEventListener('click', () => {
+        el.message.value = button.dataset.template || '';
+        updateMessageCount();
+        setNotice('模板已填充。');
+      });
+    });
 
     renderStatus();
     renderThreads();
+    updateMessageCount();
     runAction(async () => {
       await checkHealth();
       await refreshThreads();

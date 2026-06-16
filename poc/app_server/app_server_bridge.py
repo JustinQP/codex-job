@@ -31,6 +31,7 @@ DEVELOPER_INSTRUCTIONS = "Do not modify files. Reply only to the user request."
 class BridgeThread:
     bridge_thread_id: str
     app_thread_id: str
+    title: str
     client: JsonlRpcClient
     run_dir: Path
     raw_events_path: Path
@@ -65,9 +66,10 @@ class BridgeState:
         self.threads: dict[str, BridgeThread] = {}
         self.lock = RLock()
 
-    def create_thread(self) -> BridgeThread:
+    def create_thread(self, title: str | None = None) -> BridgeThread:
         self.cleanup_expired_threads()
         bridge_thread_id = str(uuid.uuid4())
+        thread_title = _clean_title(title) or _default_thread_title(bridge_thread_id)
         run_dir = self.bridge_runs_dir / bridge_thread_id
         run_dir.mkdir(parents=True, exist_ok=False)
         raw_events_path = run_dir / "_all-events.jsonl"
@@ -117,6 +119,7 @@ class BridgeState:
         bridge_thread = BridgeThread(
             bridge_thread_id=bridge_thread_id,
             app_thread_id=app_thread_id,
+            title=thread_title,
             client=client,
             run_dir=run_dir,
             raw_events_path=raw_events_path,
@@ -127,6 +130,16 @@ class BridgeState:
         with self.lock:
             self.threads[bridge_thread_id] = bridge_thread
         return bridge_thread
+
+    def update_thread_title(self, bridge_thread_id: str, title: str) -> BridgeThread | None:
+        self.cleanup_expired_threads()
+        with self.lock:
+            bridge_thread = self.threads.get(bridge_thread_id)
+            if bridge_thread is None:
+                return None
+            bridge_thread.title = title
+            bridge_thread.updated_at = _utc_now()
+            return bridge_thread
 
     def get_thread(self, bridge_thread_id: str) -> BridgeThread | None:
         self.cleanup_expired_threads()
@@ -250,6 +263,10 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                     "threads": len(_state().threads),
                     "token_required": bool(_state().token),
                     "idle_timeout_seconds": _state().idle_timeout_seconds,
+                    "codex_command": _state().codex_command,
+                    "repo_root": str(_state().repo_root),
+                    "mode": "poc",
+                    "sandbox": "readOnly",
                 },
             )
             return
@@ -290,6 +307,17 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
 
         self._send_error_json(HTTPStatus.NOT_FOUND, "not_found", "Route not found.")
 
+    def do_PATCH(self) -> None:
+        route = self._route()
+        if not self._check_auth():
+            return
+
+        if len(route) == 2 and route[0] == "threads":
+            self._handle_update_thread(route[1])
+            return
+
+        self._send_error_json(HTTPStatus.NOT_FOUND, "not_found", "Route not found.", step="route")
+
     def do_DELETE(self) -> None:
         route = self._route()
         if not self._check_auth():
@@ -306,8 +334,12 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         print(f"[{timestamp}] {self.address_string()} {format % args}")
 
     def _handle_create_thread(self) -> None:
+        body = self._read_json_body()
+        if body is None:
+            return
+        title = _clean_title(body.get("title"))
         try:
-            bridge_thread = _state().create_thread()
+            bridge_thread = _state().create_thread(title)
         except Exception as exc:
             self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "thread_create_failed", str(exc), step="thread/start")
             return
@@ -317,6 +349,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             {
                 "bridge_thread_id": bridge_thread.bridge_thread_id,
                 "app_thread_id": bridge_thread.app_thread_id,
+                "title": bridge_thread.title,
                 "status": bridge_thread.status,
                 "created_at": bridge_thread.created_at,
                 "run_dir": str(bridge_thread.run_dir),
@@ -366,10 +399,31 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             {
                 "bridge_thread_id": bridge_thread.bridge_thread_id,
                 "app_thread_id": bridge_thread.app_thread_id,
+                "title": bridge_thread.title,
                 "status": "closed",
                 "closed": True,
             },
         )
+
+    def _handle_update_thread(self, bridge_thread_id: str) -> None:
+        body = self._read_json_body()
+        if body is None:
+            return
+        title = _clean_title(body.get("title"))
+        if not title:
+            self._send_error_json(
+                HTTPStatus.BAD_REQUEST,
+                "invalid_title",
+                "JSON body must include a non-empty string field: title.",
+                step="validate_request",
+            )
+            return
+
+        bridge_thread = _state().update_thread_title(bridge_thread_id, title)
+        if bridge_thread is None:
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
+            return
+        self._send_json(HTTPStatus.OK, _thread_status(bridge_thread))
 
     def _handle_create_turn(self, bridge_thread_id: str) -> None:
         body = self._read_json_body()
@@ -636,6 +690,7 @@ def _thread_status_minimal(bridge_thread: BridgeThread) -> dict[str, Any]:
     return {
         "bridge_thread_id": bridge_thread.bridge_thread_id,
         "app_thread_id": bridge_thread.app_thread_id,
+        "title": bridge_thread.title,
         "status": bridge_thread.status,
         "turn_count": bridge_thread.turn_count,
         "created_at": bridge_thread.created_at,
@@ -712,6 +767,14 @@ def _write_events_jsonl(path: Path, events: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8", errors="replace") as file:
         for event in events:
             file.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def _default_thread_title(bridge_thread_id: str) -> str:
+    return f"Thread {bridge_thread_id[:8]}"
+
+
+def _clean_title(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def _utc_now() -> str:

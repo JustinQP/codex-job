@@ -277,6 +277,72 @@ http://<电脑局域网IP>:8766/mobile
 - 不支持审批 UI
 - 不支持 diff UI
 
+## POC-6：手机端可用性增强与会话管理
+
+启动 Bridge：
+
+```powershell
+$env:APP_SERVER_BRIDGE_TOKEN = "dev-token"
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+```
+
+本机访问：
+
+```text
+http://127.0.0.1:8766/mobile
+```
+
+手机局域网访问：
+
+```powershell
+$env:APP_SERVER_BRIDGE_TOKEN = "dev-token"
+python .\poc\app_server\app_server_bridge.py --host 0.0.0.0 --port 8766
+```
+
+```text
+http://<电脑局域网IP>:8766/mobile
+```
+
+局域网访问提醒：
+
+- 仅限可信局域网。
+- 必须设置 `APP_SERVER_BRIDGE_TOKEN`。
+- 页面本身不鉴权，但页面调用 Bridge API 时会带 `X-Bridge-Token`。
+- 不要公网暴露该 POC 服务。
+
+POC-6 增强点：
+
+- `GET /health` 返回 `mode`、`sandbox`、`idle_timeout_seconds`、`codex_command`、`repo_root` 等状态字段。
+- `POST /threads` 支持传入 `title`，`GET /threads` 和 `GET /threads/{id}` 返回标题。
+- `PATCH /threads/{id}` 支持重命名当前内存态 thread。
+- 手机页顶部展示 health、token 状态、当前 thread 标题和短 ID。
+- 手机页支持 thread 标题输入、创建后自动选中、列表高亮、重命名、删除确认。
+- 手机页支持 prompt 模板、final/events 复制、错误清空、长任务提示、消息字数统计。
+
+POC-6 验收步骤：
+
+1. 打开 `http://127.0.0.1:8766/mobile`
+2. 保存 token：`dev-token`
+3. 点击检查 health
+4. 输入标题并创建 Thread
+5. 发送 `请只回复 mobile-ok`
+6. 获取 final
+7. 复制 final
+8. 使用模板填充 prompt
+9. 重命名 Thread
+10. 运行连续会话测试，结果应显示 `PASS`
+11. 删除 Thread
+
+当前限制：
+
+- 单进程内存态。
+- 服务重启后 thread 丢失。
+- 不接 backend/runner 主系统。
+- 不支持 SSE。
+- 不支持审批 UI。
+- 不支持 diff UI。
+- 仍然是 App Server experimental POC。
+
 ## 协议推断
 
 当前根据 schema 推断的最小流程是：
