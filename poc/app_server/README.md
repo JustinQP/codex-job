@@ -34,6 +34,29 @@ python .\poc\app_server\app_server_stdio_client.py
 python .\poc\app_server\app_server_stdio_client.py --codex-command C:\path\to\codex.cmd
 ```
 
+## 运行事件解析 POC
+
+在项目根目录执行：
+
+```powershell
+python .\poc\app_server\app_server_conversation_poc.py --message "请只回复 app-server-parser-ok，不要修改文件。"
+```
+
+每次运行会创建：
+
+```text
+poc/app_server/runs/<timestamp>/
+```
+
+并保存：
+
+- `events.jsonl`：app-server stdout 中收到的 JSON 行
+- `stderr.log`：app-server stderr
+- `run-summary.json`：事件数量、类型统计、ID、错误和未知事件摘要
+- `assistant-final.md`：解析出的最终助手回复
+
+`runs` 目录会被 `.gitignore` 忽略。
+
 ## 协议推断
 
 当前根据 schema 推断的最小流程是：

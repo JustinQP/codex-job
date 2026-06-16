@@ -15,3 +15,4 @@ poc/app_server/schema/*
 !poc/app_server/schema/.gitkeep
 poc/app_server/events-*.jsonl
 poc/app_server/app-server-stderr-*.log
+poc/app_server/runs/
