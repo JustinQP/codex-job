@@ -137,11 +137,13 @@ Invoke-RestMethod -Method Get http://127.0.0.1:8766/threads
 发送 turn：
 
 ```powershell
+$body = @{ message = "请只回复 bridge-ok，不要修改文件。" } | ConvertTo-Json -Compress
+
 Invoke-RestMethod `
   -Method Post `
   "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/turns" `
-  -ContentType "application/json" `
-  -Body '{"message":"请只回复 bridge-ok，不要修改文件。"}'
+  -ContentType "application/json; charset=utf-8" `
+  -Body $body
 ```
 
 查看最近一轮最终回复：
@@ -172,17 +174,19 @@ Invoke-RestMethod -Method Get "http://127.0.0.1:8766/threads/$($thread.bridge_th
 ```powershell
 $thread = Invoke-RestMethod -Method Post http://127.0.0.1:8766/threads
 
+$body1 = @{ message = "请记住这个词：bridge-session-test。只回复“已记住”。" } | ConvertTo-Json -Compress
 Invoke-RestMethod `
   -Method Post `
   "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/turns" `
-  -ContentType "application/json" `
-  -Body '{"message":"请记住这个词：bridge-session-test。只回复“已记住”。"}'
+  -ContentType "application/json; charset=utf-8" `
+  -Body $body1
 
+$body2 = @{ message = "刚才让你记住的词是什么？只回复这个词。" } | ConvertTo-Json -Compress
 Invoke-RestMethod `
   -Method Post `
   "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/turns" `
-  -ContentType "application/json" `
-  -Body '{"message":"刚才让你记住的词是什么？只回复这个词。"}'
+  -ContentType "application/json; charset=utf-8" `
+  -Body $body2
 
 Invoke-RestMethod -Method Get "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/final"
 ```

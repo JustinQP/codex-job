@@ -133,20 +133,55 @@ class BridgeState:
         with self.lock:
             return self.threads.get(bridge_thread_id)
 
+    def acquire_thread_for_turn(self, bridge_thread_id: str) -> tuple[str, BridgeThread | None]:
+        self.cleanup_expired_threads()
+        with self.lock:
+            bridge_thread = self.threads.get(bridge_thread_id)
+            if bridge_thread is None:
+                return "not_found", None
+            if bridge_thread.status == "running":
+                return "conflict", bridge_thread
+            if not bridge_thread.lock.acquire(blocking=False):
+                return "conflict", bridge_thread
+            if bridge_thread.status == "running":
+                bridge_thread.lock.release()
+                return "conflict", bridge_thread
+            bridge_thread.status = "running"
+            bridge_thread.updated_at = _utc_now()
+            return "acquired", bridge_thread
+
     def list_threads(self) -> list[BridgeThread]:
         self.cleanup_expired_threads()
         with self.lock:
             return list(self.threads.values())
 
-    def delete_thread(self, bridge_thread_id: str) -> BridgeThread | None:
+    def delete_thread(self, bridge_thread_id: str) -> tuple[str, BridgeThread | None]:
+        self.cleanup_expired_threads()
         with self.lock:
-            bridge_thread = self.threads.pop(bridge_thread_id, None)
+            bridge_thread = self.threads.get(bridge_thread_id)
         if bridge_thread is None:
-            return None
-        bridge_thread.status = "closed"
-        bridge_thread.updated_at = _utc_now()
-        bridge_thread.client.close()
-        return bridge_thread
+            return "not_found", None
+        if bridge_thread.status == "running":
+            return "conflict", bridge_thread
+        if not bridge_thread.lock.acquire(blocking=False):
+            return "conflict", bridge_thread
+
+        try:
+            if bridge_thread.status == "running":
+                return "conflict", bridge_thread
+            with self.lock:
+                current = self.threads.get(bridge_thread_id)
+                if current is None:
+                    return "not_found", None
+                if current is not bridge_thread:
+                    return "conflict", bridge_thread
+                self.threads.pop(bridge_thread_id)
+            bridge_thread.status = "closed"
+            bridge_thread.updated_at = _utc_now()
+            bridge_thread.client.close()
+            return "closed", bridge_thread
+        finally:
+            bridge_thread.lock.release()
 
     def cleanup_expired_threads(self) -> list[str]:
         if self.idle_timeout_seconds <= 0:
@@ -158,14 +193,23 @@ class BridgeState:
                 if bridge_thread.status == "running":
                     continue
                 if now - _parse_utc_timestamp(bridge_thread.updated_at) > self.idle_timeout_seconds:
-                    expired.append(self.threads.pop(bridge_thread_id))
+                    if not bridge_thread.lock.acquire(blocking=False):
+                        continue
+                    current = self.threads.get(bridge_thread_id)
+                    if current is bridge_thread:
+                        expired.append(self.threads.pop(bridge_thread_id))
+                    else:
+                        bridge_thread.lock.release()
 
         closed_ids: list[str] = []
         for bridge_thread in expired:
-            bridge_thread.status = "expired"
-            bridge_thread.updated_at = _utc_now()
-            bridge_thread.client.close()
-            closed_ids.append(bridge_thread.bridge_thread_id)
+            try:
+                bridge_thread.status = "expired"
+                bridge_thread.updated_at = _utc_now()
+                bridge_thread.client.close()
+                closed_ids.append(bridge_thread.bridge_thread_id)
+            finally:
+                bridge_thread.lock.release()
         return closed_ids
 
     def close_all(self) -> None:
@@ -279,9 +323,17 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_delete_thread(self, bridge_thread_id: str) -> None:
-        bridge_thread = _state().delete_thread(bridge_thread_id)
+        delete_status, bridge_thread = _state().delete_thread(bridge_thread_id)
         if bridge_thread is None:
             self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="delete_thread")
+            return
+        if delete_status == "conflict":
+            self._send_error_json(
+                HTTPStatus.CONFLICT,
+                "thread_running",
+                "Cannot delete a bridge thread while a turn is running.",
+                step="delete_thread",
+            )
             return
         self._send_json(
             HTTPStatus.OK,
@@ -294,11 +346,6 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_create_turn(self, bridge_thread_id: str) -> None:
-        bridge_thread = _state().get_thread(bridge_thread_id)
-        if bridge_thread is None:
-            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
-            return
-
         body = self._read_json_body()
         if body is None:
             return
@@ -312,7 +359,11 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if not bridge_thread.lock.acquire(blocking=False):
+        acquire_status, bridge_thread = _state().acquire_thread_for_turn(bridge_thread_id)
+        if bridge_thread is None:
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
+            return
+        if acquire_status == "conflict":
             self._send_error_json(
                 HTTPStatus.CONFLICT,
                 "turn_conflict",
@@ -493,6 +544,7 @@ def _run_turn(
 
     deadline = time.monotonic() + timeout
     next_index = start_index
+    end_index: int | None = None
     while time.monotonic() < deadline:
         message_index, event = bridge_thread.client.wait_for_match(
             lambda item: _is_turn_completed(item, turn_id),
@@ -501,12 +553,19 @@ def _run_turn(
         )
         next_index = message_index + 1
         if _is_turn_completed(event, turn_id):
+            end_index = message_index + 1
             break
     else:
         raise TimeoutError(f"timed out waiting for turn/completed: {turn_id}")
 
     all_events = _client_messages(bridge_thread.client)
-    turn_events = _events_for_turn(all_events, turn_id, request_id)
+    filtered_events = _events_for_turn(all_events, turn_id, request_id)
+    if end_index is not None and start_index < end_index:
+        turn_events = all_events[start_index:end_index]
+        event_capture_mode = "index_range"
+    else:
+        turn_events = filtered_events
+        event_capture_mode = "turn_id_filter"
     turn_dir = bridge_thread.run_dir / f"turn-{turn_number}"
     turn_dir.mkdir(parents=True, exist_ok=True)
     _write_events_jsonl(turn_dir / "events.jsonl", turn_events)
@@ -529,6 +588,13 @@ def _run_turn(
         "assistant_final_preview": assistant_final[:500],
         "turn_dir": str(turn_dir),
         "summary": summary,
+        "event_capture": {
+            "mode": event_capture_mode,
+            "start_index": start_index,
+            "end_index": end_index,
+            "captured_event_count": len(turn_events),
+            "turn_id_filtered_event_count": len(filtered_events),
+        },
     }
 
 
