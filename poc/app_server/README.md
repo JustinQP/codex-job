@@ -108,21 +108,30 @@ python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
 - `--codex-command <path>`：指定 Codex 命令，默认 `codex.cmd`
 - 环境变量 `CODEX_COMMAND`：指定 Codex 命令
 - 环境变量 `APP_SERVER_BRIDGE_TOKEN`：启用后，除 `/health` 外所有接口必须传 `X-Bridge-Token`
+- 环境变量 `APP_SERVER_BRIDGE_IDLE_TIMEOUT_SECONDS`：thread 空闲超时，默认 `1800`
 
 接口：
 
 - `GET /health`
+- `GET /threads`
 - `POST /threads`
 - `POST /threads/{bridge_thread_id}/turns`
 - `GET /threads/{bridge_thread_id}`
 - `GET /threads/{bridge_thread_id}/events`
 - `GET /threads/{bridge_thread_id}/final`
+- `DELETE /threads/{bridge_thread_id}`
 
 创建 thread：
 
 ```powershell
 $thread = Invoke-RestMethod -Method Post http://127.0.0.1:8766/threads
 $thread
+```
+
+列出当前内存中的 thread：
+
+```powershell
+Invoke-RestMethod -Method Get http://127.0.0.1:8766/threads
 ```
 
 发送 turn：
@@ -139,6 +148,23 @@ Invoke-RestMethod `
 
 ```powershell
 Invoke-RestMethod -Method Get "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/final"
+```
+
+关闭并清理 thread：
+
+```powershell
+Invoke-RestMethod -Method Delete "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)"
+```
+
+Token 验证：
+
+```powershell
+$env:APP_SERVER_BRIDGE_TOKEN = "dev-token"
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+
+$headers = @{ "X-Bridge-Token" = "dev-token" }
+$thread = Invoke-RestMethod -Method Post http://127.0.0.1:8766/threads -Headers $headers
+Invoke-RestMethod -Method Get "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)" -Headers $headers
 ```
 
 连续会话验证示例：
@@ -160,6 +186,8 @@ Invoke-RestMethod `
 
 Invoke-RestMethod -Method Get "http://127.0.0.1:8766/threads/$($thread.bridge_thread_id)/final"
 ```
+
+验收标准：第二轮 final 包含 `bridge-session-test`。
 
 产物目录：
 

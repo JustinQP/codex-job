@@ -23,6 +23,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
 DEFAULT_CODEX_COMMAND = "codex.cmd"
 DEFAULT_TIMEOUT_SECONDS = 180.0
+DEFAULT_IDLE_TIMEOUT_SECONDS = 1800.0
 DEVELOPER_INSTRUCTIONS = "Do not modify files. Reply only to the user request."
 
 
@@ -46,17 +47,26 @@ class BridgeThread:
 
 
 class BridgeState:
-    def __init__(self, repo_root: Path, codex_command: str, timeout: float, token: str | None) -> None:
+    def __init__(
+        self,
+        repo_root: Path,
+        codex_command: str,
+        timeout: float,
+        token: str | None,
+        idle_timeout_seconds: float,
+    ) -> None:
         self.repo_root = repo_root
         self.script_dir = Path(__file__).resolve().parent
         self.bridge_runs_dir = self.script_dir / "bridge-runs"
         self.codex_command = codex_command
         self.timeout = timeout
         self.token = token
+        self.idle_timeout_seconds = idle_timeout_seconds
         self.threads: dict[str, BridgeThread] = {}
         self.lock = RLock()
 
     def create_thread(self) -> BridgeThread:
+        self.cleanup_expired_threads()
         bridge_thread_id = str(uuid.uuid4())
         run_dir = self.bridge_runs_dir / bridge_thread_id
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -119,8 +129,44 @@ class BridgeState:
         return bridge_thread
 
     def get_thread(self, bridge_thread_id: str) -> BridgeThread | None:
+        self.cleanup_expired_threads()
         with self.lock:
             return self.threads.get(bridge_thread_id)
+
+    def list_threads(self) -> list[BridgeThread]:
+        self.cleanup_expired_threads()
+        with self.lock:
+            return list(self.threads.values())
+
+    def delete_thread(self, bridge_thread_id: str) -> BridgeThread | None:
+        with self.lock:
+            bridge_thread = self.threads.pop(bridge_thread_id, None)
+        if bridge_thread is None:
+            return None
+        bridge_thread.status = "closed"
+        bridge_thread.updated_at = _utc_now()
+        bridge_thread.client.close()
+        return bridge_thread
+
+    def cleanup_expired_threads(self) -> list[str]:
+        if self.idle_timeout_seconds <= 0:
+            return []
+        now = time.time()
+        expired: list[BridgeThread] = []
+        with self.lock:
+            for bridge_thread_id, bridge_thread in list(self.threads.items()):
+                if bridge_thread.status == "running":
+                    continue
+                if now - _parse_utc_timestamp(bridge_thread.updated_at) > self.idle_timeout_seconds:
+                    expired.append(self.threads.pop(bridge_thread_id))
+
+        closed_ids: list[str] = []
+        for bridge_thread in expired:
+            bridge_thread.status = "expired"
+            bridge_thread.updated_at = _utc_now()
+            bridge_thread.client.close()
+            closed_ids.append(bridge_thread.bridge_thread_id)
+        return closed_ids
 
     def close_all(self) -> None:
         with self.lock:
@@ -147,6 +193,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                     "service": "app-server-bridge-poc",
                     "threads": len(_state().threads),
                     "token_required": bool(_state().token),
+                    "idle_timeout_seconds": _state().idle_timeout_seconds,
                 },
             )
             return
@@ -154,6 +201,9 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if not self._check_auth():
             return
 
+        if route == ["threads"]:
+            self._handle_list_threads()
+            return
         if len(route) == 2 and route[0] == "threads":
             self._handle_get_thread(route[1])
             return
@@ -184,6 +234,17 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
 
         self._send_error_json(HTTPStatus.NOT_FOUND, "not_found", "Route not found.")
 
+    def do_DELETE(self) -> None:
+        route = self._route()
+        if not self._check_auth():
+            return
+
+        if len(route) == 2 and route[0] == "threads":
+            self._handle_delete_thread(route[1])
+            return
+
+        self._send_error_json(HTTPStatus.NOT_FOUND, "not_found", "Route not found.", step="route")
+
     def log_message(self, format: str, *args: Any) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] {self.address_string()} {format % args}")
@@ -192,7 +253,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         try:
             bridge_thread = _state().create_thread()
         except Exception as exc:
-            self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "thread_create_failed", str(exc))
+            self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "thread_create_failed", str(exc), step="thread/start")
             return
 
         self._send_json(
@@ -206,10 +267,36 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _handle_list_threads(self) -> None:
+        threads = [_thread_status(bridge_thread) for bridge_thread in _state().list_threads()]
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "threads": threads,
+                "count": len(threads),
+                "idle_timeout_seconds": _state().idle_timeout_seconds,
+            },
+        )
+
+    def _handle_delete_thread(self, bridge_thread_id: str) -> None:
+        bridge_thread = _state().delete_thread(bridge_thread_id)
+        if bridge_thread is None:
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="delete_thread")
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "bridge_thread_id": bridge_thread.bridge_thread_id,
+                "app_thread_id": bridge_thread.app_thread_id,
+                "status": "closed",
+                "closed": True,
+            },
+        )
+
     def _handle_create_turn(self, bridge_thread_id: str) -> None:
         bridge_thread = _state().get_thread(bridge_thread_id)
         if bridge_thread is None:
-            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.")
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
             return
 
         body = self._read_json_body()
@@ -217,32 +304,58 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             return
         message = body.get("message")
         if not isinstance(message, str) or not message.strip():
-            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_message", "JSON body must include a non-empty string field: message.")
+            self._send_error_json(
+                HTTPStatus.BAD_REQUEST,
+                "invalid_message",
+                "JSON body must include a non-empty string field: message.",
+                step="validate_request",
+            )
             return
 
-        with bridge_thread.lock:
+        if not bridge_thread.lock.acquire(blocking=False):
+            self._send_error_json(
+                HTTPStatus.CONFLICT,
+                "turn_conflict",
+                "A turn is already running for this bridge thread.",
+                step="turn_lock",
+            )
+            return
+
+        try:
             try:
                 result = _run_turn(bridge_thread, message.strip(), _state().repo_root, _state().timeout)
+            except TimeoutError as exc:
+                bridge_thread.status = "error"
+                bridge_thread.errors.append(str(exc))
+                bridge_thread.updated_at = _utc_now()
+                self._send_error_json(HTTPStatus.GATEWAY_TIMEOUT, "turn_timeout", str(exc), step="turn/completed")
+                return
             except Exception as exc:
                 bridge_thread.status = "error"
                 bridge_thread.errors.append(str(exc))
                 bridge_thread.updated_at = _utc_now()
-                self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "turn_failed", str(exc))
+                status = HTTPStatus.INTERNAL_SERVER_ERROR
+                step = "turn/start"
+                if _process_exited(bridge_thread):
+                    step = "app-server"
+                self._send_error_json(status, "turn_failed", str(exc), step=step)
                 return
+        finally:
+            bridge_thread.lock.release()
 
         self._send_json(HTTPStatus.OK, result)
 
     def _handle_get_thread(self, bridge_thread_id: str) -> None:
         bridge_thread = _state().get_thread(bridge_thread_id)
         if bridge_thread is None:
-            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.")
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
             return
         self._send_json(HTTPStatus.OK, _thread_status(bridge_thread))
 
     def _handle_get_events(self, bridge_thread_id: str) -> None:
         bridge_thread = _state().get_thread(bridge_thread_id)
         if bridge_thread is None:
-            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.")
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
             return
 
         turn_dir = _latest_turn_dir(bridge_thread)
@@ -276,7 +389,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
     def _handle_get_final(self, bridge_thread_id: str) -> None:
         bridge_thread = _state().get_thread(bridge_thread_id)
         if bridge_thread is None:
-            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.")
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
             return
         self._send_json(
             HTTPStatus.OK,
@@ -298,7 +411,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             return True
         if self.headers.get("X-Bridge-Token") == token:
             return True
-        self._send_error_json(HTTPStatus.UNAUTHORIZED, "unauthorized", "Missing or invalid X-Bridge-Token.")
+        self._send_error_json(HTTPStatus.UNAUTHORIZED, "unauthorized", "Missing or invalid X-Bridge-Token.", step="auth")
         return False
 
     def _read_json_body(self) -> dict[str, Any] | None:
@@ -308,16 +421,16 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         try:
             length = int(content_length)
         except ValueError:
-            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_content_length", "Invalid Content-Length.")
+            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_content_length", "Invalid Content-Length.", step="read_body")
             return None
         raw_body = self.rfile.read(length)
         try:
             parsed = json.loads(raw_body.decode("utf-8", errors="replace"))
         except json.JSONDecodeError as exc:
-            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_json", str(exc))
+            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_json", str(exc), step="parse_json")
             return None
         if not isinstance(parsed, dict):
-            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_json_body", "JSON body must be an object.")
+            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_json_body", "JSON body must be an object.", step="parse_json")
             return None
         return parsed
 
@@ -329,14 +442,16 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def _send_error_json(self, status: HTTPStatus, code: str, message: str) -> None:
+    def _send_error_json(self, status: HTTPStatus, code: str, message: str, step: str = "request") -> None:
         self._send_json(
             status,
             {
                 "error": {
                     "code": code,
                     "message": message,
-                }
+                },
+                "detail": message,
+                "step": step,
             },
         )
 
@@ -418,6 +533,14 @@ def _run_turn(
 
 
 def _thread_status(bridge_thread: BridgeThread) -> dict[str, Any]:
+    return _thread_status_minimal(bridge_thread) | {
+        "run_dir": str(bridge_thread.run_dir),
+        "last_turn_id": bridge_thread.last_turn_id,
+        "errors": bridge_thread.errors,
+    }
+
+
+def _thread_status_minimal(bridge_thread: BridgeThread) -> dict[str, Any]:
     return {
         "bridge_thread_id": bridge_thread.bridge_thread_id,
         "app_thread_id": bridge_thread.app_thread_id,
@@ -425,9 +548,6 @@ def _thread_status(bridge_thread: BridgeThread) -> dict[str, Any]:
         "turn_count": bridge_thread.turn_count,
         "created_at": bridge_thread.created_at,
         "updated_at": bridge_thread.updated_at,
-        "run_dir": str(bridge_thread.run_dir),
-        "last_turn_id": bridge_thread.last_turn_id,
-        "errors": bridge_thread.errors,
     }
 
 
@@ -506,16 +626,40 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_utc_timestamp(value: str) -> float:
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _process_exited(bridge_thread: BridgeThread) -> bool:
+    return bridge_thread.client.process.poll() is not None
+
+
 def _state() -> BridgeState:
     if STATE is None:
         raise RuntimeError("Bridge state is not initialized")
     return STATE
 
 
-def build_server(host: str, port: int, codex_command: str, timeout: float, token: str | None) -> ThreadingHTTPServer:
+def build_server(
+    host: str,
+    port: int,
+    codex_command: str,
+    timeout: float,
+    token: str | None,
+    idle_timeout_seconds: float,
+) -> ThreadingHTTPServer:
     global STATE
     repo_root = Path(__file__).resolve().parent.parent.parent
-    STATE = BridgeState(repo_root=repo_root, codex_command=codex_command, timeout=timeout, token=token)
+    STATE = BridgeState(
+        repo_root=repo_root,
+        codex_command=codex_command,
+        timeout=timeout,
+        token=token,
+        idle_timeout_seconds=idle_timeout_seconds,
+    )
     atexit.register(STATE.close_all)
     return ThreadingHTTPServer((host, port), BridgeRequestHandler)
 
@@ -529,10 +673,12 @@ def main() -> int:
     args = parser.parse_args()
 
     token = os.environ.get("APP_SERVER_BRIDGE_TOKEN") or None
-    server = build_server(args.host, args.port, args.codex_command, args.timeout, token)
+    idle_timeout_seconds = _read_idle_timeout_seconds()
+    server = build_server(args.host, args.port, args.codex_command, args.timeout, token, idle_timeout_seconds)
     print(f"App Server Bridge listening on http://{args.host}:{args.port}")
     print(f"codex_command={args.codex_command}")
     print(f"token_required={str(bool(token)).lower()}")
+    print(f"idle_timeout_seconds={idle_timeout_seconds}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -541,6 +687,21 @@ def main() -> int:
         server.server_close()
         _state().close_all()
     return 0
+
+
+def _read_idle_timeout_seconds() -> float:
+    raw_value = os.environ.get("APP_SERVER_BRIDGE_IDLE_TIMEOUT_SECONDS")
+    if not raw_value:
+        return DEFAULT_IDLE_TIMEOUT_SECONDS
+    try:
+        value = float(raw_value)
+    except ValueError:
+        print(
+            "Invalid APP_SERVER_BRIDGE_IDLE_TIMEOUT_SECONDS; "
+            f"using default {DEFAULT_IDLE_TIMEOUT_SECONDS}."
+        )
+        return DEFAULT_IDLE_TIMEOUT_SECONDS
+    return max(0.0, value)
 
 
 if __name__ == "__main__":
