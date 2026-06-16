@@ -20,7 +20,7 @@ codex.cmd app-server generate-json-schema --out .\poc\app_server\schema
 
 `schema` 目录下生成内容会被 `.gitignore` 忽略，仅保留 `schema/.gitkeep`。
 
-## 运行 Python POC
+## POC-1：stdio JSONL 基础通信
 
 在项目根目录执行：
 
@@ -34,7 +34,12 @@ python .\poc\app_server\app_server_stdio_client.py
 python .\poc\app_server\app_server_stdio_client.py --codex-command C:\path\to\codex.cmd
 ```
 
-## 运行事件解析 POC
+产物：
+
+- `poc/app_server/events-<timestamp>.jsonl`
+- `poc/app_server/app-server-stderr-<timestamp>.log`
+
+## POC-2：事件解析与最终回复提取
 
 在项目根目录执行：
 
@@ -57,6 +62,37 @@ poc/app_server/runs/<timestamp>/
 
 `runs` 目录会被 `.gitignore` 忽略。
 
+## POC-3：连续会话 thread 复用验证
+
+在项目根目录执行：
+
+```powershell
+python .\poc\app_server\app_server_thread_reuse_poc.py
+```
+
+该脚本会在同一个 `codex.cmd app-server --listen stdio://` 进程里只创建一个 thread，然后连续发送两轮 turn：
+
+1. `请记住这个词：justin-plus-session-test。只回复“已记住”。`
+2. `刚才让你记住的词是什么？只回复这个词。`
+
+产物目录：
+
+```text
+poc/app_server/runs/thread-reuse-<timestamp>/
+```
+
+产物：
+
+- `thread-state.json`：thread、turn、初始化和启动信息
+- `stderr.log`：本次 app-server 进程的共用 stderr
+- `turn-1/events.jsonl`
+- `turn-1/run-summary.json`
+- `turn-1/assistant-final.md`
+- `turn-2/events.jsonl`
+- `turn-2/run-summary.json`
+- `turn-2/assistant-final.md`
+- `result.json`：包含 `thread_id`、两轮最终回复、`context_retained`、期望 token 和错误列表
+
 ## 协议推断
 
 当前根据 schema 推断的最小流程是：
@@ -71,7 +107,7 @@ poc/app_server/runs/<timestamp>/
 请只回复 app-server-python-ok，不要修改任何文件。
 ```
 
-## 预期输出
+## POC-1 预期输出
 
 脚本会在 `poc/app_server` 下生成：
 
