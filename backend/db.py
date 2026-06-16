@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Generator
 
+from sqlalchemy import text
 from sqlmodel import SQLModel, Session, create_engine
 
 
@@ -33,6 +34,43 @@ def init_db() -> None:
     from backend import models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    _ensure_sqlite_columns()
+
+
+def _ensure_sqlite_columns() -> None:
+    column_specs = {
+        "projects": {
+            "test_command": "TEXT",
+            "smoke_check_command": "TEXT",
+            "default_branch": "TEXT",
+            "require_clean_worktree": "BOOLEAN",
+        },
+        "tasks": {
+            "task_type": "VARCHAR DEFAULT 'IMPLEMENT'",
+            "cancel_requested": "BOOLEAN DEFAULT 0",
+            "runner_pid": "INTEGER",
+        },
+    }
+
+    with engine.begin() as connection:
+        for table_name, columns in column_specs.items():
+            existing = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    f"PRAGMA table_info({table_name})"
+                )
+            }
+            if not existing:
+                continue
+            for column_name, column_type in columns.items():
+                if column_name in existing:
+                    continue
+                connection.execute(
+                    text(
+                        f"ALTER TABLE {table_name} "
+                        f"ADD COLUMN {column_name} {column_type}"
+                    )
+                )
 
 
 def get_session() -> Generator[Session, None, None]:

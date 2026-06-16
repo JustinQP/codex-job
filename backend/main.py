@@ -1,17 +1,30 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
+from urllib.parse import parse_qs
 from typing import Iterable
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlmodel import Session
 
 from backend.db import JOBS_DIR, get_session, init_db
-from backend.models import TaskStatus
-from backend.schemas import ProjectCreate, ProjectRead, TaskCreate, TaskRead
-from backend.services import project_service, task_service
+from backend.models import TaskStatus, TaskType
+from backend.schemas import (
+    ProjectCreate,
+    ProjectRead,
+    RunnerHeartbeat,
+    RunnerRead,
+    RunnerRegister,
+    TaskArtifactsRead,
+    TaskCreate,
+    TaskRead,
+    TaskTemplateRead,
+)
+from backend.services import project_service, runner_service, task_service
+from backend import ui
 
 
 @asynccontextmanager
@@ -22,24 +35,44 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 app = FastAPI(
     title="Codex Remote Runner MVP",
-    version="0.1.2",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
 
+def require_api_token(x_api_token: str | None = Header(default=None)) -> None:
+    expected = os.environ.get("API_TOKEN")
+    if not expected:
+        return
+    if x_api_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid API token",
+        )
+
+
 @app.get("/", include_in_schema=False)
-def index() -> HTMLResponse:
+def index(
+    project_id: int | None = None,
+    status: TaskStatus | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    projects = project_service.list_projects(session)
+    tasks = task_service.list_tasks(
+        session,
+        project_id=project_id,
+        task_status=status,
+        limit=limit,
+    )
     return HTMLResponse(
-        """
-        <!doctype html>
-        <html>
-          <head><meta charset="utf-8"><title>Codex Remote Runner</title></head>
-          <body>
-            <h1>Codex Remote Runner MVP</h1>
-            <p>Use <a href="/docs">/docs</a> for the API documentation.</p>
-          </body>
-        </html>
-        """
+        ui.dashboard(
+            projects=projects,
+            tasks=tasks,
+            selected_project_id=project_id,
+            selected_status=status,
+            limit=limit,
+        )
     )
 
 
@@ -52,19 +85,25 @@ def health() -> dict[str, str]:
 def create_project(
     payload: ProjectCreate,
     session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
 ):
-    return project_service.create_project(session, payload)
+    project = project_service.create_project(session, payload)
+    return project_service.to_project_read(project)
 
 
 @app.get("/projects", response_model=list[ProjectRead])
 def list_projects(session: Session = Depends(get_session)):
-    return project_service.list_projects(session)
+    return [
+        project_service.to_project_read(project)
+        for project in project_service.list_projects(session)
+    ]
 
 
 @app.post("/tasks", response_model=TaskRead)
 def create_task(
     payload: TaskCreate,
     session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
 ):
     task = task_service.create_task(session, payload)
     return task_service.to_task_read(task)
@@ -93,9 +132,128 @@ def get_task(task_id: int, session: Session = Depends(get_session)):
 
 
 @app.post("/tasks/{task_id}/rerun", response_model=TaskRead)
-def rerun_task(task_id: int, session: Session = Depends(get_session)):
+def rerun_task(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     task = task_service.rerun_task(session, task_id)
     return task_service.to_task_read(task)
+
+
+@app.post("/tasks/{task_id}/cancel", response_model=TaskRead)
+def cancel_task(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    task = task_service.request_cancel(session, task_id)
+    return task_service.to_task_read(task)
+
+
+@app.get("/tasks/{task_id}/artifacts", response_model=TaskArtifactsRead)
+def get_task_artifacts(task_id: int, session: Session = Depends(get_session)):
+    task = task_service.get_task_or_404(session, task_id)
+    return task_service.to_artifacts_read(task)
+
+
+@app.get("/task-templates", response_model=list[TaskTemplateRead])
+def list_task_templates():
+    return task_service.list_task_templates()
+
+
+@app.post("/runners/register", response_model=RunnerRead)
+def register_runner(
+    payload: RunnerRegister,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.register_runner(session, payload)
+
+
+@app.post("/runners/heartbeat", response_model=RunnerRead)
+def runner_heartbeat(
+    payload: RunnerHeartbeat,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.heartbeat(session, payload)
+
+
+@app.get("/runners", response_model=list[RunnerRead])
+def list_runners(
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.list_runners(session)
+
+
+@app.get("/ui/tasks/{task_id}", include_in_schema=False)
+def task_detail(task_id: int, session: Session = Depends(get_session)):
+    task = task_service.get_task_or_404(session, task_id)
+    return HTMLResponse(ui.task_detail(task))
+
+
+@app.post("/ui/tasks", include_in_schema=False)
+async def create_task_from_form(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    form = await _read_urlencoded_form(request)
+    payload = TaskCreate(
+        project_id=int(_required_form_value(form, "project_id")),
+        prompt=_required_form_value(form, "prompt"),
+        timeout_seconds=int(_required_form_value(form, "timeout_seconds")),
+        task_type=TaskType(_optional_form_value(form, "task_type") or TaskType.IMPLEMENT),
+    )
+    task = task_service.create_task(session, payload)
+    return RedirectResponse(
+        url=f"/ui/tasks/{task.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@app.post("/ui/tasks/{task_id}/rerun", include_in_schema=False)
+def rerun_task_from_form(task_id: int, session: Session = Depends(get_session)):
+    task = task_service.rerun_task(session, task_id)
+    return RedirectResponse(
+        url=f"/ui/tasks/{task.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@app.post("/ui/tasks/{task_id}/cancel", include_in_schema=False)
+def cancel_task_from_form(
+    task_id: int,
+    session: Session = Depends(get_session),
+):
+    task = task_service.request_cancel(session, task_id)
+    return RedirectResponse(
+        url=f"/ui/tasks/{task.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+async def _read_urlencoded_form(request: Request) -> dict[str, list[str]]:
+    body = await request.body()
+    return parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+
+
+def _required_form_value(form: dict[str, list[str]], name: str) -> str:
+    values = form.get(name)
+    if not values or not values[0].strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"missing form field: {name}",
+        )
+    return values[0].strip()
+
+
+def _optional_form_value(form: dict[str, list[str]], name: str) -> str | None:
+    values = form.get(name)
+    if not values or not values[0].strip():
+        return None
+    return values[0].strip()
 
 
 def _read_task_artifact(task_id: int, attr_name: str, session: Session) -> str:
@@ -138,3 +296,45 @@ def get_task_result(task_id: int, session: Session = Depends(get_session)):
 @app.get("/tasks/{task_id}/diff", response_class=PlainTextResponse)
 def get_task_diff(task_id: int, session: Session = Depends(get_session)):
     return _read_task_artifact(task_id, "diff_file", session)
+
+
+@app.get("/tasks/{task_id}/artifacts/git-status", response_class=PlainTextResponse)
+def get_task_git_status(task_id: int, session: Session = Depends(get_session)):
+    task = task_service.get_task_or_404(session, task_id)
+    if not task.diff_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="artifact path is not available",
+        )
+    git_status_path = Path(task.diff_file).resolve().parent / "git-status.txt"
+    return _read_artifact_path(git_status_path)
+
+
+@app.get("/tasks/{task_id}/artifacts/report", response_class=PlainTextResponse)
+def get_task_report(task_id: int, session: Session = Depends(get_session)):
+    task = task_service.get_task_or_404(session, task_id)
+    if not task.diff_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="artifact path is not available",
+        )
+    report_path = Path(task.diff_file).resolve().parent / "task-report.md"
+    return _read_artifact_path(report_path)
+
+
+def _read_artifact_path(path: Path) -> str:
+    path = path.resolve()
+    jobs_root = JOBS_DIR.resolve()
+    try:
+        path.relative_to(jobs_root)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="artifact path is outside jobs directory",
+        ) from exc
+    if not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="artifact file not found",
+        )
+    return path.read_text(encoding="utf-8", errors="replace")

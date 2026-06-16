@@ -8,7 +8,7 @@ from sqlmodel.pool import StaticPool
 
 from backend.main import app
 from backend.db import get_session
-from backend.models import Project, Task, TaskStatus, utc_now
+from backend.models import Project, Task, TaskStatus, TaskType, utc_now
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -160,3 +160,32 @@ def test_create_task_rejects_timeout_outside_bounds() -> None:
         assert too_long.status_code == 422
         assert valid.status_code == 200
         assert valid.json()["timeout_seconds"] == 30
+
+
+def test_cancel_pending_task_marks_cancelled() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        task = add_task(
+            session,
+            project_id=project.id,
+            prompt="cancel me",
+            task_status=TaskStatus.PENDING,
+        )
+
+        response = client.post(f"/tasks/{task.id}/cancel")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "CANCELLED"
+        assert body["cancel_requested"] is True
+
+
+def test_task_templates_are_exposed() -> None:
+    for client, session in make_client():
+        del session
+        response = client.get("/task-templates")
+
+        assert response.status_code == 200
+        task_types = {item["task_type"] for item in response.json()}
+        assert TaskType.PLAN.value in task_types
+        assert TaskType.IMPLEMENT.value in task_types

@@ -5,9 +5,10 @@ import platform
 import shutil
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from runner.config import GIT_DIFF_TIMEOUT_SECONDS
 
@@ -58,6 +59,7 @@ def execute_codex(
     log_file: Path,
     result_file: Path,
     timeout_seconds: int,
+    should_cancel: Optional[Callable[[], bool]] = None,
 ) -> CodexExecutionResult:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     result_file.parent.mkdir(parents=True, exist_ok=True)
@@ -125,20 +127,36 @@ def execute_codex(
         stream_thread.start()
 
         timed_out = False
-        try:
-            exit_code = process.wait(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            exit_code = -1
-            log.write(f"\nERROR: task timed out after {timeout_seconds} seconds\n")
-            log.write(f"Attempting to stop process tree for pid={process.pid}\n")
-            log.flush()
-            _stop_process_tree(process, log)
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                log.write("ERROR: process did not exit cleanly after kill\n")
+        deadline = time.monotonic() + timeout_seconds
+        cancelled = False
+        exit_code: Optional[int] = None
+        while exit_code is None:
+            exit_code = process.poll()
+            if exit_code is not None:
+                break
+            if should_cancel is not None and should_cancel():
+                cancelled = True
+                exit_code = -1
+                log.write(f"\nERROR: cancellation requested for pid={process.pid}\n")
+                log.write(f"Attempting to stop process tree for pid={process.pid}\n")
                 log.flush()
+                _stop_process_tree(process, log)
+                break
+            if time.monotonic() >= deadline:
+                timed_out = True
+                exit_code = -1
+                log.write(f"\nERROR: task timed out after {timeout_seconds} seconds\n")
+                log.write(f"Attempting to stop process tree for pid={process.pid}\n")
+                log.flush()
+                _stop_process_tree(process, log)
+                break
+            time.sleep(1)
+
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            log.write("ERROR: process did not exit cleanly after stop request\n")
+            log.flush()
 
         stream_thread.join(timeout=5)
         log.write(f"\nCodex exit code: {exit_code}\n")
@@ -147,6 +165,8 @@ def execute_codex(
     error_message = None
     if timed_out:
         error_message = f"task timed out after {timeout_seconds} seconds"
+    elif cancelled:
+        error_message = "task cancelled"
     elif exit_code != 0:
         error_message = f"codex exited with code {exit_code}"
 

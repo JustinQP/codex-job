@@ -33,10 +33,60 @@ Codex CLI + local git repository
 ### 后端
 
 - 提供项目和任务 API。
+- 提供一个简单 HTML 管理页面。
 - 使用 SQLModel 操作 SQLite。
 - 不执行 Codex，不提供 shell 执行接口。
 - 只读取 `data/jobs/<task_id>/` 下的任务产物。
 - 任务响应只暴露 `log_url`、`result_url`、`diff_url`，不暴露本机绝对路径。
+
+### HTML 管理页面
+
+v0.2.0 增加服务端渲染的简单 HTML 页面，不引入 Vue 或前端构建工具。
+
+页面范围：
+
+- `/`：项目列表、创建任务、任务列表、任务筛选。
+- `/ui/tasks/{task_id}`：任务详情、产物链接、重跑入口。
+- `/ui/tasks`：表单创建任务。
+- `/ui/tasks/{task_id}/rerun`：表单重跑任务。
+
+页面仍复用现有 service，不引入新的任务执行路径。
+
+### 任务取消与运行控制
+
+v0.2.1 增加任务取消：
+
+- `POST /tasks/{task_id}/cancel`
+- `PENDING` 任务直接变为 `CANCELLED`。
+- `RUNNING` 任务设置 `cancel_requested=true`。
+- Runner 执行 Codex 时定期检查取消标记。
+- Windows 下使用 `taskkill /PID <pid> /T /F` 尽量终止进程树。
+- 非 Windows 使用 terminate/kill。
+
+### 工程化工作流
+
+v0.3.0 增加：
+
+- 任务类型：`PLAN`、`IMPLEMENT`、`REVIEW`、`TEST_FIX`、`DOCS`、`COMMIT`。
+- `GET /task-templates` 返回内置 prompt 模板。
+- 项目配置字段：`test_command`、`smoke_check_command`、`default_branch`、`require_clean_worktree`。
+- 执行产物增加 `test-output.txt` 和 `task-report.md`。
+
+v0.3.0 不自动执行 `test_command` 和 `smoke_check_command`，只写入报告，避免把远程 API 变成任意 shell 执行入口。
+
+### 远程 Runner 前置安全边界
+
+v0.4.0 增加远程使用前置条件：
+
+- 可选 `API_TOKEN`，启用后写接口需要 `X-API-Token`。
+- 可选 `PROJECT_PATH_WHITELIST`，限制新增项目路径。
+- 项目 API 和 HTML 页面不返回本机绝对路径。
+- Runner 注册和心跳：
+  - `POST /runners/register`
+  - `POST /runners/heartbeat`
+  - `GET /runners`
+
+这仍不是多 Runner 调度系统，也不建议直接暴露到公网。
 
 ### Runner
 
@@ -74,6 +124,10 @@ id
 name
 path
 enabled
+test_command
+smoke_check_command
+default_branch
+require_clean_worktree
 created_at
 updated_at
 ```
@@ -84,10 +138,13 @@ updated_at
 id
 project_id
 prompt
+task_type
 status
 timeout_seconds
 exit_code
 error_message
+cancel_requested
+runner_pid
 log_file
 result_file
 diff_file
@@ -146,6 +203,8 @@ data/jobs/<task_id>/git-status.txt
 data/jobs/<task_id>/diff-unstaged.patch
 data/jobs/<task_id>/diff-staged.patch
 data/jobs/<task_id>/untracked-files.txt
+data/jobs/<task_id>/test-output.txt
+data/jobs/<task_id>/task-report.md
 ```
 
 `diff.patch` 是为了兼容 `/tasks/{task_id}/diff` 的组合文本，包含 git 状态、未暂存 diff、已暂存 diff 和未跟踪文件列表。
@@ -171,6 +230,9 @@ REQUIRE_CLEAN_WORKTREE=true
 v0.1 的安全边界是单机可信环境下的最小约束：
 
 - 后端不提供任意 shell 命令执行接口。
+- 启用 `API_TOKEN` 后，写接口需要 token。
+- 启用 `PROJECT_PATH_WHITELIST` 后，只允许配置白名单内项目路径。
+- API 和 HTML 页面不返回本机绝对路径。
 - 任务只能绑定到已配置项目。
 - 项目创建时校验路径必须存在且为目录。
 - Runner 执行前再次校验项目路径存在且项目已启用。
@@ -185,10 +247,9 @@ v0.1 的安全边界是单机可信环境下的最小约束：
 
 当前未实现：
 
-- 用户身份认证。
-- 项目级权限隔离。
+- 多用户账号体系。
+- 项目级细粒度权限隔离。
 - Prompt 内容安全审核。
-- 任务取消时对子进程的精细控制。
 - 多 Runner 并发执行。
 
 ## 8. API
@@ -203,9 +264,15 @@ POST /tasks
 GET  /tasks
 GET  /tasks/{task_id}
 POST /tasks/{task_id}/rerun
+POST /tasks/{task_id}/cancel
+GET  /tasks/{task_id}/artifacts
 GET  /tasks/{task_id}/log
 GET  /tasks/{task_id}/result
 GET  /tasks/{task_id}/diff
+GET  /task-templates
+POST /runners/register
+POST /runners/heartbeat
+GET  /runners
 ```
 
 API 详细字段以 FastAPI `/docs` 为准。

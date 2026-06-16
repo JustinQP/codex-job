@@ -98,8 +98,31 @@ scripts\start.bat runner-once
 
 默认地址：
 
+- 管理页面：http://127.0.0.1:8000/
 - API 文档：http://127.0.0.1:8000/docs
 - 健康检查：http://127.0.0.1:8000/health
+
+## HTML 管理页面
+
+v0.2.0 提供一个简单 HTML 管理页面，不引入 Vue 或前端构建工具。
+
+页面入口：
+
+```text
+http://127.0.0.1:8000/
+```
+
+支持：
+
+- 查看项目列表
+- 创建任务
+- 选择任务类型：`PLAN`、`IMPLEMENT`、`REVIEW`、`TEST_FIX`、`DOCS`、`COMMIT`
+- 查看任务列表
+- 按项目、状态、数量筛选任务
+- 查看任务详情
+- 打开 log/result/diff
+- 基于旧任务 prompt 重跑
+- 取消 `PENDING` 或 `RUNNING` 任务
 
 ## 手动启动
 
@@ -200,6 +223,82 @@ curl -X POST http://127.0.0.1:8000/tasks/1/rerun
 
 重跑会复制原任务的 `project_id`、`prompt`、`timeout_seconds`，创建一个新的 `PENDING` 任务，并生成新的任务产物路径。
 
+## 取消任务
+
+```bash
+curl -X POST http://127.0.0.1:8000/tasks/1/cancel
+```
+
+- `PENDING` 任务会直接变为 `CANCELLED`。
+- `RUNNING` 任务会标记 `cancel_requested=true`，Runner 轮询到取消请求后会终止 Codex 进程树，并将任务状态更新为 `CANCELLED`。
+
+## 工程化工作流
+
+任务支持 `task_type`：
+
+```text
+PLAN
+IMPLEMENT
+REVIEW
+TEST_FIX
+DOCS
+COMMIT
+```
+
+内置模板接口：
+
+```bash
+curl http://127.0.0.1:8000/task-templates
+```
+
+项目配置支持以下工作流字段：
+
+```text
+test_command
+smoke_check_command
+default_branch
+require_clean_worktree
+```
+
+Runner 会生成：
+
+```text
+data/jobs/<task_id>/test-output.txt
+data/jobs/<task_id>/task-report.md
+```
+
+v0.3.0 中 `test_command` 和 `smoke_check_command` 只记录到报告，不自动执行，避免引入远程任意 shell 执行风险。
+
+## 远程安全边界
+
+可选启用 API Token：
+
+```bat
+set API_TOKEN=your-token
+```
+
+启用后，创建项目、创建任务、重跑、取消、Runner 注册和心跳等写接口需要请求头：
+
+```text
+X-API-Token: your-token
+```
+
+可选限制项目路径白名单：
+
+```bat
+set PROJECT_PATH_WHITELIST=E:\JustinQP
+```
+
+多个路径在 Windows 下使用分号分隔。项目 API 和页面不会返回本机绝对路径。
+
+Runner 注册和心跳接口：
+
+```text
+POST /runners/register
+POST /runners/heartbeat
+GET  /runners
+```
+
 任务产物默认保存到：
 
 ```text
@@ -211,6 +310,8 @@ data/jobs/<task_id>/
   diff-unstaged.patch
   diff-staged.patch
   untracked-files.txt
+  test-output.txt
+  task-report.md
 ```
 
 说明：

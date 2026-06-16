@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import socket
 import logging
 import os
 import sys
@@ -33,6 +34,7 @@ from runner.config import (  # noqa: E402
 
 
 logger = logging.getLogger("codex-runner")
+RUNNER_ID = f"{socket.gethostname()}-{os.getpid()}"
 
 
 class RunnerLock:
@@ -146,6 +148,10 @@ def process_task(task_id: int) -> None:
         timeout_seconds = task.timeout_seconds or DEFAULT_TIMEOUT_SECONDS
         project_path = Path(project.path) if project else None
         project_enabled = bool(project.enabled) if project else False
+        project_require_clean_worktree = (
+            project.require_clean_worktree if project else None
+        )
+        task.runner_pid = os.getpid()
         session.add(task)
         session.commit()
 
@@ -161,7 +167,11 @@ def process_task(task_id: int) -> None:
         return
 
     assert project_path is not None
-    preflight_error = validate_git_preflight(project_path, log_file)
+    preflight_error = validate_git_preflight(
+        project_path,
+        log_file,
+        require_clean=project_require_clean_worktree,
+    )
     if preflight_error:
         finish_task(
             task_id,
@@ -177,24 +187,100 @@ def process_task(task_id: int) -> None:
         log_file=log_file,
         result_file=result_file,
         timeout_seconds=timeout_seconds,
+        should_cancel=lambda: is_cancel_requested(task_id),
     )
     diff_error = collect_git_artifacts(project_path, diff_file.parent).error_message
+    test_output_error = write_test_output(task_id)
 
     error_messages = [
-        message for message in (execution.error_message, diff_error) if message
+        message
+        for message in (execution.error_message, diff_error, test_output_error)
+        if message
     ]
-    status = TaskStatus.SUCCESS if not error_messages else TaskStatus.FAILED
+    if execution.error_message == "task cancelled":
+        status = TaskStatus.CANCELLED
+    else:
+        status = TaskStatus.SUCCESS if not error_messages else TaskStatus.FAILED
     finish_task(
         task_id,
         status=status,
         exit_code=execution.exit_code,
         error_message="; ".join(error_messages) if error_messages else None,
     )
+    write_task_report(task_id)
     logger.info("task %s finished with status %s", task_id, status.value)
 
 
-def validate_git_preflight(project_path: Path, log_file: Path) -> Optional[str]:
-    if require_clean_worktree():
+def is_cancel_requested(task_id: int) -> bool:
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        return bool(task and task.cancel_requested)
+
+
+def write_test_output(task_id: int) -> Optional[str]:
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        if task is None or not task.diff_file:
+            return "test output could not be written"
+        project = session.get(Project, task.project_id)
+
+        test_output_path = Path(task.diff_file).resolve().parent / "test-output.txt"
+        lines = [
+            "Configured checks are recorded but not executed automatically in v0.3.0.",
+            "This avoids exposing a remote arbitrary shell execution path.",
+            "",
+            f"test_command={project.test_command if project else ''}",
+            f"smoke_check_command={project.smoke_check_command if project else ''}",
+        ]
+        test_output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return None
+
+
+def write_task_report(task_id: int) -> Optional[str]:
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        if task is None or not task.diff_file:
+            return "task report could not be written"
+        project = session.get(Project, task.project_id)
+        report_path = Path(task.diff_file).resolve().parent / "task-report.md"
+        content = "\n".join(
+            [
+                f"# Task {task.id} Report",
+                "",
+                f"- Status: {task.status.value}",
+                f"- Task type: {task.task_type.value}",
+                f"- Project id: {task.project_id}",
+                f"- Timeout seconds: {task.timeout_seconds}",
+                f"- Exit code: {task.exit_code}",
+                f"- Cancel requested: {task.cancel_requested}",
+                f"- Error: {task.error_message or ''}",
+                f"- Project default branch: {project.default_branch if project else ''}",
+                f"- Project test command: {project.test_command if project else ''}",
+                f"- Project smoke check command: {project.smoke_check_command if project else ''}",
+                "",
+                "## Artifacts",
+                "",
+                "- result.md",
+                "- git-status.txt",
+                "- diff-unstaged.patch",
+                "- diff-staged.patch",
+                "- untracked-files.txt",
+                "- diff.patch",
+                "- test-output.txt",
+            ]
+        )
+        report_path.write_text(content + "\n", encoding="utf-8")
+        return None
+
+
+def validate_git_preflight(
+    project_path: Path,
+    log_file: Path,
+    *,
+    require_clean: Optional[bool] = None,
+) -> Optional[str]:
+    clean_required = require_clean_worktree() if require_clean is None else require_clean
+    if clean_required:
         error_message = check_clean_worktree(project_path)
     else:
         error_message = ensure_git_repository(project_path)
@@ -250,6 +336,7 @@ def finish_task(
         task.status = status
         task.exit_code = exit_code
         task.error_message = error_message
+        task.runner_pid = None
         task.finished_at = now
         task.updated_at = now
         session.add(task)
@@ -267,11 +354,13 @@ def run_loop(*, once: bool, poll_interval: float) -> None:
     runner_lock = RunnerLock(RUNNER_LOCK_FILE)
     runner_lock.acquire()
     atexit.register(runner_lock.release)
+    write_runner_record()
     logger.info("runner started")
 
     try:
         while True:
             task_id = claim_next_pending_task()
+            write_runner_record()
             if task_id is None:
                 if once:
                     logger.info("no pending task found")
@@ -294,6 +383,30 @@ def run_loop(*, once: bool, poll_interval: float) -> None:
                 return
     finally:
         runner_lock.release()
+
+
+def write_runner_record() -> None:
+    from backend.models import RunnerRecord
+
+    with Session(engine) as session:
+        now = utc_now()
+        runner = session.get(RunnerRecord, RUNNER_ID)
+        if runner is None:
+            runner = RunnerRecord(
+                runner_id=RUNNER_ID,
+                pid=os.getpid(),
+                hostname=socket.gethostname(),
+                status="ONLINE",
+                registered_at=now,
+                last_heartbeat_at=now,
+            )
+        else:
+            runner.pid = os.getpid()
+            runner.hostname = socket.gethostname()
+            runner.status = "ONLINE"
+            runner.last_heartbeat_at = now
+        session.add(runner)
+        session.commit()
 
 
 def parse_args() -> argparse.Namespace:
