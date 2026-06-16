@@ -44,12 +44,18 @@ def _ensure_sqlite_columns() -> None:
             "smoke_check_command": "TEXT",
             "default_branch": "TEXT",
             "require_clean_worktree": "BOOLEAN",
+            "default_runner_id": "TEXT",
         },
         "tasks": {
             "task_type": "VARCHAR DEFAULT 'IMPLEMENT'",
             "cancel_requested": "BOOLEAN DEFAULT 0",
+            "assigned_runner_id": "TEXT",
             "runner_id": "TEXT",
             "runner_pid": "INTEGER",
+            "lease_expires_at": "TIMESTAMP",
+        },
+        "runner_records": {
+            "lease_expires_at": "TIMESTAMP",
         },
     }
 

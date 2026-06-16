@@ -44,6 +44,7 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
         smoke_check_command=payload.smoke_check_command,
         default_branch=payload.default_branch,
         require_clean_worktree=payload.require_clean_worktree,
+        default_runner_id=payload.default_runner_id,
         created_at=utc_now(),
         updated_at=utc_now(),
     )
@@ -103,6 +104,7 @@ def to_project_read(project: Project):
         smoke_check_command=project.smoke_check_command,
         default_branch=project.default_branch,
         require_clean_worktree=project.require_clean_worktree,
+        default_runner_id=project.default_runner_id,
         created_at=project.created_at,
         updated_at=project.updated_at,
     )

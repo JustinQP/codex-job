@@ -4,6 +4,8 @@
 
 v0.5.0 起，Runner 不再直接访问后端 SQLite，也不再共享后端 `data/jobs` 目录。后端保存任务状态和上传后的产物，Runner 只通过 `/runner/...` HTTP API 注册、心跳、认领任务和回传结果。
 
+v0.6.0 起，后端支持多 Runner 基础调度：原子 claim、Runner lease、离线检测、RUNNING 任务超时回收、任务指定 `assigned_runner_id`，以及项目默认 `default_runner_id`。
+
 v0.1 只覆盖单机 MVP：
 
 - Python + FastAPI 后端
@@ -188,6 +190,26 @@ PowerShell：
 Invoke-RestMethod -Method Post http://127.0.0.1:8000/tasks `
   -ContentType "application/json" `
   -Body '{"project_id":1,"prompt":"请查看 README.md 并总结项目用途。","timeout_seconds":7200}'
+```
+
+指定 Runner 执行任务：
+
+```json
+{
+  "project_id": 1,
+  "prompt": "请检查 README.md",
+  "assigned_runner_id": "desktop-001"
+}
+```
+
+项目也可以配置默认 Runner：
+
+```json
+{
+  "name": "demo",
+  "path": "E:\\JustinQP\\codex-job",
+  "default_runner_id": "desktop-001"
+}
 ```
 
 ## Demo 脚本
@@ -445,7 +467,7 @@ python -c "from backend.db import init_db; init_db(); print('db ok')"
 
 - 暂不支持用户登录、细粒度权限、审计。
 - `API_TOKEN` 只是共享密钥保护，不是完整账号体系。
-- Runner 不再直接访问 SQLite 或后端 `data/jobs`，但仍不是多租户、多 Runner 调度系统。
+- Runner 不再直接访问 SQLite 或后端 `data/jobs`，但仍不是多租户调度系统。
 - `upload-pending.json` 只记录待补传状态，暂未提供自动补传队列。
 - 暂不支持任务自动重试和全文搜索。
-- Runner 适合单机单进程使用，本版本只用 lock 文件限制同一 data 目录下的单 Runner。
+- 单个 Runner 本地仍使用 lock 文件限制同一 data 目录下的重复启动；多个 Runner 需要使用不同 `RUNNER_ID` 和独立本地 data 目录。

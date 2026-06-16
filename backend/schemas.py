@@ -16,6 +16,7 @@ class ProjectCreate(BaseModel):
     smoke_check_command: Optional[str] = None
     default_branch: Optional[str] = None
     require_clean_worktree: Optional[bool] = None
+    default_runner_id: Optional[str] = None
 
 
 class ProjectRead(BaseModel):
@@ -27,6 +28,7 @@ class ProjectRead(BaseModel):
     smoke_check_command: Optional[str]
     default_branch: Optional[str]
     require_clean_worktree: Optional[bool]
+    default_runner_id: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -36,6 +38,7 @@ class TaskCreate(BaseModel):
     prompt: str = Field(..., min_length=1)
     timeout_seconds: int = Field(default=7200, ge=30, le=21600)
     task_type: TaskType = TaskType.IMPLEMENT
+    assigned_runner_id: Optional[str] = None
 
 
 class TaskRead(BaseModel):
@@ -48,8 +51,10 @@ class TaskRead(BaseModel):
     exit_code: Optional[int]
     error_message: Optional[str]
     cancel_requested: bool
+    assigned_runner_id: Optional[str]
     runner_id: Optional[str]
     runner_pid: Optional[int]
+    lease_expires_at: Optional[datetime]
     log_url: str
     result_url: str
     diff_url: str
@@ -92,6 +97,7 @@ class RunnerRead(BaseModel):
     status: str
     registered_at: datetime
     last_heartbeat_at: datetime
+    lease_expires_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
 

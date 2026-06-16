@@ -82,6 +82,7 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
         task_type=payload.task_type,
         timeout_seconds=payload.timeout_seconds,
         status=TaskStatus.PENDING,
+        assigned_runner_id=payload.assigned_runner_id or project.default_runner_id,
         created_at=now,
         updated_at=now,
     )
@@ -166,8 +167,10 @@ def to_task_read(task: Task):
         exit_code=task.exit_code,
         error_message=task.error_message,
         cancel_requested=task.cancel_requested,
+        assigned_runner_id=task.assigned_runner_id,
         runner_id=task.runner_id,
         runner_pid=task.runner_pid,
+        lease_expires_at=task.lease_expires_at,
         log_url=f"/tasks/{task.id}/log",
         result_url=f"/tasks/{task.id}/result",
         diff_url=f"/tasks/{task.id}/diff",

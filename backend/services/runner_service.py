@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import HTTPException, status
+from sqlalchemy import or_, update
 from sqlmodel import Session, select
 
 from backend.db import JOBS_DIR
@@ -16,9 +18,13 @@ from backend.schemas import (
     RunnerTaskLogUpload,
 )
 
+RUNNER_LEASE_SECONDS = 60
+RUNNING_TASK_LEASE_SECONDS = 120
+
 
 def register_runner(session: Session, payload: RunnerRegister) -> RunnerRecord:
     now = utc_now()
+    lease_expires_at = now + timedelta(seconds=RUNNER_LEASE_SECONDS)
     runner = session.get(RunnerRecord, payload.runner_id)
     if runner is None:
         runner = RunnerRecord(
@@ -28,12 +34,14 @@ def register_runner(session: Session, payload: RunnerRegister) -> RunnerRecord:
             status="ONLINE",
             registered_at=now,
             last_heartbeat_at=now,
+            lease_expires_at=lease_expires_at,
         )
     else:
         runner.pid = payload.pid
         runner.hostname = payload.hostname
         runner.status = "ONLINE"
         runner.last_heartbeat_at = now
+        runner.lease_expires_at = lease_expires_at
     session.add(runner)
     session.commit()
     session.refresh(runner)
@@ -50,14 +58,24 @@ def heartbeat(session: Session, payload: RunnerHeartbeat) -> RunnerRecord:
 
 
 def list_runners(session: Session) -> list[RunnerRecord]:
+    mark_offline_runners(session)
     return list(session.exec(select(RunnerRecord).order_by(RunnerRecord.runner_id)).all())
 
 
 def claim_task(session: Session, runner_id: str) -> RunnerTaskClaimResponse | None:
+    mark_offline_runners(session)
+    recover_expired_running_tasks(session)
     now = utc_now()
+    task_lease_expires_at = now + timedelta(seconds=RUNNING_TASK_LEASE_SECONDS)
     task = session.exec(
         select(Task)
-        .where(Task.status == TaskStatus.PENDING)
+        .where(
+            Task.status == TaskStatus.PENDING,
+            or_(
+                Task.assigned_runner_id.is_(None),
+                Task.assigned_runner_id == runner_id,
+            ),
+        )
         .order_by(Task.created_at)
     ).first()
     if task is None or task.id is None:
@@ -73,13 +91,28 @@ def claim_task(session: Session, runner_id: str) -> RunnerTaskClaimResponse | No
         session.commit()
         return None
 
-    task.status = TaskStatus.RUNNING
-    task.started_at = now
-    task.updated_at = now
-    task.runner_id = runner_id
-    task.runner_pid = None
-    session.add(task)
+    result = session.exec(
+        update(Task)
+        .where(
+            Task.id == task.id,
+            Task.status == TaskStatus.PENDING,
+            or_(
+                Task.assigned_runner_id.is_(None),
+                Task.assigned_runner_id == runner_id,
+            ),
+        )
+        .values(
+            status=TaskStatus.RUNNING,
+            started_at=now,
+            updated_at=now,
+            runner_id=runner_id,
+            runner_pid=None,
+            lease_expires_at=task_lease_expires_at,
+        )
+    )
     session.commit()
+    if result.rowcount != 1:
+        return None
     session.refresh(task)
 
     return RunnerTaskClaimResponse(
@@ -109,6 +142,7 @@ def upload_task_log(
         log_file.write(payload.content)
     task.log_file = str(log_path)
     task.updated_at = utc_now()
+    task.lease_expires_at = utc_now() + timedelta(seconds=RUNNING_TASK_LEASE_SECONDS)
     session.add(task)
     session.commit()
     return {"status": "ok"}
@@ -139,6 +173,7 @@ def upload_task_artifacts(
     task.result_file = str(job_dir / "result.md")
     task.diff_file = str(job_dir / "diff.patch")
     task.updated_at = utc_now()
+    task.lease_expires_at = utc_now() + timedelta(seconds=RUNNING_TASK_LEASE_SECONDS)
     session.add(task)
     session.commit()
     return {"status": "ok"}
@@ -165,6 +200,7 @@ def finish_task(
     task.error_message = payload.error_message
     task.runner_id = None
     task.runner_pid = None
+    task.lease_expires_at = None
     task.finished_at = now
     task.updated_at = now
     session.add(task)
@@ -174,7 +210,53 @@ def finish_task(
 
 
 def get_cancel_state(session: Session, task_id: int, runner_id: str) -> Task:
-    return _get_runner_task(session, task_id, runner_id)
+    task = _get_runner_task(session, task_id, runner_id)
+    task.lease_expires_at = utc_now() + timedelta(seconds=RUNNING_TASK_LEASE_SECONDS)
+    task.updated_at = utc_now()
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
+def mark_offline_runners(session: Session) -> int:
+    now = utc_now()
+    runners = session.exec(
+        select(RunnerRecord).where(
+            RunnerRecord.status == "ONLINE",
+            RunnerRecord.lease_expires_at.is_not(None),
+            RunnerRecord.lease_expires_at < now,
+        )
+    ).all()
+    for runner in runners:
+        runner.status = "OFFLINE"
+        session.add(runner)
+    if runners:
+        session.commit()
+    return len(runners)
+
+
+def recover_expired_running_tasks(session: Session) -> int:
+    now = utc_now()
+    tasks = session.exec(
+        select(Task).where(
+            Task.status == TaskStatus.RUNNING,
+            Task.lease_expires_at.is_not(None),
+            Task.lease_expires_at < now,
+        )
+    ).all()
+    for task in tasks:
+        task.status = TaskStatus.PENDING
+        task.runner_id = None
+        task.runner_pid = None
+        task.lease_expires_at = None
+        task.started_at = None
+        task.updated_at = now
+        task.error_message = "recovered from expired runner lease"
+        session.add(task)
+    if tasks:
+        session.commit()
+    return len(tasks)
 
 
 def _get_runner_task(session: Session, task_id: int, runner_id: str) -> Task:

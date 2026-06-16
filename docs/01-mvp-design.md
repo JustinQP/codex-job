@@ -2,15 +2,16 @@
 
 ## 1. 目标
 
-v0.5.0 目标是提供一个真正通过 HTTP 通信的最小远程 Runner 闭环：
+v0.6.0 目标是在 HTTP Runner 闭环基础上提供多 Runner 和恢复能力：
 
 1. 通过 HTTP API 配置允许执行的项目目录。
 2. 通过 HTTP API 创建 Codex 任务。
 3. 独立 Runner 进程通过 HTTP 认领待执行任务。
 4. Runner 在项目目录内调用本机 Codex CLI。
 5. 保存日志、最后结果、git 状态和 diff 产物，供 API 查询。
+6. 支持任务指定 Runner、项目默认 Runner、Runner lease、离线检测和 RUNNING 任务超时回收。
 
-v0.5.0 不解决多用户、多租户、分布式调度、复杂权限、自动提交和自动发布。
+v0.6.0 不解决多用户、多租户、复杂权限、自动提交和自动发布。
 
 v0.5.0 起，Runner 不再直接访问后端 SQLite，也不共享后端 `data/jobs` 目录。后端保存任务状态和上传后的产物，Runner 只通过 `/runner/...` HTTP API 注册、心跳、认领任务和回传结果。
 
@@ -113,12 +114,18 @@ v0.5.0 将 Runner 改为 HTTP client：
 - Runner 执行中定期通过 HTTP 上传日志。
 - Runner 执行完成后通过 HTTP 上传日志、结果和 git 产物。
 - v0.5.2 起，Runner 对临时网络错误和 HTTP 5xx 做短重试；最终产物上传失败时，本地任务目录保留 `upload-pending.json`。
+- v0.6.0 起，后端使用原子 claim 防止多个 Runner 认领同一任务。
+- Runner 注册和心跳会刷新 lease，后端可将 lease 过期 Runner 标记为 `OFFLINE`。
+- RUNNING 任务 lease 过期后可回收到 `PENDING` 重新认领。
+- 任务可设置 `assigned_runner_id`，项目可设置 `default_runner_id`。
 
 ### Runner
 
 - 独立 Python 进程。
 - 通过 HTTP 轮询后端任务。
 - 由后端原子认领 `PENDING` 任务并标记为 `RUNNING`。
+- 只认领未指定 Runner 或指定给当前 `RUNNER_ID` 的任务。
+- 执行中通过日志上传、产物上传或 cancel-state 查询刷新任务 lease。
 - 校验项目路径存在、路径为目录。
 - 执行前校验项目必须是 git 仓库。
 - 默认要求 git 工作区干净。
@@ -141,6 +148,7 @@ data/app.db
 
 - `projects`：项目配置。
 - `tasks`：任务状态和产物路径。
+- `runner_records`：Runner 注册、心跳、状态和 lease。
 
 ## 3. 数据模型
 
@@ -155,6 +163,7 @@ test_command
 smoke_check_command
 default_branch
 require_clean_worktree
+default_runner_id
 created_at
 updated_at
 ```
@@ -171,8 +180,10 @@ timeout_seconds
 exit_code
 error_message
 cancel_requested
+assigned_runner_id
 runner_id
 runner_pid
+lease_expires_at
 log_file
 result_file
 diff_file
@@ -255,7 +266,7 @@ REQUIRE_CLEAN_WORKTREE=true
 
 ## 7. 安全边界
 
-v0.5.0 的安全边界是局域网/可信 Runner 环境下的最小约束：
+v0.6.0 的安全边界是局域网/可信 Runner 环境下的最小约束：
 
 - 后端不提供任意 shell 命令执行接口。
 - 启用 `API_TOKEN` 后，除 `/health` 外所有 API 读写接口需要 token。
@@ -282,7 +293,6 @@ v0.5.0 的安全边界是局域网/可信 Runner 环境下的最小约束：
 - 多用户账号体系。
 - 项目级细粒度权限隔离。
 - Prompt 内容安全审核。
-- 多 Runner 并发执行。
 - Runner 端产物上传大小限制。
 - `upload-pending.json` 自动补传队列。
 
@@ -361,7 +371,7 @@ python -c "from backend.db import init_db; init_db(); print('db ok')"
 
 优先级建议：
 
-1. 增加更完整的 Runner 崩溃恢复和 RUNNING 超时回收。
+1. 增加更完整的 Runner 崩溃恢复审计和恢复历史。
 2. 增加任务自动重试和失败原因分类。
 3. 增加 UI token 输入或本地 session。
 4. 增加 Runner 上传大小限制和更细的 artifact 校验。

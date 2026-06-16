@@ -162,6 +162,42 @@ def test_create_task_rejects_timeout_outside_bounds() -> None:
         assert valid.json()["timeout_seconds"] == 30
 
 
+def test_create_task_supports_assigned_runner_id() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+
+        response = client.post(
+            "/tasks",
+            json={
+                "project_id": project.id,
+                "prompt": "assigned",
+                "assigned_runner_id": "runner-a",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["assigned_runner_id"] == "runner-a"
+
+
+def test_create_task_inherits_project_default_runner() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        project.default_runner_id = "runner-default"
+        session.add(project)
+        session.commit()
+
+        response = client.post(
+            "/tasks",
+            json={
+                "project_id": project.id,
+                "prompt": "default runner",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["assigned_runner_id"] == "runner-default"
+
+
 def test_cancel_pending_task_marks_cancelled() -> None:
     for client, session in make_client():
         project = add_project(session)
