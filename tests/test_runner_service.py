@@ -213,7 +213,35 @@ def test_mark_offline_runners_updates_expired_lease() -> None:
         session.close()
 
 
-def test_recover_expired_running_tasks_requeues_task(tmp_path: Path) -> None:
+def test_recover_expired_running_tasks_fails_task_by_default(tmp_path: Path) -> None:
+    session = make_session()
+    try:
+        task = add_project_and_task(session, tmp_path / "project")
+        task.status = TaskStatus.RUNNING
+        task.runner_id = "runner-a"
+        task.lease_expires_at = utc_now() - timedelta(seconds=1)
+        task.started_at = utc_now() - timedelta(minutes=5)
+        session.add(task)
+        session.commit()
+
+        count = runner_service.recover_expired_running_tasks(session)
+
+        recovered = session.get(Task, task.id)
+        assert count == 1
+        assert recovered.status == TaskStatus.FAILED
+        assert recovered.runner_id is None
+        assert recovered.lease_expires_at is None
+        assert recovered.error_message == "failed from expired runner lease"
+        assert recovered.finished_at is not None
+    finally:
+        session.close()
+
+
+def test_recover_expired_running_tasks_can_requeue_with_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOVER_EXPIRED_TASKS_MODE", "requeue")
     session = make_session()
     try:
         task = add_project_and_task(session, tmp_path / "project")
@@ -231,7 +259,8 @@ def test_recover_expired_running_tasks_requeues_task(tmp_path: Path) -> None:
         assert recovered.status == TaskStatus.PENDING
         assert recovered.runner_id is None
         assert recovered.lease_expires_at is None
-        assert recovered.error_message == "recovered from expired runner lease"
+        assert recovered.started_at is None
+        assert recovered.error_message == "requeued from expired runner lease"
     finally:
         session.close()
 
@@ -247,5 +276,24 @@ def test_register_runner_sets_lease() -> None:
         assert runner.status == "ONLINE"
         assert runner.lease_expires_at is not None
         assert runner.lease_expires_at > runner.last_heartbeat_at
+    finally:
+        session.close()
+
+
+def test_claim_skips_disabled_project(tmp_path: Path) -> None:
+    session = make_session()
+    try:
+        task = add_project_and_task(session, tmp_path / "project")
+        project = session.get(Project, task.project_id)
+        project.enabled = False
+        session.add(project)
+        session.commit()
+
+        claimed = runner_service.claim_task(session, "runner-a")
+
+        db_task = session.get(Task, task.id)
+        assert claimed is None
+        assert db_task.status == TaskStatus.FAILED
+        assert db_task.error_message == "project is disabled"
     finally:
         session.close()

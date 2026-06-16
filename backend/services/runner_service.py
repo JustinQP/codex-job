@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import os
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -20,6 +21,8 @@ from backend.schemas import (
 
 RUNNER_LEASE_SECONDS = 60
 RUNNING_TASK_LEASE_SECONDS = 120
+RECOVER_MODE_FAILED = "failed"
+RECOVER_MODE_REQUEUE = "requeue"
 
 
 def register_runner(session: Session, payload: RunnerRegister) -> RunnerRecord:
@@ -85,6 +88,14 @@ def claim_task(session: Session, runner_id: str) -> RunnerTaskClaimResponse | No
     if project is None:
         task.status = TaskStatus.FAILED
         task.error_message = "project not found"
+        task.finished_at = now
+        task.updated_at = now
+        session.add(task)
+        session.commit()
+        return None
+    if not project.enabled:
+        task.status = TaskStatus.FAILED
+        task.error_message = "project is disabled"
         task.finished_at = now
         task.updated_at = now
         session.add(task)
@@ -237,6 +248,10 @@ def mark_offline_runners(session: Session) -> int:
 
 
 def recover_expired_running_tasks(session: Session) -> int:
+    recover_mode = os.environ.get(
+        "RECOVER_EXPIRED_TASKS_MODE",
+        RECOVER_MODE_FAILED,
+    ).strip().lower()
     now = utc_now()
     tasks = session.exec(
         select(Task).where(
@@ -246,13 +261,19 @@ def recover_expired_running_tasks(session: Session) -> int:
         )
     ).all()
     for task in tasks:
-        task.status = TaskStatus.PENDING
+        if recover_mode == RECOVER_MODE_REQUEUE:
+            task.status = TaskStatus.PENDING
+            task.started_at = None
+            task.finished_at = None
+            task.error_message = "requeued from expired runner lease"
+        else:
+            task.status = TaskStatus.FAILED
+            task.finished_at = now
+            task.error_message = "failed from expired runner lease"
         task.runner_id = None
         task.runner_pid = None
         task.lease_expires_at = None
-        task.started_at = None
         task.updated_at = now
-        task.error_message = "recovered from expired runner lease"
         session.add(task)
     if tasks:
         session.commit()

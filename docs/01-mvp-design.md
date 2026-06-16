@@ -116,8 +116,9 @@ v0.5.0 将 Runner 改为 HTTP client：
 - v0.5.2 起，Runner 对临时网络错误和 HTTP 5xx 做短重试；最终产物上传失败时，本地任务目录保留 `upload-pending.json`。
 - v0.6.0 起，后端使用原子 claim 防止多个 Runner 认领同一任务。
 - Runner 注册和心跳会刷新 lease，后端可将 lease 过期 Runner 标记为 `OFFLINE`。
-- RUNNING 任务 lease 过期后可回收到 `PENDING` 重新认领。
-- 任务可设置 `assigned_runner_id`，项目可设置 `default_runner_id`。
+- RUNNING 任务 lease 过期后默认标记为 `FAILED`，避免重复派发仍在运行的 Codex 进程。
+- 设置 `RECOVER_EXPIRED_TASKS_MODE=requeue` 后，RUNNING 任务 lease 过期才会回收到 `PENDING`。
+- 任务可设置 `assigned_runner_id`，项目可设置 `default_runner_id`；二者都必须指向已注册 Runner。
 
 ### Runner
 

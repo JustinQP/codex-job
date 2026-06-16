@@ -130,12 +130,25 @@ def execute_codex(
         timed_out = False
         deadline = time.monotonic() + timeout_seconds
         cancelled = False
+        callback_error: Optional[str] = None
         exit_code: Optional[int] = None
         while exit_code is None:
             exit_code = process.poll()
             if exit_code is not None:
                 break
-            if should_cancel is not None and should_cancel():
+            try:
+                cancel_requested = (
+                    should_cancel() if should_cancel is not None else False
+                )
+            except Exception as exc:  # noqa: BLE001
+                callback_error = f"should_cancel failed: {exc}"
+                exit_code = -1
+                log.write(f"\nERROR: {callback_error}\n")
+                log.write(f"Attempting to stop process tree for pid={process.pid}\n")
+                log.flush()
+                _stop_process_tree(process, log)
+                break
+            if cancel_requested:
                 cancelled = True
                 exit_code = -1
                 log.write(f"\nERROR: cancellation requested for pid={process.pid}\n")
@@ -152,7 +165,18 @@ def execute_codex(
                 _stop_process_tree(process, log)
                 break
             if on_tick is not None:
-                on_tick()
+                try:
+                    on_tick()
+                except Exception as exc:  # noqa: BLE001
+                    callback_error = f"on_tick failed: {exc}"
+                    exit_code = -1
+                    log.write(f"\nERROR: {callback_error}\n")
+                    log.write(
+                        f"Attempting to stop process tree for pid={process.pid}\n"
+                    )
+                    log.flush()
+                    _stop_process_tree(process, log)
+                    break
             time.sleep(1)
 
         try:
@@ -166,7 +190,9 @@ def execute_codex(
         log.flush()
 
     error_message = None
-    if timed_out:
+    if callback_error:
+        error_message = callback_error
+    elif timed_out:
         error_message = f"task timed out after {timeout_seconds} seconds"
     elif cancelled:
         error_message = "task cancelled"

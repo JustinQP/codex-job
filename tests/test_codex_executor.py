@@ -9,6 +9,7 @@ import pytest
 from runner.codex_executor import (
     check_clean_worktree,
     collect_git_artifacts,
+    execute_codex,
     find_codex_bin,
 )
 
@@ -100,3 +101,108 @@ def test_collect_git_artifacts_captures_staged_unstaged_and_untracked(
     combined = result.combined_diff_file.read_text(encoding="utf-8")
     assert "--- git diff --cached ---" in combined
     assert "untracked.txt" in combined
+
+
+def test_execute_codex_stops_process_when_on_tick_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_codex = tmp_path / "codex.cmd"
+    fake_codex.write_text("@echo off\n", encoding="utf-8")
+    monkeypatch.setenv("CODEX_BIN", str(fake_codex))
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(())
+
+    class FakeProcess:
+        pid = 123
+        stdout = FakeStdout()
+
+        def __init__(self):
+            self.terminated = False
+            self.killed = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.killed = True
+
+        def wait(self, timeout=None):
+            del timeout
+            return -1
+
+    process = FakeProcess()
+    monkeypatch.setattr(
+        "runner.codex_executor.subprocess.Popen",
+        lambda *args, **kwargs: process,
+    )
+
+    result = execute_codex(
+        project_path=tmp_path,
+        prompt="work",
+        log_file=tmp_path / "run.log",
+        result_file=tmp_path / "result.md",
+        timeout_seconds=60,
+        on_tick=lambda: (_ for _ in ()).throw(RuntimeError("network down")),
+    )
+
+    assert result.exit_code == -1
+    assert result.error_message == "on_tick failed: network down"
+    assert process.terminated is True
+
+
+def test_execute_codex_stops_process_when_should_cancel_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_codex = tmp_path / "codex.cmd"
+    fake_codex.write_text("@echo off\n", encoding="utf-8")
+    monkeypatch.setenv("CODEX_BIN", str(fake_codex))
+
+    class FakeStdout:
+        def __iter__(self):
+            return iter(())
+
+    class FakeProcess:
+        pid = 124
+        stdout = FakeStdout()
+
+        def __init__(self):
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            pass
+
+        def wait(self, timeout=None):
+            del timeout
+            return -1
+
+    process = FakeProcess()
+    monkeypatch.setattr(
+        "runner.codex_executor.subprocess.Popen",
+        lambda *args, **kwargs: process,
+    )
+
+    result = execute_codex(
+        project_path=tmp_path,
+        prompt="work",
+        log_file=tmp_path / "run.log",
+        result_file=tmp_path / "result.md",
+        timeout_seconds=60,
+        should_cancel=lambda: (_ for _ in ()).throw(RuntimeError("api down")),
+    )
+
+    assert result.exit_code == -1
+    assert result.error_message == "should_cancel failed: api down"
+    assert process.terminated is True

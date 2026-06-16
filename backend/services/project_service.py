@@ -6,7 +6,7 @@ import os
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from backend.models import Project, utc_now
+from backend.models import Project, RunnerRecord, utc_now
 from backend.schemas import ProjectCreate
 
 
@@ -34,6 +34,14 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="project path must be a directory",
+        )
+    if (
+        payload.default_runner_id
+        and session.get(RunnerRecord, payload.default_runner_id) is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"default runner not found: {payload.default_runner_id}",
         )
 
     project = Project(

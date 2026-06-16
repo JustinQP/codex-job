@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from backend.db import JOBS_DIR
-from backend.models import Project, Task, TaskStatus, TaskType, utc_now
+from backend.models import Project, RunnerRecord, Task, TaskStatus, TaskType, utc_now
 from backend.schemas import TaskCreate
 
 
@@ -67,6 +67,12 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="project is disabled",
         )
+    assigned_runner_id = payload.assigned_runner_id or project.default_runner_id
+    if assigned_runner_id and session.get(RunnerRecord, assigned_runner_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"assigned runner not found: {assigned_runner_id}",
+        )
 
     prompt = payload.prompt.strip()
     if not prompt:
@@ -82,7 +88,7 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
         task_type=payload.task_type,
         timeout_seconds=payload.timeout_seconds,
         status=TaskStatus.PENDING,
-        assigned_runner_id=payload.assigned_runner_id or project.default_runner_id,
+        assigned_runner_id=assigned_runner_id,
         created_at=now,
         updated_at=now,
     )

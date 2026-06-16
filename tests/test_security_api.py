@@ -310,6 +310,25 @@ def test_project_path_whitelist_rejects_outside_path(
         assert response.json()["detail"] == "project path is outside PROJECT_PATH_WHITELIST"
 
 
+def test_create_project_rejects_unknown_default_runner_id(tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    for client, session in make_client():
+        del session
+        response = client.post(
+            "/projects",
+            json={
+                "name": "demo",
+                "path": str(project_dir),
+                "default_runner_id": "missing-runner",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "default runner not found: missing-runner"
+
+
 def test_runner_register_and_heartbeat() -> None:
     for client, session in make_client():
         del session

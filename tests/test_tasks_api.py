@@ -8,7 +8,7 @@ from sqlmodel.pool import StaticPool
 
 from backend.main import app
 from backend.db import get_session
-from backend.models import Project, Task, TaskStatus, TaskType, utc_now
+from backend.models import Project, RunnerRecord, Task, TaskStatus, TaskType, utc_now
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -165,6 +165,16 @@ def test_create_task_rejects_timeout_outside_bounds() -> None:
 def test_create_task_supports_assigned_runner_id() -> None:
     for client, session in make_client():
         project = add_project(session)
+        runner = RunnerRecord(
+            runner_id="runner-a",
+            pid=1,
+            hostname="host",
+            status="ONLINE",
+            registered_at=utc_now(),
+            last_heartbeat_at=utc_now(),
+        )
+        session.add(runner)
+        session.commit()
 
         response = client.post(
             "/tasks",
@@ -179,9 +189,36 @@ def test_create_task_supports_assigned_runner_id() -> None:
         assert response.json()["assigned_runner_id"] == "runner-a"
 
 
+def test_create_task_rejects_unknown_assigned_runner_id() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+
+        response = client.post(
+            "/tasks",
+            json={
+                "project_id": project.id,
+                "prompt": "assigned",
+                "assigned_runner_id": "missing-runner",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "assigned runner not found: missing-runner"
+
+
 def test_create_task_inherits_project_default_runner() -> None:
     for client, session in make_client():
         project = add_project(session)
+        runner = RunnerRecord(
+            runner_id="runner-default",
+            pid=1,
+            hostname="host",
+            status="ONLINE",
+            registered_at=utc_now(),
+            last_heartbeat_at=utc_now(),
+        )
+        session.add(runner)
+        session.commit()
         project.default_runner_id = "runner-default"
         session.add(project)
         session.commit()

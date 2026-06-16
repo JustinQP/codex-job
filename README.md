@@ -6,6 +6,12 @@ v0.5.0 起，Runner 不再直接访问后端 SQLite，也不再共享后端 `dat
 
 v0.6.0 起，后端支持多 Runner 基础调度：原子 claim、Runner lease、离线检测、RUNNING 任务超时回收、任务指定 `assigned_runner_id`，以及项目默认 `default_runner_id`。
 
+RUNNING 任务 lease 过期时默认标记为 `FAILED`，避免 Codex 进程仍在运行时被重复派发。如需自动回收到 `PENDING`，可设置：
+
+```bat
+set RECOVER_EXPIRED_TASKS_MODE=requeue
+```
+
 v0.1 只覆盖单机 MVP：
 
 - Python + FastAPI 后端
@@ -211,6 +217,8 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/tasks `
   "default_runner_id": "desktop-001"
 }
 ```
+
+`assigned_runner_id` 和 `default_runner_id` 必须指向已注册过的 Runner，否则 API 会返回 400。
 
 ## Demo 脚本
 
