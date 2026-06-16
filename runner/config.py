@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 
 
@@ -26,7 +27,10 @@ def _env_float(name: str, default: float) -> float:
 
 
 DATA_DIR = _env_path("CODEX_RUNNER_DATA_DIR", ROOT_DIR / "data")
-JOBS_DIR = DATA_DIR / "jobs"
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+RUNNER_ID = os.environ.get("RUNNER_ID", f"{socket.gethostname()}-{os.getpid()}")
+RUNNER_TOKEN = os.environ.get("RUNNER_TOKEN") or os.environ.get("API_TOKEN")
+JOBS_DIR = _env_path("RUNNER_JOBS_DIR", DATA_DIR / "runner-jobs" / RUNNER_ID)
 POLL_INTERVAL_SECONDS = _env_float("RUNNER_POLL_INTERVAL_SECONDS", 5.0)
 DEFAULT_TIMEOUT_SECONDS = _env_int("TASK_TIMEOUT_SECONDS", 7200)
 GIT_DIFF_TIMEOUT_SECONDS = _env_int("GIT_DIFF_TIMEOUT_SECONDS", 60)

@@ -166,6 +166,7 @@ def to_task_read(task: Task):
         exit_code=task.exit_code,
         error_message=task.error_message,
         cancel_requested=task.cancel_requested,
+        runner_id=task.runner_id,
         runner_pid=task.runner_pid,
         log_url=f"/tasks/{task.id}/log",
         result_url=f"/tasks/{task.id}/result",

@@ -18,6 +18,12 @@ from backend.schemas import (
     RunnerHeartbeat,
     RunnerRead,
     RunnerRegister,
+    RunnerTaskArtifactsUpload,
+    RunnerTaskCancelState,
+    RunnerTaskClaimRequest,
+    RunnerTaskClaimResponse,
+    RunnerTaskFinishRequest,
+    RunnerTaskLogUpload,
     TaskArtifactsRead,
     TaskCreate,
     TaskRead,
@@ -35,7 +41,7 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 app = FastAPI(
     title="Codex Remote Runner MVP",
-    version="0.4.1",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -183,8 +189,26 @@ def register_runner(
     return runner_service.register_runner(session, payload)
 
 
+@app.post("/runner/register", response_model=RunnerRead)
+def runner_register(
+    payload: RunnerRegister,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.register_runner(session, payload)
+
+
 @app.post("/runners/heartbeat", response_model=RunnerRead)
 def runner_heartbeat(
+    payload: RunnerHeartbeat,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.heartbeat(session, payload)
+
+
+@app.post("/runner/heartbeat", response_model=RunnerRead)
+def runner_http_heartbeat(
     payload: RunnerHeartbeat,
     session: Session = Depends(get_session),
     _: None = Depends(require_api_token),
@@ -198,6 +222,61 @@ def list_runners(
     _: None = Depends(require_api_token),
 ):
     return runner_service.list_runners(session)
+
+
+@app.post("/runner/tasks/claim", response_model=RunnerTaskClaimResponse | None)
+def runner_claim_task(
+    payload: RunnerTaskClaimRequest,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.claim_task(session, payload.runner_id)
+
+
+@app.post("/runner/tasks/{task_id}/log")
+def runner_upload_task_log(
+    task_id: int,
+    payload: RunnerTaskLogUpload,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.upload_task_log(session, task_id, payload)
+
+
+@app.post("/runner/tasks/{task_id}/artifacts")
+def runner_upload_task_artifacts(
+    task_id: int,
+    payload: RunnerTaskArtifactsUpload,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return runner_service.upload_task_artifacts(session, task_id, payload)
+
+
+@app.post("/runner/tasks/{task_id}/finish", response_model=TaskRead)
+def runner_finish_task(
+    task_id: int,
+    payload: RunnerTaskFinishRequest,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    task = runner_service.finish_task(session, task_id, payload)
+    return task_service.to_task_read(task)
+
+
+@app.get("/runner/tasks/{task_id}/cancel-state", response_model=RunnerTaskCancelState)
+def runner_get_cancel_state(
+    task_id: int,
+    runner_id: str,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    task = runner_service.get_cancel_state(session, task_id, runner_id)
+    return RunnerTaskCancelState(
+        task_id=task.id,
+        cancel_requested=task.cancel_requested,
+        status=task.status,
+    )
 
 
 @app.get("/ui/tasks/{task_id}", include_in_schema=False)

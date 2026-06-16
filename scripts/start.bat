@@ -38,7 +38,7 @@ call :open_runner
 exit /b 0
 
 :start_runner_once
-start "codex-runner-once" /D "%CD%" cmd /k "python runner\runner.py --once"
+start "codex-runner-once" /D "%CD%" cmd /k "echo BACKEND_URL=%BACKEND_URL% && echo RUNNER_ID=%RUNNER_ID% && python runner\runner.py --once"
 exit /b 0
 
 :open_api
@@ -46,5 +46,5 @@ start "codex-runner-api" /D "%CD%" cmd /k "python -m uvicorn backend.main:app --
 exit /b 0
 
 :open_runner
-start "codex-runner-worker" /D "%CD%" cmd /k "python runner\runner.py"
+start "codex-runner-worker" /D "%CD%" cmd /k "echo BACKEND_URL=%BACKEND_URL% && echo RUNNER_ID=%RUNNER_ID% && python runner\runner.py"
 exit /b 0

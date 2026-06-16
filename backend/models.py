@@ -55,6 +55,7 @@ class Task(SQLModel, table=True):
     exit_code: Optional[int] = None
     error_message: Optional[str] = None
     cancel_requested: bool = Field(default=False, index=True)
+    runner_id: Optional[str] = Field(default=None, index=True)
     runner_pid: Optional[int] = None
     log_file: Optional[str] = None
     result_file: Optional[str] = None

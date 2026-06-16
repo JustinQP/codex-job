@@ -48,6 +48,7 @@ class TaskRead(BaseModel):
     exit_code: Optional[int]
     error_message: Optional[str]
     cancel_requested: bool
+    runner_id: Optional[str]
     runner_pid: Optional[int]
     log_url: str
     result_url: str
@@ -93,3 +94,51 @@ class RunnerRead(BaseModel):
     last_heartbeat_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RunnerTaskClaimRequest(BaseModel):
+    runner_id: str = Field(..., min_length=1, max_length=100)
+
+
+class RunnerTaskClaimResponse(BaseModel):
+    task_id: int
+    project_id: int
+    project_path: str
+    prompt: str
+    timeout_seconds: int
+    task_type: TaskType
+    require_clean_worktree: Optional[bool]
+    test_command: Optional[str]
+    smoke_check_command: Optional[str]
+    default_branch: Optional[str]
+
+
+class RunnerTaskLogUpload(BaseModel):
+    runner_id: str = Field(..., min_length=1, max_length=100)
+    content: str
+    append: bool = True
+
+
+class RunnerTaskArtifactsUpload(BaseModel):
+    runner_id: str = Field(..., min_length=1, max_length=100)
+    result: Optional[str] = None
+    diff: Optional[str] = None
+    git_status: Optional[str] = None
+    diff_unstaged: Optional[str] = None
+    diff_staged: Optional[str] = None
+    untracked_files: Optional[str] = None
+    test_output: Optional[str] = None
+    task_report: Optional[str] = None
+
+
+class RunnerTaskFinishRequest(BaseModel):
+    runner_id: str = Field(..., min_length=1, max_length=100)
+    status: TaskStatus
+    exit_code: Optional[int] = None
+    error_message: Optional[str] = None
+
+
+class RunnerTaskCancelState(BaseModel):
+    task_id: int
+    cancel_requested: bool
+    status: TaskStatus

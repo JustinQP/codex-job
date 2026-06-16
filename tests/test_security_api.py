@@ -95,7 +95,8 @@ def test_api_token_protects_read_endpoints(monkeypatch) -> None:
         task = Task(
             project_id=project.id,
             prompt="inspect",
-            status=TaskStatus.PENDING,
+            status=TaskStatus.RUNNING,
+            runner_id="local",
             created_at=utc_now(),
             updated_at=utc_now(),
         )
@@ -110,6 +111,7 @@ def test_api_token_protects_read_endpoints(monkeypatch) -> None:
             f"/tasks/{task.id}/artifacts",
             "/task-templates",
             "/runners",
+            f"/runner/tasks/{task.id}/cancel-state?runner_id=local",
         ]
 
         for path in protected_paths:
@@ -256,3 +258,115 @@ def test_runner_register_and_heartbeat() -> None:
         assert heartbeat.status_code == 200
         assert listed.status_code == 200
         assert listed.json()[0]["runner_id"] == "local"
+
+
+def test_remote_runner_http_claim_upload_and_finish(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    jobs_dir = tmp_path / "backend-jobs"
+    monkeypatch.setattr(main_module, "JOBS_DIR", jobs_dir)
+    monkeypatch.setattr("backend.services.runner_service.JOBS_DIR", jobs_dir)
+
+    for client, session in make_client():
+        project = Project(
+            name="demo",
+            path=str(tmp_path / "project"),
+            enabled=True,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        task = Task(
+            project_id=project.id,
+            prompt="remote work",
+            status=TaskStatus.PENDING,
+            timeout_seconds=120,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+
+        register = client.post(
+            "/runner/register",
+            json={"runner_id": "desktop-1", "pid": 123, "hostname": "host"},
+        )
+        claim = client.post(
+            "/runner/tasks/claim",
+            json={"runner_id": "desktop-1"},
+        )
+
+        assert register.status_code == 200
+        assert claim.status_code == 200
+        claim_body = claim.json()
+        assert claim_body["task_id"] == task.id
+        assert claim_body["prompt"] == "remote work"
+
+        log_upload = client.post(
+            f"/runner/tasks/{task.id}/log",
+            json={"runner_id": "desktop-1", "content": "run log", "append": False},
+        )
+        artifacts_upload = client.post(
+            f"/runner/tasks/{task.id}/artifacts",
+            json={
+                "runner_id": "desktop-1",
+                "result": "result text",
+                "diff": "diff text",
+                "git_status": " M file.py",
+                "task_report": "# report",
+            },
+        )
+        finish = client.post(
+            f"/runner/tasks/{task.id}/finish",
+            json={
+                "runner_id": "desktop-1",
+                "status": "SUCCESS",
+                "exit_code": 0,
+                "error_message": None,
+            },
+        )
+
+        assert log_upload.status_code == 200
+        assert artifacts_upload.status_code == 200
+        assert finish.status_code == 200
+        assert finish.json()["status"] == "SUCCESS"
+        assert client.get(f"/tasks/{task.id}/log").text == "run log"
+        assert client.get(f"/tasks/{task.id}/result").text == "result text"
+        assert client.get(f"/tasks/{task.id}/diff").text == "diff text"
+        assert client.get(f"/tasks/{task.id}/artifacts/git-status").text == " M file.py"
+
+
+def test_remote_runner_rejects_unassigned_artifact_upload() -> None:
+    for client, session in make_client():
+        project = Project(
+            name="demo",
+            path="E:\\demo",
+            enabled=True,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        task = Task(
+            project_id=project.id,
+            prompt="remote work",
+            status=TaskStatus.RUNNING,
+            runner_id="desktop-1",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+
+        response = client.post(
+            f"/runner/tasks/{task.id}/artifacts",
+            json={"runner_id": "desktop-2", "result": "bad"},
+        )
+
+        assert response.status_code == 403

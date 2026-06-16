@@ -2,22 +2,23 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import json
 import socket
 import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from sqlmodel import Session, select  # noqa: E402
-
-from backend.db import engine, init_db  # noqa: E402
-from backend.models import Project, Task, TaskStatus, utc_now  # noqa: E402
+from backend.models import TaskStatus, TaskType, utc_now  # noqa: E402
 from backend.services.project_service import validate_project_whitelist  # noqa: E402
 from runner.codex_executor import (  # noqa: E402
     check_clean_worktree,
@@ -26,16 +27,32 @@ from runner.codex_executor import (  # noqa: E402
     execute_codex,
 )
 from runner.config import (  # noqa: E402
+    BACKEND_URL,
     DEFAULT_TIMEOUT_SECONDS,
     JOBS_DIR,
     POLL_INTERVAL_SECONDS,
     RUNNER_LOCK_FILE,
+    RUNNER_ID,
+    RUNNER_TOKEN,
     require_clean_worktree,
 )
 
 
 logger = logging.getLogger("codex-runner")
-RUNNER_ID = f"{socket.gethostname()}-{os.getpid()}"
+
+
+@dataclass
+class ClaimedTask:
+    task_id: int
+    project_id: int
+    project_path: Path
+    prompt: str
+    timeout_seconds: int
+    task_type: TaskType
+    require_clean_worktree: Optional[bool]
+    test_command: Optional[str]
+    smoke_check_command: Optional[str]
+    default_branch: Optional[str]
 
 
 class RunnerLock:
@@ -115,67 +132,77 @@ def is_process_running(pid: int) -> bool:
     return True
 
 
-def claim_next_pending_task() -> Optional[int]:
-    with Session(engine) as session:
-        task = session.exec(
-            select(Task)
-            .where(Task.status == TaskStatus.PENDING)
-            .order_by(Task.created_at)
-        ).first()
-        if task is None or task.id is None:
-            return None
-
-        now = utc_now()
-        task.status = TaskStatus.RUNNING
-        task.started_at = now
-        task.updated_at = now
-        session.add(task)
-        session.commit()
-        return task.id
+def register_runner() -> None:
+    _runner_request(
+        "POST",
+        "/runner/register",
+        {
+            "runner_id": RUNNER_ID,
+            "pid": os.getpid(),
+            "hostname": socket.gethostname(),
+        },
+    )
 
 
-def process_task(task_id: int) -> None:
-    logger.info("processing task %s", task_id)
+def send_heartbeat() -> None:
+    _runner_request(
+        "POST",
+        "/runner/heartbeat",
+        {
+            "runner_id": RUNNER_ID,
+            "pid": os.getpid(),
+            "hostname": socket.gethostname(),
+        },
+    )
 
-    with Session(engine) as session:
-        task = session.get(Task, task_id)
-        if task is None:
-            logger.warning("task %s disappeared before processing", task_id)
-            return
 
-        project = session.get(Project, task.project_id)
-        log_file, result_file, diff_file = ensure_artifact_paths(task)
-        prompt = task.prompt
-        timeout_seconds = task.timeout_seconds or DEFAULT_TIMEOUT_SECONDS
-        project_path = Path(project.path) if project else None
-        project_enabled = bool(project.enabled) if project else False
-        project_require_clean_worktree = (
-            project.require_clean_worktree if project else None
-        )
-        task.runner_pid = os.getpid()
-        session.add(task)
-        session.commit()
+def claim_next_pending_task() -> Optional[ClaimedTask]:
+    payload = _runner_request(
+        "POST",
+        "/runner/tasks/claim",
+        {"runner_id": RUNNER_ID},
+    )
+    if not payload:
+        return None
+    return ClaimedTask(
+        task_id=payload["task_id"],
+        project_id=payload["project_id"],
+        project_path=Path(payload["project_path"]),
+        prompt=payload["prompt"],
+        timeout_seconds=payload.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS,
+        task_type=TaskType(payload.get("task_type") or TaskType.IMPLEMENT),
+        require_clean_worktree=payload.get("require_clean_worktree"),
+        test_command=payload.get("test_command"),
+        smoke_check_command=payload.get("smoke_check_command"),
+        default_branch=payload.get("default_branch"),
+    )
 
-    validation_error = validate_project(project_path, project_enabled)
+
+def process_task(task: ClaimedTask) -> None:
+    logger.info("processing task %s", task.task_id)
+    log_file, result_file, diff_file = ensure_artifact_paths(task.task_id)
+
+    validation_error = validate_project(task.project_path, True)
     if validation_error:
         append_log(log_file, f"ERROR: {validation_error}\n")
+        upload_artifacts(task.task_id, log_file, result_file, diff_file)
         finish_task(
-            task_id,
+            task.task_id,
             status=TaskStatus.FAILED,
             exit_code=-1,
             error_message=validation_error,
         )
         return
 
-    assert project_path is not None
     preflight_error = validate_git_preflight(
-        project_path,
+        task.project_path,
         log_file,
-        require_clean=project_require_clean_worktree,
+        require_clean=task.require_clean_worktree,
     )
     if preflight_error:
+        upload_artifacts(task.task_id, log_file, result_file, diff_file)
         finish_task(
-            task_id,
+            task.task_id,
             status=TaskStatus.FAILED,
             exit_code=-1,
             error_message=preflight_error,
@@ -183,15 +210,15 @@ def process_task(task_id: int) -> None:
         return
 
     execution = execute_codex(
-        project_path=project_path,
-        prompt=prompt,
+        project_path=task.project_path,
+        prompt=task.prompt,
         log_file=log_file,
         result_file=result_file,
-        timeout_seconds=timeout_seconds,
-        should_cancel=lambda: is_cancel_requested(task_id),
+        timeout_seconds=task.timeout_seconds,
+        should_cancel=lambda: is_cancel_requested(task.task_id),
     )
-    diff_error = collect_git_artifacts(project_path, diff_file.parent).error_message
-    test_output_error = write_test_output(task_id)
+    diff_error = collect_git_artifacts(task.project_path, diff_file.parent).error_message
+    test_output_error = write_test_output(task, diff_file.parent)
 
     error_messages = [
         message
@@ -202,76 +229,81 @@ def process_task(task_id: int) -> None:
         status = TaskStatus.CANCELLED
     else:
         status = TaskStatus.SUCCESS if not error_messages else TaskStatus.FAILED
-    finish_task(
-        task_id,
+    write_task_report(
+        task,
+        diff_file.parent,
         status=status,
         exit_code=execution.exit_code,
         error_message="; ".join(error_messages) if error_messages else None,
     )
-    write_task_report(task_id)
-    logger.info("task %s finished with status %s", task_id, status.value)
+    upload_artifacts(task.task_id, log_file, result_file, diff_file)
+    finish_task(
+        task.task_id,
+        status=status,
+        exit_code=execution.exit_code,
+        error_message="; ".join(error_messages) if error_messages else None,
+    )
+    logger.info("task %s finished with status %s", task.task_id, status.value)
 
 
 def is_cancel_requested(task_id: int) -> bool:
-    with Session(engine) as session:
-        task = session.get(Task, task_id)
-        return bool(task and task.cancel_requested)
+    payload = _runner_request(
+        "GET",
+        f"/runner/tasks/{task_id}/cancel-state?runner_id={RUNNER_ID}",
+    )
+    return bool(payload and payload.get("cancel_requested"))
 
 
-def write_test_output(task_id: int) -> Optional[str]:
-    with Session(engine) as session:
-        task = session.get(Task, task_id)
-        if task is None or not task.diff_file:
-            return "test output could not be written"
-        project = session.get(Project, task.project_id)
+def write_test_output(task: ClaimedTask, job_dir: Path) -> Optional[str]:
+    test_output_path = job_dir / "test-output.txt"
+    lines = [
+        "Configured checks are recorded but not executed automatically in v0.5.0.",
+        "This avoids exposing a remote arbitrary shell execution path.",
+        "",
+        f"test_command={task.test_command or ''}",
+        f"smoke_check_command={task.smoke_check_command or ''}",
+    ]
+    test_output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return None
 
-        test_output_path = Path(task.diff_file).resolve().parent / "test-output.txt"
-        lines = [
-            "Configured checks are recorded but not executed automatically in v0.3.0.",
-            "This avoids exposing a remote arbitrary shell execution path.",
+
+def write_task_report(
+    task: ClaimedTask,
+    job_dir: Path,
+    *,
+    status: TaskStatus,
+    exit_code: Optional[int],
+    error_message: Optional[str],
+) -> Optional[str]:
+    report_path = job_dir / "task-report.md"
+    content = "\n".join(
+        [
+            f"# Task {task.task_id} Report",
             "",
-            f"test_command={project.test_command if project else ''}",
-            f"smoke_check_command={project.smoke_check_command if project else ''}",
+            f"- Status: {status.value}",
+            f"- Task type: {task.task_type.value}",
+            f"- Project id: {task.project_id}",
+            f"- Timeout seconds: {task.timeout_seconds}",
+            f"- Exit code: {exit_code}",
+            "- Cancel requested: see backend task state",
+            f"- Error: {error_message or ''}",
+            f"- Project default branch: {task.default_branch or ''}",
+            f"- Project test command: {task.test_command or ''}",
+            f"- Project smoke check command: {task.smoke_check_command or ''}",
+            "",
+            "## Artifacts",
+            "",
+            "- result.md",
+            "- git-status.txt",
+            "- diff-unstaged.patch",
+            "- diff-staged.patch",
+            "- untracked-files.txt",
+            "- diff.patch",
+            "- test-output.txt",
         ]
-        test_output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return None
-
-
-def write_task_report(task_id: int) -> Optional[str]:
-    with Session(engine) as session:
-        task = session.get(Task, task_id)
-        if task is None or not task.diff_file:
-            return "task report could not be written"
-        project = session.get(Project, task.project_id)
-        report_path = Path(task.diff_file).resolve().parent / "task-report.md"
-        content = "\n".join(
-            [
-                f"# Task {task.id} Report",
-                "",
-                f"- Status: {task.status.value}",
-                f"- Task type: {task.task_type.value}",
-                f"- Project id: {task.project_id}",
-                f"- Timeout seconds: {task.timeout_seconds}",
-                f"- Exit code: {task.exit_code}",
-                f"- Cancel requested: {task.cancel_requested}",
-                f"- Error: {task.error_message or ''}",
-                f"- Project default branch: {project.default_branch if project else ''}",
-                f"- Project test command: {project.test_command if project else ''}",
-                f"- Project smoke check command: {project.smoke_check_command if project else ''}",
-                "",
-                "## Artifacts",
-                "",
-                "- result.md",
-                "- git-status.txt",
-                "- diff-unstaged.patch",
-                "- diff-staged.patch",
-                "- untracked-files.txt",
-                "- diff.patch",
-                "- test-output.txt",
-            ]
-        )
-        report_path.write_text(content + "\n", encoding="utf-8")
-        return None
+    )
+    report_path.write_text(content + "\n", encoding="utf-8")
+    return None
 
 
 def validate_git_preflight(
@@ -291,21 +323,13 @@ def validate_git_preflight(
     return error_message
 
 
-def ensure_artifact_paths(task: Task) -> tuple[Path, Path, Path]:
-    if task.id is None:
-        raise ValueError("task id is required")
-
-    job_dir = JOBS_DIR / str(task.id)
+def ensure_artifact_paths(task_id: int) -> tuple[Path, Path, Path]:
+    job_dir = JOBS_DIR / str(task_id)
     job_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = job_dir / "run.log"
     result_file = job_dir / "result.md"
     diff_file = job_dir / "diff.patch"
-
-    task.log_file = str(log_file)
-    task.result_file = str(result_file)
-    task.diff_file = str(diff_file)
-    task.updated_at = utc_now()
     return log_file, result_file, diff_file
 
 
@@ -331,20 +355,55 @@ def finish_task(
     exit_code: Optional[int],
     error_message: Optional[str],
 ) -> None:
-    with Session(engine) as session:
-        task = session.get(Task, task_id)
-        if task is None:
-            return
+    _runner_request(
+        "POST",
+        f"/runner/tasks/{task_id}/finish",
+        {
+            "runner_id": RUNNER_ID,
+            "status": status.value,
+            "exit_code": exit_code,
+            "error_message": error_message,
+        },
+    )
 
-        now = utc_now()
-        task.status = status
-        task.exit_code = exit_code
-        task.error_message = error_message
-        task.runner_pid = None
-        task.finished_at = now
-        task.updated_at = now
-        session.add(task)
-        session.commit()
+
+def upload_artifacts(
+    task_id: int,
+    log_file: Path,
+    result_file: Path,
+    diff_file: Path,
+) -> None:
+    _runner_request(
+        "POST",
+        f"/runner/tasks/{task_id}/log",
+        {
+            "runner_id": RUNNER_ID,
+            "content": _read_text_if_exists(log_file),
+            "append": False,
+        },
+    )
+    job_dir = diff_file.parent
+    _runner_request(
+        "POST",
+        f"/runner/tasks/{task_id}/artifacts",
+        {
+            "runner_id": RUNNER_ID,
+            "result": _read_text_if_exists(result_file),
+            "diff": _read_text_if_exists(diff_file),
+            "git_status": _read_text_if_exists(job_dir / "git-status.txt"),
+            "diff_unstaged": _read_text_if_exists(job_dir / "diff-unstaged.patch"),
+            "diff_staged": _read_text_if_exists(job_dir / "diff-staged.patch"),
+            "untracked_files": _read_text_if_exists(job_dir / "untracked-files.txt"),
+            "test_output": _read_text_if_exists(job_dir / "test-output.txt"),
+            "task_report": _read_text_if_exists(job_dir / "task-report.md"),
+        },
+    )
+
+
+def _read_text_if_exists(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def append_log(log_file: Path, message: str) -> None:
@@ -354,18 +413,17 @@ def append_log(log_file: Path, message: str) -> None:
 
 
 def run_loop(*, once: bool, poll_interval: float) -> None:
-    init_db()
     runner_lock = RunnerLock(RUNNER_LOCK_FILE)
     runner_lock.acquire()
     atexit.register(runner_lock.release)
-    write_runner_record()
+    register_runner()
     logger.info("runner started")
 
     try:
         while True:
-            task_id = claim_next_pending_task()
-            write_runner_record()
-            if task_id is None:
+            send_heartbeat()
+            task = claim_next_pending_task()
+            if task is None:
                 if once:
                     logger.info("no pending task found")
                     return
@@ -373,11 +431,11 @@ def run_loop(*, once: bool, poll_interval: float) -> None:
                 continue
 
             try:
-                process_task(task_id)
+                process_task(task)
             except Exception as exc:  # noqa: BLE001
-                logger.exception("task %s failed with unexpected error", task_id)
+                logger.exception("task %s failed with unexpected error", task.task_id)
                 finish_task(
-                    task_id,
+                    task.task_id,
                     status=TaskStatus.FAILED,
                     exit_code=-1,
                     error_message=f"runner error: {exc}",
@@ -389,28 +447,33 @@ def run_loop(*, once: bool, poll_interval: float) -> None:
         runner_lock.release()
 
 
-def write_runner_record() -> None:
-    from backend.models import RunnerRecord
+def _runner_request(
+    method: str,
+    path: str,
+    payload: Optional[dict] = None,
+) -> Optional[dict]:
+    body = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    if RUNNER_TOKEN:
+        headers["X-API-Token"] = RUNNER_TOKEN
 
-    with Session(engine) as session:
-        now = utc_now()
-        runner = session.get(RunnerRecord, RUNNER_ID)
-        if runner is None:
-            runner = RunnerRecord(
-                runner_id=RUNNER_ID,
-                pid=os.getpid(),
-                hostname=socket.gethostname(),
-                status="ONLINE",
-                registered_at=now,
-                last_heartbeat_at=now,
-            )
-        else:
-            runner.pid = os.getpid()
-            runner.hostname = socket.gethostname()
-            runner.status = "ONLINE"
-            runner.last_heartbeat_at = now
-        session.add(runner)
-        session.commit()
+    url = f"{BACKEND_URL}{path}"
+    request = Request(url, data=body, headers=headers, method=method)
+    try:
+        with urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{method} {url} failed: {exc.code} {detail}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"{method} {url} failed: {exc}") from exc
+
+    if not raw:
+        return None
+    return json.loads(raw)
 
 
 def parse_args() -> argparse.Namespace:

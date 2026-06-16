@@ -48,6 +48,7 @@ def _ensure_sqlite_columns() -> None:
         "tasks": {
             "task_type": "VARCHAR DEFAULT 'IMPLEMENT'",
             "cancel_requested": "BOOLEAN DEFAULT 0",
+            "runner_id": "TEXT",
             "runner_pid": "INTEGER",
         },
     }

@@ -2,17 +2,17 @@
 
 ## 1. 目标
 
-v0.4.1 目标是提供一个本机可运行、具备基础共享密钥保护和路径边界复验的最小远程任务执行闭环：
+v0.5.0 目标是提供一个真正通过 HTTP 通信的最小远程 Runner 闭环：
 
 1. 通过 HTTP API 配置允许执行的项目目录。
 2. 通过 HTTP API 创建 Codex 任务。
-3. 独立 Runner 进程轮询数据库中的待执行任务。
+3. 独立 Runner 进程通过 HTTP 认领待执行任务。
 4. Runner 在项目目录内调用本机 Codex CLI。
 5. 保存日志、最后结果、git 状态和 diff 产物，供 API 查询。
 
-v0.4.1 不解决多用户、多租户、分布式调度、复杂权限、自动提交和自动发布。
+v0.5.0 不解决多用户、多租户、分布式调度、复杂权限、自动提交和自动发布。
 
-当前仍是单机共享 SQLite 架构：Backend 和 Runner 访问同一个本机数据库文件，Runner 不是通过 HTTP 从远端拉取任务，不是真正的 HTTP 远程 Runner。
+v0.5.0 起，Runner 不再直接访问后端 SQLite，也不共享后端 `data/jobs` 目录。后端保存任务状态和上传后的产物，Runner 只通过 `/runner/...` HTTP API 注册、心跳、认领任务和回传结果。
 
 ## 2. 架构
 
@@ -22,9 +22,17 @@ Client / curl / API docs
         v
 FastAPI backend
         |
+        +--> SQLite database
+        |
+        +--> data/jobs/<task_id>/
+
+Python Runner process
+        |
+        | HTTP /runner/...
         v
-SQLite database
-        ^
+FastAPI backend
+        |
+        | claim / upload artifacts
         |
 Python Runner process
         |
@@ -36,9 +44,10 @@ Codex CLI + local git repository
 
 - 提供项目和任务 API。
 - 提供一个简单 HTML 管理页面。
+- 提供 Runner 专用 HTTP API。
 - 使用 SQLModel 操作 SQLite。
 - 不执行 Codex，不提供 shell 执行接口。
-- 只读取 `data/jobs/<task_id>/` 下的任务产物。
+- 保存 Runner 上传到 `data/jobs/<task_id>/` 的任务产物。
 - 任务响应只暴露 `log_url`、`result_url`、`diff_url`，不暴露本机绝对路径。
 
 ### HTML 管理页面
@@ -91,17 +100,29 @@ v0.4.1 增加远程使用前置安全边界：
 
 这仍不是多 Runner 调度系统，也不建议直接暴露到公网。
 
+### 真正远程 Runner
+
+v0.5.0 将 Runner 改为 HTTP client：
+
+- Runner 使用 `BACKEND_URL` 连接后端。
+- Runner 使用 `RUNNER_ID` 标识自己。
+- Runner 使用 `RUNNER_TOKEN` 或 `API_TOKEN` 作为 `X-API-Token`。
+- Runner 通过 `POST /runner/tasks/claim` 原子认领任务，不再直接 select SQLite。
+- Runner 在本地项目目录执行 Codex。
+- Runner 本地产物默认写入 `data/runner-jobs/<runner_id>/<task_id>/`。
+- Runner 执行完成后通过 HTTP 上传日志、结果和 git 产物。
+
 ### Runner
 
 - 独立 Python 进程。
-- 轮询 `PENDING` 任务。
-- 将任务标记为 `RUNNING` 后执行。
-- 校验项目存在、已启用、路径为目录。
+- 通过 HTTP 轮询后端任务。
+- 由后端原子认领 `PENDING` 任务并标记为 `RUNNING`。
+- 校验项目路径存在、路径为目录。
 - 执行前校验项目必须是 git 仓库。
 - 默认要求 git 工作区干净。
 - 调用 Codex CLI。
-- 将 stdout/stderr 实时写入日志文件。
-- 执行完成后写入退出码、结果文件路径和 git 产物路径。
+- 将 stdout/stderr 实时写入 Runner 本地日志文件。
+- 执行完成后通过 HTTP 上传日志、结果、diff 和 git 产物。
 - 同一个 data 目录下通过 `runner.lock` 限制只运行一个 Runner。
 - Runner 启动时读取 lock 中的 pid，自动清理 stale lock，拒绝与存活 Runner 并行启动。
 
@@ -147,6 +168,7 @@ timeout_seconds
 exit_code
 error_message
 cancel_requested
+runner_id
 runner_pid
 log_file
 result_file
@@ -230,7 +252,7 @@ REQUIRE_CLEAN_WORKTREE=true
 
 ## 7. 安全边界
 
-v0.4.1 的安全边界是局域网/单机可信环境下的最小约束：
+v0.5.0 的安全边界是局域网/可信 Runner 环境下的最小约束：
 
 - 后端不提供任意 shell 命令执行接口。
 - 启用 `API_TOKEN` 后，除 `/health` 外所有 API 读写接口需要 token。
@@ -245,7 +267,8 @@ v0.4.1 的安全边界是局域网/单机可信环境下的最小约束：
 - 默认拒绝在非干净工作区执行任务。
 - Codex 使用 `workspace-write` 沙箱。
 - 单任务有超时时间，默认 2 小时。
-- 日志、结果和 diff 只保存到 `data/jobs/<task_id>/`。
+- Runner 本地生成日志、结果和 diff，完成后通过 HTTP 上传。
+- 后端保存上传后的日志、结果和 diff 到 `data/jobs/<task_id>/`。
 - API 读取任务产物时校验文件路径必须位于 jobs 目录内。
 - Windows 下 Codex 超时时会调用 `taskkill /PID <pid> /T /F` 尽量清理进程树。
 - 同一个 data 目录下通过 lock 文件限制单 Runner。
@@ -256,6 +279,7 @@ v0.4.1 的安全边界是局域网/单机可信环境下的最小约束：
 - 项目级细粒度权限隔离。
 - Prompt 内容安全审核。
 - 多 Runner 并发执行。
+- Runner 端产物上传大小限制。
 
 ## 8. API
 
@@ -278,6 +302,13 @@ GET  /task-templates
 POST /runners/register
 POST /runners/heartbeat
 GET  /runners
+POST /runner/register
+POST /runner/heartbeat
+POST /runner/tasks/claim
+POST /runner/tasks/{task_id}/log
+POST /runner/tasks/{task_id}/artifacts
+POST /runner/tasks/{task_id}/finish
+GET  /runner/tasks/{task_id}/cancel-state
 ```
 
 API 详细字段以 FastAPI `/docs` 为准。
@@ -325,8 +356,8 @@ python -c "from backend.db import init_db; init_db(); print('db ok')"
 
 优先级建议：
 
-1. 增加真正的 HTTP Runner 通信协议，替代共享 SQLite。
-2. 增加数据库原子认领和更完整的 Runner 崩溃恢复。
-3. 增加任务自动重试和失败原因分类。
-4. 增加 UI token 输入或本地 session。
+1. 增加更完整的 Runner 崩溃恢复和 RUNNING 超时回收。
+2. 增加任务自动重试和失败原因分类。
+3. 增加 UI token 输入或本地 session。
+4. 增加 Runner 上传大小限制和更细的 artifact 校验。
 5. 增加结构化测试覆盖更多 Runner 失败路径和产物读取边界。

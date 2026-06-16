@@ -1,14 +1,14 @@
 # Codex Remote Runner MVP
 
-这是一个最小可用的 Codex Remote Runner。它提供 FastAPI 接口用于配置项目和提交任务，由本机独立 Runner 进程轮询 SQLite 中的任务，并调用 Codex CLI 在已配置项目目录中执行。
+这是一个最小可用的 Codex Remote Runner。它提供 FastAPI 接口用于配置项目和提交任务，由本机独立 Runner 进程通过 HTTP 轮询任务，并调用 Codex CLI 在已配置项目目录中执行。
 
-当前仍是单机共享 SQLite 架构：Backend 和 Runner 访问同一个本机数据库文件，Runner 不是通过 HTTP 从远端拉取任务，不是真正的远程 Runner 调度系统。
+v0.5.0 起，Runner 不再直接访问后端 SQLite，也不再共享后端 `data/jobs` 目录。后端保存任务状态和上传后的产物，Runner 只通过 `/runner/...` HTTP API 注册、心跳、认领任务和回传结果。
 
 v0.1 只覆盖单机 MVP：
 
 - Python + FastAPI 后端
 - SQLite + SQLModel 持久化
-- 独立 Python Runner 轮询任务
+- 独立 Python Runner 通过 HTTP 轮询任务
 - 调用本机 Codex CLI
 - 保存任务日志、最后结果和 `git diff`
 - 不自动 `git commit`
@@ -97,6 +97,16 @@ Runner 只处理一次任务，适合 smoke test：
 ```bat
 scripts\start.bat runner-once
 ```
+
+Runner HTTP 配置：
+
+```bat
+set BACKEND_URL=http://127.0.0.1:8000
+set RUNNER_ID=desktop-001
+set RUNNER_TOKEN=your-token
+```
+
+`RUNNER_TOKEN` 会作为 `X-API-Token` 请求头发送；如果未设置，会回退读取 `API_TOKEN`。Runner 本地产物默认写入 `data/runner-jobs/<runner_id>/<task_id>/`，执行完成后上传到后端 `data/jobs/<task_id>/`。
 
 默认地址：
 
@@ -297,12 +307,24 @@ set PROJECT_PATH_WHITELIST=E:\JustinQP
 
 白名单会在创建项目时校验，也会在 Runner 执行任务前再次校验。即使数据库中已有项目路径，只要当前不在 `PROJECT_PATH_WHITELIST` 下，Runner 也会拒绝执行。
 
-Runner 注册和心跳接口：
+兼容的 Runner 查询接口：
 
 ```text
 POST /runners/register
 POST /runners/heartbeat
 GET  /runners
+```
+
+v0.5.0 Runner 专用 HTTP API：
+
+```text
+POST /runner/register
+POST /runner/heartbeat
+POST /runner/tasks/claim
+POST /runner/tasks/{task_id}/log
+POST /runner/tasks/{task_id}/artifacts
+POST /runner/tasks/{task_id}/finish
+GET  /runner/tasks/{task_id}/cancel-state
 ```
 
 任务产物默认保存到：
@@ -371,6 +393,6 @@ python -c "from backend.db import init_db; init_db(); print('db ok')"
 
 - 暂不支持用户登录、细粒度权限、审计。
 - `API_TOKEN` 只是共享密钥保护，不是完整账号体系。
-- 当前仍是单机共享 SQLite 架构，不是真正 HTTP 远程 Runner。
+- Runner 不再直接访问 SQLite 或后端 `data/jobs`，但仍不是多租户、多 Runner 调度系统。
 - 暂不支持任务自动重试和全文搜索。
 - Runner 适合单机单进程使用，本版本只用 lock 文件限制同一 data 目录下的单 Runner。
