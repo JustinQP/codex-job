@@ -4,11 +4,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Iterable
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlmodel import Session
 
 from backend.db import JOBS_DIR, get_session, init_db
+from backend.models import TaskStatus
 from backend.schemas import ProjectCreate, ProjectRead, TaskCreate, TaskRead
 from backend.services import project_service, task_service
 
@@ -21,7 +22,7 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 app = FastAPI(
     title="Codex Remote Runner MVP",
-    version="0.1.0",
+    version="0.1.2",
     lifespan=lifespan,
 )
 
@@ -65,17 +66,36 @@ def create_task(
     payload: TaskCreate,
     session: Session = Depends(get_session),
 ):
-    return task_service.create_task(session, payload)
+    task = task_service.create_task(session, payload)
+    return task_service.to_task_read(task)
 
 
 @app.get("/tasks", response_model=list[TaskRead])
-def list_tasks(session: Session = Depends(get_session)):
-    return task_service.list_tasks(session)
+def list_tasks(
+    project_id: int | None = None,
+    status: TaskStatus | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_session),
+):
+    tasks = task_service.list_tasks(
+        session,
+        project_id=project_id,
+        task_status=status,
+        limit=limit,
+    )
+    return [task_service.to_task_read(task) for task in tasks]
 
 
 @app.get("/tasks/{task_id}", response_model=TaskRead)
 def get_task(task_id: int, session: Session = Depends(get_session)):
-    return task_service.get_task_or_404(session, task_id)
+    task = task_service.get_task_or_404(session, task_id)
+    return task_service.to_task_read(task)
+
+
+@app.post("/tasks/{task_id}/rerun", response_model=TaskRead)
+def rerun_task(task_id: int, session: Session = Depends(get_session)):
+    task = task_service.rerun_task(session, task_id)
+    return task_service.to_task_read(task)
 
 
 def _read_task_artifact(task_id: int, attr_name: str, session: Session) -> str:

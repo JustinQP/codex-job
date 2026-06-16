@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-v0.1 目标是提供一个本机可运行的最小远程任务执行闭环：
+v0.1.2 目标是提供一个本机可运行的最小远程任务执行闭环：
 
 1. 通过 HTTP API 配置允许执行的项目目录。
 2. 通过 HTTP API 创建 Codex 任务。
@@ -36,6 +36,7 @@ Codex CLI + local git repository
 - 使用 SQLModel 操作 SQLite。
 - 不执行 Codex，不提供 shell 执行接口。
 - 只读取 `data/jobs/<task_id>/` 下的任务产物。
+- 任务响应只暴露 `log_url`、`result_url`、`diff_url`，不暴露本机绝对路径。
 
 ### Runner
 
@@ -49,6 +50,7 @@ Codex CLI + local git repository
 - 将 stdout/stderr 实时写入日志文件。
 - 执行完成后写入退出码、结果文件路径和 git 产物路径。
 - 同一个 data 目录下通过 `runner.lock` 限制只运行一个 Runner。
+- Runner 启动时读取 lock 中的 pid，自动清理 stale lock，拒绝与存活 Runner 并行启动。
 
 ### 数据库
 
@@ -93,6 +95,14 @@ created_at
 updated_at
 started_at
 finished_at
+```
+
+API 响应中的 `TaskRead` 不直接返回 `log_file`、`result_file`、`diff_file`，改为返回：
+
+```text
+log_url
+result_url
+diff_url
 ```
 
 ## 4. 状态流转
@@ -192,12 +202,33 @@ GET  /projects
 POST /tasks
 GET  /tasks
 GET  /tasks/{task_id}
+POST /tasks/{task_id}/rerun
 GET  /tasks/{task_id}/log
 GET  /tasks/{task_id}/result
 GET  /tasks/{task_id}/diff
 ```
 
 API 详细字段以 FastAPI `/docs` 为准。
+
+`GET /tasks` 支持查询参数：
+
+```text
+project_id
+status
+limit
+```
+
+`limit` 默认 50，最大 200。
+
+任务创建和重跑的 `timeout_seconds` 限制：
+
+```text
+default = 7200
+min = 30
+max = 21600
+```
+
+`POST /tasks/{task_id}/rerun` 会复制原任务的 `project_id`、`prompt`、`timeout_seconds`，创建新的 `PENDING` 任务，不复用旧任务产物路径。
 
 ## 9. 验收方式
 

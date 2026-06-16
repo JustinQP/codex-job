@@ -67,8 +67,20 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
     return task
 
 
-def list_tasks(session: Session) -> list[Task]:
-    return list(session.exec(select(Task).order_by(Task.id.desc())).all())
+def list_tasks(
+    session: Session,
+    *,
+    project_id: int | None = None,
+    task_status: TaskStatus | None = None,
+    limit: int = 50,
+) -> list[Task]:
+    statement = select(Task)
+    if project_id is not None:
+        statement = statement.where(Task.project_id == project_id)
+    if task_status is not None:
+        statement = statement.where(Task.status == task_status)
+    statement = statement.order_by(Task.id.desc()).limit(limit)
+    return list(session.exec(statement).all())
 
 
 def get_task_or_404(session: Session, task_id: int) -> Task:
@@ -79,3 +91,36 @@ def get_task_or_404(session: Session, task_id: int) -> Task:
             detail="task not found",
         )
     return task
+
+
+def rerun_task(session: Session, task_id: int) -> Task:
+    original = get_task_or_404(session, task_id)
+    payload = TaskCreate(
+        project_id=original.project_id,
+        prompt=original.prompt,
+        timeout_seconds=original.timeout_seconds,
+    )
+    return create_task(session, payload)
+
+
+def to_task_read(task: Task):
+    from backend.schemas import TaskRead
+
+    if task.id is None:
+        raise ValueError("task id is required")
+    return TaskRead(
+        id=task.id,
+        project_id=task.project_id,
+        prompt=task.prompt,
+        status=task.status,
+        timeout_seconds=task.timeout_seconds,
+        exit_code=task.exit_code,
+        error_message=task.error_message,
+        log_url=f"/tasks/{task.id}/log",
+        result_url=f"/tasks/{task.id}/result",
+        diff_url=f"/tasks/{task.id}/diff",
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+        started_at=task.started_at,
+        finished_at=task.finished_at,
+    )

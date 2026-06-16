@@ -58,6 +58,12 @@ set TASK_TIMEOUT_SECONDS=7200
 set REQUIRE_CLEAN_WORKTREE=true
 ```
 
+任务超时时间限制：
+
+- 默认：7200 秒
+- 最小：30 秒
+- 最大：21600 秒
+
 PowerShell 示例：
 
 ```powershell
@@ -165,11 +171,34 @@ python scripts/demo_create_task.py --project-id 1 --prompt "请检查 README.md 
 
 ```bash
 curl http://127.0.0.1:8000/tasks
+curl "http://127.0.0.1:8000/tasks?project_id=1&status=PENDING&limit=50"
 curl http://127.0.0.1:8000/tasks/1
 curl http://127.0.0.1:8000/tasks/1/log
 curl http://127.0.0.1:8000/tasks/1/result
 curl http://127.0.0.1:8000/tasks/1/diff
 ```
+
+`GET /tasks` 支持：
+
+- `project_id`：按项目过滤
+- `status`：按状态过滤，取值为 `PENDING`、`RUNNING`、`SUCCESS`、`FAILED`、`CANCELLED`
+- `limit`：默认 50，最大 200
+
+任务响应不会暴露本机绝对路径，只返回：
+
+```text
+log_url
+result_url
+diff_url
+```
+
+## 重跑任务
+
+```bash
+curl -X POST http://127.0.0.1:8000/tasks/1/rerun
+```
+
+重跑会复制原任务的 `project_id`、`prompt`、`timeout_seconds`，创建一个新的 `PENDING` 任务，并生成新的任务产物路径。
 
 任务产物默认保存到：
 
@@ -220,6 +249,8 @@ data/runner.lock
 ```
 
 Runner 正常退出或收到中断时会尽量清理该锁文件。如果异常退出后锁文件残留，并确认没有 Runner 进程运行，可以手动删除。
+
+v0.1.2 起，Runner 会读取 lock 文件中的 `pid`。如果进程不存在，会自动清理 stale lock；如果进程仍存在，会拒绝启动。
 
 ## 基础自检
 

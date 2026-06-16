@@ -42,6 +42,7 @@ class RunnerLock:
 
     def acquire(self) -> None:
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        self._cleanup_stale_lock_if_needed()
         try:
             fd = os.open(
                 self.lock_file,
@@ -62,6 +63,24 @@ class RunnerLock:
             lock.write(f"created_at={utc_now().isoformat()}\n")
         self.acquired = True
 
+    def _cleanup_stale_lock_if_needed(self) -> None:
+        if not self.lock_file.exists():
+            return
+
+        existing = self.lock_file.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+        pid = parse_lock_pid(existing)
+        if pid is not None and is_process_running(pid):
+            raise RuntimeError(
+                f"runner lock already exists: {self.lock_file}. "
+                f"existing pid={pid}"
+            )
+
+        logger.warning("removing stale runner lock: %s", self.lock_file)
+        self.lock_file.unlink(missing_ok=True)
+
     def release(self) -> None:
         if not self.acquired:
             return
@@ -69,6 +88,28 @@ class RunnerLock:
             self.lock_file.unlink(missing_ok=True)
         finally:
             self.acquired = False
+
+
+def parse_lock_pid(content: str) -> Optional[int]:
+    for line in content.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip().lower() == "pid":
+            try:
+                pid = int(value.strip())
+            except ValueError:
+                return None
+            return pid if pid > 0 else None
+    return None
+
+
+def is_process_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 def claim_next_pending_task() -> Optional[int]:
