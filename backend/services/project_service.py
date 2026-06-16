@@ -19,7 +19,7 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
         )
 
     project_path = Path(payload.path).expanduser().resolve()
-    whitelist_error = _validate_project_whitelist(project_path)
+    whitelist_error = validate_project_whitelist(project_path)
     if whitelist_error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -53,7 +53,7 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
     return project
 
 
-def _validate_project_whitelist(project_path: Path) -> str | None:
+def validate_project_whitelist(project_path: Path) -> str | None:
     raw_roots = os.environ.get("PROJECT_PATH_WHITELIST")
     if not raw_roots:
         return None

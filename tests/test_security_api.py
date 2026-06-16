@@ -7,8 +7,10 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
+import backend.main as main_module
 from backend.db import get_session
 from backend.main import app
+from backend.models import Project, RunnerRecord, Task, TaskStatus, utc_now
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -54,6 +56,171 @@ def test_api_token_protects_mutation_endpoints(monkeypatch, tmp_path: Path) -> N
         body = authorized.json()
         assert "path" not in body
         assert body["path_label"] == "project"
+
+
+def test_health_remains_public_when_api_token_is_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("API_TOKEN", "secret")
+
+    for client, session in make_client():
+        del session
+        response = client.get("/health")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+
+def test_api_token_protects_read_endpoints(monkeypatch) -> None:
+    monkeypatch.setenv("API_TOKEN", "secret")
+
+    for client, session in make_client():
+        project = Project(
+            name="demo",
+            path="E:\\demo",
+            enabled=True,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        runner = RunnerRecord(
+            runner_id="local",
+            pid=123,
+            hostname="host",
+            status="ONLINE",
+            registered_at=utc_now(),
+            last_heartbeat_at=utc_now(),
+        )
+        session.add(project)
+        session.add(runner)
+        session.commit()
+        session.refresh(project)
+        task = Task(
+            project_id=project.id,
+            prompt="inspect",
+            status=TaskStatus.PENDING,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+
+        protected_paths = [
+            "/projects",
+            "/tasks",
+            f"/tasks/{task.id}",
+            f"/tasks/{task.id}/artifacts",
+            "/task-templates",
+            "/runners",
+        ]
+
+        for path in protected_paths:
+            unauthorized = client.get(path)
+            authorized = client.get(path, headers={"X-API-Token": "secret"})
+
+            assert unauthorized.status_code == 401, path
+            assert authorized.status_code == 200, path
+
+
+def test_api_token_protects_artifact_reads(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("API_TOKEN", "secret")
+    jobs_dir = tmp_path / "jobs"
+    monkeypatch.setattr(main_module, "JOBS_DIR", jobs_dir)
+    job_dir = jobs_dir / "pytest-token-artifacts"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    log_file = job_dir / "run.log"
+    result_file = job_dir / "result.md"
+    diff_file = job_dir / "diff.patch"
+    git_status_file = job_dir / "git-status.txt"
+    report_file = job_dir / "task-report.md"
+    log_file.write_text("log", encoding="utf-8")
+    result_file.write_text("result", encoding="utf-8")
+    diff_file.write_text("diff", encoding="utf-8")
+    git_status_file.write_text("status", encoding="utf-8")
+    report_file.write_text("report", encoding="utf-8")
+
+    for client, session in make_client():
+        project = Project(
+            name="demo",
+            path="E:\\demo",
+            enabled=True,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        task = Task(
+            project_id=project.id,
+            prompt="inspect artifacts",
+            status=TaskStatus.SUCCESS,
+            log_file=str(log_file),
+            result_file=str(result_file),
+            diff_file=str(diff_file),
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+
+        protected_paths = [
+            f"/tasks/{task.id}/log",
+            f"/tasks/{task.id}/result",
+            f"/tasks/{task.id}/diff",
+            f"/tasks/{task.id}/artifacts/git-status",
+            f"/tasks/{task.id}/artifacts/report",
+        ]
+
+        for path in protected_paths:
+            unauthorized = client.get(path)
+            authorized = client.get(path, headers={"X-API-Token": "secret"})
+
+            assert unauthorized.status_code == 401, path
+            assert authorized.status_code == 200, path
+
+
+def test_api_token_protects_ui_post_endpoints(monkeypatch) -> None:
+    monkeypatch.setenv("API_TOKEN", "secret")
+
+    for client, session in make_client():
+        project = Project(
+            name="demo",
+            path="E:\\demo",
+            enabled=True,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        task = Task(
+            project_id=project.id,
+            prompt="existing",
+            status=TaskStatus.PENDING,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+
+        create_body = (
+            f"project_id={project.id}&prompt=from-ui&timeout_seconds=120"
+            "&task_type=IMPLEMENT"
+        )
+        unauthorized_create = client.post("/ui/tasks", content=create_body)
+        authorized_create = client.post(
+            "/ui/tasks",
+            headers={"X-API-Token": "secret"},
+            content=create_body,
+            follow_redirects=False,
+        )
+        unauthorized_rerun = client.post(f"/ui/tasks/{task.id}/rerun")
+        unauthorized_cancel = client.post(f"/ui/tasks/{task.id}/cancel")
+
+        assert unauthorized_create.status_code == 401
+        assert authorized_create.status_code == 303
+        assert unauthorized_rerun.status_code == 401
+        assert unauthorized_cancel.status_code == 401
 
 
 def test_project_path_whitelist_rejects_outside_path(

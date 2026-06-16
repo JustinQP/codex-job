@@ -35,7 +35,7 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 app = FastAPI(
     title="Codex Remote Runner MVP",
-    version="0.4.0",
+    version="0.4.1",
     lifespan=lifespan,
 )
 
@@ -92,7 +92,10 @@ def create_project(
 
 
 @app.get("/projects", response_model=list[ProjectRead])
-def list_projects(session: Session = Depends(get_session)):
+def list_projects(
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     return [
         project_service.to_project_read(project)
         for project in project_service.list_projects(session)
@@ -115,6 +118,7 @@ def list_tasks(
     status: TaskStatus | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
 ):
     tasks = task_service.list_tasks(
         session,
@@ -126,7 +130,11 @@ def list_tasks(
 
 
 @app.get("/tasks/{task_id}", response_model=TaskRead)
-def get_task(task_id: int, session: Session = Depends(get_session)):
+def get_task(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     task = task_service.get_task_or_404(session, task_id)
     return task_service.to_task_read(task)
 
@@ -152,13 +160,17 @@ def cancel_task(
 
 
 @app.get("/tasks/{task_id}/artifacts", response_model=TaskArtifactsRead)
-def get_task_artifacts(task_id: int, session: Session = Depends(get_session)):
+def get_task_artifacts(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     task = task_service.get_task_or_404(session, task_id)
     return task_service.to_artifacts_read(task)
 
 
 @app.get("/task-templates", response_model=list[TaskTemplateRead])
-def list_task_templates():
+def list_task_templates(_: None = Depends(require_api_token)):
     return task_service.list_task_templates()
 
 
@@ -198,6 +210,7 @@ def task_detail(task_id: int, session: Session = Depends(get_session)):
 async def create_task_from_form(
     request: Request,
     session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
 ):
     form = await _read_urlencoded_form(request)
     payload = TaskCreate(
@@ -214,7 +227,11 @@ async def create_task_from_form(
 
 
 @app.post("/ui/tasks/{task_id}/rerun", include_in_schema=False)
-def rerun_task_from_form(task_id: int, session: Session = Depends(get_session)):
+def rerun_task_from_form(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     task = task_service.rerun_task(session, task_id)
     return RedirectResponse(
         url=f"/ui/tasks/{task.id}",
@@ -226,6 +243,7 @@ def rerun_task_from_form(task_id: int, session: Session = Depends(get_session)):
 def cancel_task_from_form(
     task_id: int,
     session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
 ):
     task = task_service.request_cancel(session, task_id)
     return RedirectResponse(
@@ -284,22 +302,38 @@ def _read_task_artifact(task_id: int, attr_name: str, session: Session) -> str:
 
 
 @app.get("/tasks/{task_id}/log", response_class=PlainTextResponse)
-def get_task_log(task_id: int, session: Session = Depends(get_session)):
+def get_task_log(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     return _read_task_artifact(task_id, "log_file", session)
 
 
 @app.get("/tasks/{task_id}/result", response_class=PlainTextResponse)
-def get_task_result(task_id: int, session: Session = Depends(get_session)):
+def get_task_result(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     return _read_task_artifact(task_id, "result_file", session)
 
 
 @app.get("/tasks/{task_id}/diff", response_class=PlainTextResponse)
-def get_task_diff(task_id: int, session: Session = Depends(get_session)):
+def get_task_diff(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     return _read_task_artifact(task_id, "diff_file", session)
 
 
 @app.get("/tasks/{task_id}/artifacts/git-status", response_class=PlainTextResponse)
-def get_task_git_status(task_id: int, session: Session = Depends(get_session)):
+def get_task_git_status(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     task = task_service.get_task_or_404(session, task_id)
     if not task.diff_file:
         raise HTTPException(
@@ -311,7 +345,11 @@ def get_task_git_status(task_id: int, session: Session = Depends(get_session)):
 
 
 @app.get("/tasks/{task_id}/artifacts/report", response_class=PlainTextResponse)
-def get_task_report(task_id: int, session: Session = Depends(get_session)):
+def get_task_report(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     task = task_service.get_task_or_404(session, task_id)
     if not task.diff_file:
         raise HTTPException(

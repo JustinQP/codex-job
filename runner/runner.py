@@ -18,6 +18,7 @@ from sqlmodel import Session, select  # noqa: E402
 
 from backend.db import engine, init_db  # noqa: E402
 from backend.models import Project, Task, TaskStatus, utc_now  # noqa: E402
+from backend.services.project_service import validate_project_whitelist  # noqa: E402
 from runner.codex_executor import (  # noqa: E402
     check_clean_worktree,
     collect_git_artifacts,
@@ -317,6 +318,9 @@ def validate_project(project_path: Optional[Path], project_enabled: bool) -> Opt
         return "project path does not exist"
     if not project_path.is_dir():
         return "project path must be a directory"
+    whitelist_error = validate_project_whitelist(project_path.resolve())
+    if whitelist_error:
+        return whitelist_error
     return None
 
 
