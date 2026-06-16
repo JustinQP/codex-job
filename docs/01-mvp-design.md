@@ -8,7 +8,7 @@ v0.1 目标是提供一个本机可运行的最小远程任务执行闭环：
 2. 通过 HTTP API 创建 Codex 任务。
 3. 独立 Runner 进程轮询数据库中的待执行任务。
 4. Runner 在项目目录内调用本机 Codex CLI。
-5. 保存日志、最后结果和 `git diff`，供 API 查询。
+5. 保存日志、最后结果、git 状态和 diff 产物，供 API 查询。
 
 v0.1 不解决多用户、多租户、分布式调度、复杂权限、自动提交和自动发布。
 
@@ -43,9 +43,12 @@ Codex CLI + local git repository
 - 轮询 `PENDING` 任务。
 - 将任务标记为 `RUNNING` 后执行。
 - 校验项目存在、已启用、路径为目录。
+- 执行前校验项目必须是 git 仓库。
+- 默认要求 git 工作区干净。
 - 调用 Codex CLI。
 - 将 stdout/stderr 实时写入日志文件。
-- 执行完成后写入退出码、结果文件路径和 diff 文件路径。
+- 执行完成后写入退出码、结果文件路径和 git 产物路径。
+- 同一个 data 目录下通过 `runner.lock` 限制只运行一个 Runner。
 
 ### 数据库
 
@@ -104,8 +107,8 @@ v0.1 中：
 
 - 创建任务后状态为 `PENDING`。
 - Runner 认领任务后状态为 `RUNNING`。
-- Codex 退出码为 0 且 diff 保存成功，状态为 `SUCCESS`。
-- Codex 启动失败、超时、退出码非 0、项目校验失败或 diff 保存失败，状态为 `FAILED`。
+- Codex 退出码为 0 且 git 产物保存成功，状态为 `SUCCESS`。
+- Codex 启动失败、超时、退出码非 0、项目校验失败、git 仓库校验失败、工作区非干净或 git 产物保存失败，状态为 `FAILED`。
 - `CANCELLED` 是保留状态，后续实现取消任务时使用。
 
 ## 5. Codex 调用
@@ -129,9 +132,31 @@ Codex CLI 查找顺序：
 data/jobs/<task_id>/run.log
 data/jobs/<task_id>/result.md
 data/jobs/<task_id>/diff.patch
+data/jobs/<task_id>/git-status.txt
+data/jobs/<task_id>/diff-unstaged.patch
+data/jobs/<task_id>/diff-staged.patch
+data/jobs/<task_id>/untracked-files.txt
 ```
 
-## 6. 安全边界
+`diff.patch` 是为了兼容 `/tasks/{task_id}/diff` 的组合文本，包含 git 状态、未暂存 diff、已暂存 diff 和未跟踪文件列表。
+
+## 6. Git 工作区策略
+
+Runner 执行任务前会执行 git preflight：
+
+1. 项目必须是 git 仓库。
+2. 默认要求 `git status --porcelain` 为空。
+3. 如不满足要求，任务直接 `FAILED`，不会启动 Codex。
+
+环境变量：
+
+```text
+REQUIRE_CLEAN_WORKTREE=true
+```
+
+默认值为 `true`。设置为 `false` 时允许非干净工作区执行，但仍要求项目是 git 仓库。
+
+## 7. 安全边界
 
 v0.1 的安全边界是单机可信环境下的最小约束：
 
@@ -139,10 +164,14 @@ v0.1 的安全边界是单机可信环境下的最小约束：
 - 任务只能绑定到已配置项目。
 - 项目创建时校验路径必须存在且为目录。
 - Runner 执行前再次校验项目路径存在且项目已启用。
+- Runner 执行前校验项目必须是 git 仓库。
+- 默认拒绝在非干净工作区执行任务。
 - Codex 使用 `workspace-write` 沙箱。
 - 单任务有超时时间，默认 2 小时。
 - 日志、结果和 diff 只保存到 `data/jobs/<task_id>/`。
 - API 读取任务产物时校验文件路径必须位于 jobs 目录内。
+- Windows 下 Codex 超时时会调用 `taskkill /PID <pid> /T /F` 尽量清理进程树。
+- 同一个 data 目录下通过 lock 文件限制单 Runner。
 
 当前未实现：
 
@@ -150,9 +179,9 @@ v0.1 的安全边界是单机可信环境下的最小约束：
 - 项目级权限隔离。
 - Prompt 内容安全审核。
 - 任务取消时对子进程的精细控制。
-- 多 Runner 并发锁。
+- 多 Runner 并发执行。
 
-## 7. API
+## 8. API
 
 最小 API：
 
@@ -170,12 +199,13 @@ GET  /tasks/{task_id}/diff
 
 API 详细字段以 FastAPI `/docs` 为准。
 
-## 8. 验收方式
+## 9. 验收方式
 
 基础自动检查：
 
 ```bash
 python -m compileall backend runner scripts
+pytest -q
 python -c "from backend.db import init_db; init_db(); print('db ok')"
 ```
 
@@ -186,15 +216,15 @@ python -c "from backend.db import init_db; init_db(); print('db ok')"
 3. 创建任务。
 4. 启动 Runner。
 5. 查看任务状态从 `PENDING` 到 `RUNNING` 再到终态。
-6. 查看日志、结果和 diff。
+6. 查看日志、结果、diff 和 git 产物。
 
-## 9. 后续迭代计划
+## 10. 后续迭代计划
 
 优先级建议：
 
 1. 增加任务取消接口，并可靠终止正在运行的 Codex 子进程。
 2. 增加任务分页、筛选和按项目查询。
-3. 增加单进程文件锁或数据库原子认领，降低多 Runner 重复执行风险。
+3. 增加数据库原子认领和更完整的 Runner 崩溃恢复。
 4. 增加 API Token 或本机访问限制。
 5. 增加任务重试和失败原因分类。
 6. 增加简单 HTML 管理页面。

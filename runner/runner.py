@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,11 +17,58 @@ from sqlmodel import Session, select  # noqa: E402
 
 from backend.db import engine, init_db  # noqa: E402
 from backend.models import Project, Task, TaskStatus, utc_now  # noqa: E402
-from runner.codex_executor import execute_codex, save_git_diff  # noqa: E402
-from runner.config import DEFAULT_TIMEOUT_SECONDS, JOBS_DIR, POLL_INTERVAL_SECONDS  # noqa: E402
+from runner.codex_executor import (  # noqa: E402
+    check_clean_worktree,
+    collect_git_artifacts,
+    ensure_git_repository,
+    execute_codex,
+)
+from runner.config import (  # noqa: E402
+    DEFAULT_TIMEOUT_SECONDS,
+    JOBS_DIR,
+    POLL_INTERVAL_SECONDS,
+    RUNNER_LOCK_FILE,
+    require_clean_worktree,
+)
 
 
 logger = logging.getLogger("codex-runner")
+
+
+class RunnerLock:
+    def __init__(self, lock_file: Path) -> None:
+        self.lock_file = lock_file
+        self.acquired = False
+
+    def acquire(self) -> None:
+        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(
+                self.lock_file,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            )
+        except FileExistsError as exc:
+            existing = self.lock_file.read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).strip()
+            detail = f" existing lock: {existing}" if existing else ""
+            raise RuntimeError(
+                f"runner lock already exists: {self.lock_file}.{detail}"
+            ) from exc
+
+        with os.fdopen(fd, "w", encoding="utf-8") as lock:
+            lock.write(f"pid={os.getpid()}\n")
+            lock.write(f"created_at={utc_now().isoformat()}\n")
+        self.acquired = True
+
+    def release(self) -> None:
+        if not self.acquired:
+            return
+        try:
+            self.lock_file.unlink(missing_ok=True)
+        finally:
+            self.acquired = False
 
 
 def claim_next_pending_task() -> Optional[int]:
@@ -71,6 +120,16 @@ def process_task(task_id: int) -> None:
         return
 
     assert project_path is not None
+    preflight_error = validate_git_preflight(project_path, log_file)
+    if preflight_error:
+        finish_task(
+            task_id,
+            status=TaskStatus.FAILED,
+            exit_code=-1,
+            error_message=preflight_error,
+        )
+        return
+
     execution = execute_codex(
         project_path=project_path,
         prompt=prompt,
@@ -78,7 +137,7 @@ def process_task(task_id: int) -> None:
         result_file=result_file,
         timeout_seconds=timeout_seconds,
     )
-    diff_error = save_git_diff(project_path, diff_file)
+    diff_error = collect_git_artifacts(project_path, diff_file.parent).error_message
 
     error_messages = [
         message for message in (execution.error_message, diff_error) if message
@@ -91,6 +150,17 @@ def process_task(task_id: int) -> None:
         error_message="; ".join(error_messages) if error_messages else None,
     )
     logger.info("task %s finished with status %s", task_id, status.value)
+
+
+def validate_git_preflight(project_path: Path, log_file: Path) -> Optional[str]:
+    if require_clean_worktree():
+        error_message = check_clean_worktree(project_path)
+    else:
+        error_message = ensure_git_repository(project_path)
+
+    if error_message:
+        append_log(log_file, f"ERROR: {error_message}\n")
+    return error_message
 
 
 def ensure_artifact_paths(task: Task) -> tuple[Path, Path, Path]:
@@ -153,30 +223,36 @@ def append_log(log_file: Path, message: str) -> None:
 
 def run_loop(*, once: bool, poll_interval: float) -> None:
     init_db()
+    runner_lock = RunnerLock(RUNNER_LOCK_FILE)
+    runner_lock.acquire()
+    atexit.register(runner_lock.release)
     logger.info("runner started")
 
-    while True:
-        task_id = claim_next_pending_task()
-        if task_id is None:
+    try:
+        while True:
+            task_id = claim_next_pending_task()
+            if task_id is None:
+                if once:
+                    logger.info("no pending task found")
+                    return
+                time.sleep(poll_interval)
+                continue
+
+            try:
+                process_task(task_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("task %s failed with unexpected error", task_id)
+                finish_task(
+                    task_id,
+                    status=TaskStatus.FAILED,
+                    exit_code=-1,
+                    error_message=f"runner error: {exc}",
+                )
+
             if once:
-                logger.info("no pending task found")
                 return
-            time.sleep(poll_interval)
-            continue
-
-        try:
-            process_task(task_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("task %s failed with unexpected error", task_id)
-            finish_task(
-                task_id,
-                status=TaskStatus.FAILED,
-                exit_code=-1,
-                error_message=f"runner error: {exc}",
-            )
-
-        if once:
-            return
+    finally:
+        runner_lock.release()
 
 
 def parse_args() -> argparse.Namespace:

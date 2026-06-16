@@ -28,6 +28,7 @@ runner/
   config.py
 scripts/
   demo_create_task.py
+  start.bat
 data/
 docs/
   01-mvp-design.md
@@ -48,12 +49,13 @@ pip install -r requirements.txt
 
 可选环境变量：
 
-```bash
+```bat
 set CODEX_BIN=C:\path\to\codex.cmd
 set CODEX_RUNNER_DATA_DIR=E:\JustinQP\codex-job\data
 set CODEX_RUNNER_DB_PATH=E:\JustinQP\codex-job\data\app.db
 set RUNNER_POLL_INTERVAL_SECONDS=5
 set TASK_TIMEOUT_SECONDS=7200
+set REQUIRE_CLEAN_WORKTREE=true
 ```
 
 PowerShell 示例：
@@ -62,10 +64,30 @@ PowerShell 示例：
 $env:CODEX_BIN="C:\path\to\codex.cmd"
 ```
 
-## 启动后端
+## 一键启动
 
-```bash
-uvicorn backend.main:app --reload
+同时启动后端和 Runner：
+
+```bat
+scripts\start.bat
+```
+
+只启动后端：
+
+```bat
+scripts\start.bat api
+```
+
+只启动 Runner：
+
+```bat
+scripts\start.bat runner
+```
+
+Runner 只处理一次任务，适合 smoke test：
+
+```bat
+scripts\start.bat runner-once
 ```
 
 默认地址：
@@ -73,15 +95,21 @@ uvicorn backend.main:app --reload
 - API 文档：http://127.0.0.1:8000/docs
 - 健康检查：http://127.0.0.1:8000/health
 
-## 启动 Runner
+## 手动启动
 
-持续轮询：
+启动后端：
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+持续启动 Runner：
 
 ```bash
 python runner/runner.py
 ```
 
-只处理一次任务，适合调试：
+Runner 只处理一次任务：
 
 ```bash
 python runner/runner.py --once
@@ -89,7 +117,7 @@ python runner/runner.py --once
 
 ## 创建项目
 
-```bash
+```bat
 curl -X POST http://127.0.0.1:8000/projects ^
   -H "Content-Type: application/json" ^
   -d "{\"name\":\"demo\",\"path\":\"E:\\JustinQP\\codex-job\",\"enabled\":true}"
@@ -105,7 +133,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/projects `
 
 ## 创建任务
 
-```bash
+```bat
 curl -X POST http://127.0.0.1:8000/tasks ^
   -H "Content-Type: application/json" ^
   -d "{\"project_id\":1,\"prompt\":\"请查看 README.md 并总结项目用途。\",\"timeout_seconds\":7200}"
@@ -150,12 +178,54 @@ data/jobs/<task_id>/
   run.log
   result.md
   diff.patch
+  git-status.txt
+  diff-unstaged.patch
+  diff-staged.patch
+  untracked-files.txt
 ```
+
+说明：
+
+- `/tasks/{task_id}/diff` 仍然保留，返回组合后的 `diff.patch`。
+- `diff-unstaged.patch` 保存未暂存改动。
+- `diff-staged.patch` 保存已暂存改动。
+- `untracked-files.txt` 保存未跟踪文件列表，不保存未跟踪文件内容。
+
+## Git 工作区检查
+
+Runner 执行任务前会检查项目是否为 git 仓库。
+
+默认要求工作区干净：
+
+```bat
+set REQUIRE_CLEAN_WORKTREE=true
+```
+
+如果 `git status --porcelain` 非空，任务会直接进入 `FAILED`，错误原因会写入 `run.log` 和 `error_message`。
+
+如需允许在非干净工作区执行：
+
+```bat
+set REQUIRE_CLEAN_WORKTREE=false
+```
+
+即使关闭干净工作区要求，项目仍必须是 git 仓库。
+
+## Runner 锁
+
+同一个 `data` 目录下只允许一个 Runner 运行。Runner 会创建：
+
+```text
+data/runner.lock
+```
+
+Runner 正常退出或收到中断时会尽量清理该锁文件。如果异常退出后锁文件残留，并确认没有 Runner 进程运行，可以手动删除。
 
 ## 基础自检
 
 ```bash
 python -m compileall backend runner scripts
+pytest -q
 python -c "from backend.db import init_db; init_db(); print('db ok')"
 ```
 
@@ -164,4 +234,4 @@ python -c "from backend.db import init_db; init_db(); print('db ok')"
 - 暂不支持用户登录、权限、审计。
 - 暂不支持取消正在运行的 Codex 子进程，`CANCELLED` 状态为后续能力预留。
 - 暂不支持任务重试、并发锁增强、分页和搜索。
-- Runner 适合单机单进程使用，多 Runner 并发认领任务需要后续加强数据库锁。
+- Runner 适合单机单进程使用，本版本只用 lock 文件限制同一 data 目录下的单 Runner。

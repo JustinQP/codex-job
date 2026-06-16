@@ -30,3 +30,9 @@ JOBS_DIR = DATA_DIR / "jobs"
 POLL_INTERVAL_SECONDS = _env_float("RUNNER_POLL_INTERVAL_SECONDS", 5.0)
 DEFAULT_TIMEOUT_SECONDS = _env_int("TASK_TIMEOUT_SECONDS", 7200)
 GIT_DIFF_TIMEOUT_SECONDS = _env_int("GIT_DIFF_TIMEOUT_SECONDS", 60)
+RUNNER_LOCK_FILE = DATA_DIR / "runner.lock"
+
+
+def require_clean_worktree() -> bool:
+    raw_value = os.environ.get("REQUIRE_CLEAN_WORKTREE", "true")
+    return raw_value.strip().lower() not in {"0", "false", "no", "off"}

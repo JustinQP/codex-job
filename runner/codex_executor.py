@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 import threading
@@ -17,6 +18,16 @@ class CodexExecutionResult:
     timed_out: bool
     error_message: Optional[str]
     codex_bin: Optional[str]
+
+
+@dataclass
+class GitArtifactsResult:
+    error_message: Optional[str]
+    status_file: Path
+    diff_unstaged_file: Path
+    diff_staged_file: Path
+    untracked_files_file: Path
+    combined_diff_file: Path
 
 
 def find_codex_bin() -> str:
@@ -118,10 +129,11 @@ def execute_codex(
             exit_code = process.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired:
             timed_out = True
-            process.kill()
             exit_code = -1
             log.write(f"\nERROR: task timed out after {timeout_seconds} seconds\n")
+            log.write(f"Attempting to stop process tree for pid={process.pid}\n")
             log.flush()
+            _stop_process_tree(process, log)
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -146,12 +158,82 @@ def execute_codex(
     )
 
 
-def save_git_diff(project_path: Path, diff_file: Path) -> Optional[str]:
-    diff_file.parent.mkdir(parents=True, exist_ok=True)
+def ensure_git_repository(project_path: Path) -> Optional[str]:
+    completed = _run_git(project_path, ["git", "rev-parse", "--is-inside-work-tree"])
+    if completed.returncode != 0:
+        return _git_error("project is not a git repository", completed)
+    if completed.stdout.strip().lower() != "true":
+        return "project is not a git repository"
+    return None
 
+
+def check_clean_worktree(project_path: Path) -> Optional[str]:
+    repository_error = ensure_git_repository(project_path)
+    if repository_error:
+        return repository_error
+
+    completed = _run_git(project_path, ["git", "status", "--porcelain"])
+    if completed.returncode != 0:
+        return _git_error("failed to inspect git status", completed)
+    if completed.stdout.strip():
+        return "git worktree is not clean"
+    return None
+
+
+def collect_git_artifacts(project_path: Path, job_dir: Path) -> GitArtifactsResult:
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    status_file = job_dir / "git-status.txt"
+    diff_unstaged_file = job_dir / "diff-unstaged.patch"
+    diff_staged_file = job_dir / "diff-staged.patch"
+    untracked_files_file = job_dir / "untracked-files.txt"
+    combined_diff_file = job_dir / "diff.patch"
+
+    commands = [
+        (status_file, ["git", "status", "--short"]),
+        (diff_unstaged_file, ["git", "diff"]),
+        (diff_staged_file, ["git", "diff", "--cached"]),
+        (untracked_files_file, ["git", "ls-files", "--others", "--exclude-standard"]),
+    ]
+
+    errors: list[str] = []
+    for output_file, command in commands:
+        completed = _run_git(project_path, command)
+        content = completed.stdout
+        if completed.stderr:
+            content += "\n--- stderr ---\n"
+            content += completed.stderr
+        output_file.write_text(content, encoding="utf-8")
+        if completed.returncode != 0:
+            errors.append(_git_error(f"{' '.join(command)} failed", completed))
+
+    _write_combined_git_diff(
+        combined_diff_file=combined_diff_file,
+        status_file=status_file,
+        diff_unstaged_file=diff_unstaged_file,
+        diff_staged_file=diff_staged_file,
+        untracked_files_file=untracked_files_file,
+    )
+
+    return GitArtifactsResult(
+        error_message="; ".join(errors) if errors else None,
+        status_file=status_file,
+        diff_unstaged_file=diff_unstaged_file,
+        diff_staged_file=diff_staged_file,
+        untracked_files_file=untracked_files_file,
+        combined_diff_file=combined_diff_file,
+    )
+
+
+def save_git_diff(project_path: Path, diff_file: Path) -> Optional[str]:
+    result = collect_git_artifacts(project_path, diff_file.parent)
+    return result.error_message
+
+
+def _run_git(project_path: Path, command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
-        completed = subprocess.run(
-            ["git", "diff"],
+        return subprocess.run(
+            command,
             cwd=str(project_path),
             capture_output=True,
             text=True,
@@ -160,24 +242,86 @@ def save_git_diff(project_path: Path, diff_file: Path) -> Optional[str]:
             timeout=GIT_DIFF_TIMEOUT_SECONDS,
         )
     except FileNotFoundError:
-        message = "git command not found"
-        diff_file.write_text(f"ERROR: {message}\n", encoding="utf-8")
-        return message
+        return subprocess.CompletedProcess(
+            command,
+            returncode=127,
+            stdout="",
+            stderr="git command not found",
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            command,
+            returncode=124,
+            stdout=exc.stdout or "",
+            stderr=f"git command timed out after {GIT_DIFF_TIMEOUT_SECONDS} seconds",
+        )
+
+
+def _git_error(prefix: str, completed: subprocess.CompletedProcess[str]) -> str:
+    detail = completed.stderr.strip() or completed.stdout.strip()
+    if detail:
+        return f"{prefix}: {detail}"
+    return f"{prefix}: exit code {completed.returncode}"
+
+
+def _write_combined_git_diff(
+    *,
+    combined_diff_file: Path,
+    status_file: Path,
+    diff_unstaged_file: Path,
+    diff_staged_file: Path,
+    untracked_files_file: Path,
+) -> None:
+    sections = [
+        ("git status --short", status_file),
+        ("git diff", diff_unstaged_file),
+        ("git diff --cached", diff_staged_file),
+        ("untracked files", untracked_files_file),
+    ]
+    parts = []
+    for title, path in sections:
+        parts.append(f"--- {title} ---\n")
+        parts.append(path.read_text(encoding="utf-8", errors="replace"))
+        if not parts[-1].endswith("\n"):
+            parts.append("\n")
+        parts.append("\n")
+    combined_diff_file.write_text("".join(parts), encoding="utf-8")
+
+
+def _stop_process_tree(process: subprocess.Popen[str], log) -> None:
+    if platform.system().lower() == "windows":
+        command = ["taskkill", "/PID", str(process.pid), "/T", "/F"]
+        log.write(f"Running kill command: {' '.join(command)}\n")
+        log.flush()
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            if completed.stdout:
+                log.write(completed.stdout)
+            if completed.stderr:
+                log.write(completed.stderr)
+            log.write(f"taskkill exit code: {completed.returncode}\n")
+            log.flush()
+            return
+        except Exception as exc:  # noqa: BLE001
+            log.write(f"ERROR: taskkill failed: {exc}\n")
+            log.flush()
+
+    log.write(f"Calling terminate for pid={process.pid}\n")
+    log.flush()
+    process.terminate()
+    try:
+        process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        message = f"git diff timed out after {GIT_DIFF_TIMEOUT_SECONDS} seconds"
-        diff_file.write_text(f"ERROR: {message}\n", encoding="utf-8")
-        return message
-
-    if completed.returncode == 0:
-        diff_file.write_text(completed.stdout, encoding="utf-8")
-        return None
-
-    content = completed.stdout
-    if completed.stderr:
-        content += "\n--- git diff stderr ---\n"
-        content += completed.stderr
-    diff_file.write_text(content, encoding="utf-8")
-    return f"git diff exited with code {completed.returncode}"
+        log.write(f"Calling kill for pid={process.pid}\n")
+        log.flush()
+        process.kill()
 
 
 def _append_log(log_file: Path, message: str) -> None:
