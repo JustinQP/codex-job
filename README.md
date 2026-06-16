@@ -106,7 +106,9 @@ set RUNNER_ID=desktop-001
 set RUNNER_TOKEN=your-token
 ```
 
-`RUNNER_TOKEN` 会作为 `X-API-Token` 请求头发送；如果未设置，会回退读取 `API_TOKEN`。Runner 本地产物默认写入 `data/runner-jobs/<runner_id>/<task_id>/`，执行完成后上传到后端 `data/jobs/<task_id>/`。
+`RUNNER_TOKEN` 会作为 `X-API-Token` 请求头发送；如果未设置，会回退读取 `API_TOKEN`。Runner 本地产物默认写入 `data/runner-jobs/<runner_id>/<task_id>/`，执行中会定期上传日志，执行完成后上传到后端 `data/jobs/<task_id>/`。
+
+v0.5.2 起，Runner 对临时网络错误和 HTTP 5xx 做短重试。最终产物上传失败时，会在本地任务目录保留 `upload-pending.json`，便于恢复网络后定位待补传任务。
 
 默认地址：
 
@@ -444,5 +446,6 @@ python -c "from backend.db import init_db; init_db(); print('db ok')"
 - 暂不支持用户登录、细粒度权限、审计。
 - `API_TOKEN` 只是共享密钥保护，不是完整账号体系。
 - Runner 不再直接访问 SQLite 或后端 `data/jobs`，但仍不是多租户、多 Runner 调度系统。
+- `upload-pending.json` 只记录待补传状态，暂未提供自动补传队列。
 - 暂不支持任务自动重试和全文搜索。
 - Runner 适合单机单进程使用，本版本只用 lock 文件限制同一 data 目录下的单 Runner。

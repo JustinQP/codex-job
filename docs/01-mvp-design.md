@@ -110,7 +110,9 @@ v0.5.0 将 Runner 改为 HTTP client：
 - Runner 通过 `POST /runner/tasks/claim` 原子认领任务，不再直接 select SQLite。
 - Runner 在本地项目目录执行 Codex。
 - Runner 本地产物默认写入 `data/runner-jobs/<runner_id>/<task_id>/`。
+- Runner 执行中定期通过 HTTP 上传日志。
 - Runner 执行完成后通过 HTTP 上传日志、结果和 git 产物。
+- v0.5.2 起，Runner 对临时网络错误和 HTTP 5xx 做短重试；最终产物上传失败时，本地任务目录保留 `upload-pending.json`。
 
 ### Runner
 
@@ -122,6 +124,7 @@ v0.5.0 将 Runner 改为 HTTP client：
 - 默认要求 git 工作区干净。
 - 调用 Codex CLI。
 - 将 stdout/stderr 实时写入 Runner 本地日志文件。
+- 执行中按固定间隔上传最新日志，便于后端页面查看运行进度。
 - 执行完成后通过 HTTP 上传日志、结果、diff 和 git 产物。
 - 同一个 data 目录下通过 `runner.lock` 限制只运行一个 Runner。
 - Runner 启动时读取 lock 中的 pid，自动清理 stale lock，拒绝与存活 Runner 并行启动。
@@ -269,6 +272,7 @@ v0.5.0 的安全边界是局域网/可信 Runner 环境下的最小约束：
 - 单任务有超时时间，默认 2 小时。
 - Runner 本地生成日志、结果和 diff，完成后通过 HTTP 上传。
 - 后端保存上传后的日志、结果和 diff 到 `data/jobs/<task_id>/`。
+- 任务详情页对 `PENDING` 和 `RUNNING` 任务自动刷新状态。
 - API 读取任务产物时校验文件路径必须位于 jobs 目录内。
 - Windows 下 Codex 超时时会调用 `taskkill /PID <pid> /T /F` 尽量清理进程树。
 - 同一个 data 目录下通过 lock 文件限制单 Runner。
@@ -280,6 +284,7 @@ v0.5.0 的安全边界是局域网/可信 Runner 环境下的最小约束：
 - Prompt 内容安全审核。
 - 多 Runner 并发执行。
 - Runner 端产物上传大小限制。
+- `upload-pending.json` 自动补传队列。
 
 ## 8. API
 

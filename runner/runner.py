@@ -55,6 +55,32 @@ class ClaimedTask:
     default_branch: Optional[str]
 
 
+class LogUploadTracker:
+    def __init__(self, task_id: int, log_file: Path, interval_seconds: float = 10.0):
+        self.task_id = task_id
+        self.log_file = log_file
+        self.interval_seconds = interval_seconds
+        self.last_upload_at = 0.0
+        self.last_uploaded_size = 0
+
+    def maybe_upload(self) -> None:
+        now = time.monotonic()
+        if now - self.last_upload_at < self.interval_seconds:
+            return
+        self.upload(force=False)
+
+    def upload(self, *, force: bool) -> None:
+        if not self.log_file.exists():
+            return
+        content = self.log_file.read_text(encoding="utf-8", errors="replace")
+        if not force and len(content) == self.last_uploaded_size:
+            self.last_upload_at = time.monotonic()
+            return
+        _upload_log_content(self.task_id, content)
+        self.last_uploaded_size = len(content)
+        self.last_upload_at = time.monotonic()
+
+
 class RunnerLock:
     def __init__(self, lock_file: Path) -> None:
         self.lock_file = lock_file
@@ -181,11 +207,12 @@ def claim_next_pending_task() -> Optional[ClaimedTask]:
 def process_task(task: ClaimedTask) -> None:
     logger.info("processing task %s", task.task_id)
     log_file, result_file, diff_file = ensure_artifact_paths(task.task_id)
+    log_tracker = LogUploadTracker(task.task_id, log_file)
 
     validation_error = validate_project(task.project_path, True)
     if validation_error:
         append_log(log_file, f"ERROR: {validation_error}\n")
-        upload_artifacts(task.task_id, log_file, result_file, diff_file)
+        upload_artifacts(task.task_id, log_file, result_file, diff_file, log_tracker)
         finish_task(
             task.task_id,
             status=TaskStatus.FAILED,
@@ -200,7 +227,7 @@ def process_task(task: ClaimedTask) -> None:
         require_clean=task.require_clean_worktree,
     )
     if preflight_error:
-        upload_artifacts(task.task_id, log_file, result_file, diff_file)
+        upload_artifacts(task.task_id, log_file, result_file, diff_file, log_tracker)
         finish_task(
             task.task_id,
             status=TaskStatus.FAILED,
@@ -216,6 +243,7 @@ def process_task(task: ClaimedTask) -> None:
         result_file=result_file,
         timeout_seconds=task.timeout_seconds,
         should_cancel=lambda: is_cancel_requested(task.task_id),
+        on_tick=log_tracker.maybe_upload,
     )
     diff_error = collect_git_artifacts(task.project_path, diff_file.parent).error_message
     test_output_error = write_test_output(task, diff_file.parent)
@@ -236,7 +264,7 @@ def process_task(task: ClaimedTask) -> None:
         exit_code=execution.exit_code,
         error_message="; ".join(error_messages) if error_messages else None,
     )
-    upload_artifacts(task.task_id, log_file, result_file, diff_file)
+    upload_artifacts(task.task_id, log_file, result_file, diff_file, log_tracker)
     finish_task(
         task.task_id,
         status=status,
@@ -372,32 +400,64 @@ def upload_artifacts(
     log_file: Path,
     result_file: Path,
     diff_file: Path,
+    log_tracker: Optional[LogUploadTracker] = None,
 ) -> None:
+    job_dir = diff_file.parent
+    try:
+        if log_tracker is None:
+            _upload_log_content(task_id, _read_text_if_exists(log_file))
+        else:
+            log_tracker.upload(force=True)
+        _runner_request(
+            "POST",
+            f"/runner/tasks/{task_id}/artifacts",
+            {
+                "runner_id": RUNNER_ID,
+                "result": _read_text_if_exists(result_file),
+                "diff": _read_text_if_exists(diff_file),
+                "git_status": _read_text_if_exists(job_dir / "git-status.txt"),
+                "diff_unstaged": _read_text_if_exists(job_dir / "diff-unstaged.patch"),
+                "diff_staged": _read_text_if_exists(job_dir / "diff-staged.patch"),
+                "untracked_files": _read_text_if_exists(job_dir / "untracked-files.txt"),
+                "test_output": _read_text_if_exists(job_dir / "test-output.txt"),
+                "task_report": _read_text_if_exists(job_dir / "task-report.md"),
+            },
+        )
+    except Exception as exc:
+        write_upload_pending(job_dir, task_id, str(exc))
+        raise
+    clear_upload_pending(job_dir)
+
+
+def _upload_log_content(task_id: int, content: str) -> None:
     _runner_request(
         "POST",
         f"/runner/tasks/{task_id}/log",
         {
             "runner_id": RUNNER_ID,
-            "content": _read_text_if_exists(log_file),
+            "content": content,
             "append": False,
         },
     )
-    job_dir = diff_file.parent
-    _runner_request(
-        "POST",
-        f"/runner/tasks/{task_id}/artifacts",
-        {
-            "runner_id": RUNNER_ID,
-            "result": _read_text_if_exists(result_file),
-            "diff": _read_text_if_exists(diff_file),
-            "git_status": _read_text_if_exists(job_dir / "git-status.txt"),
-            "diff_unstaged": _read_text_if_exists(job_dir / "diff-unstaged.patch"),
-            "diff_staged": _read_text_if_exists(job_dir / "diff-staged.patch"),
-            "untracked_files": _read_text_if_exists(job_dir / "untracked-files.txt"),
-            "test_output": _read_text_if_exists(job_dir / "test-output.txt"),
-            "task_report": _read_text_if_exists(job_dir / "task-report.md"),
-        },
+
+
+def write_upload_pending(job_dir: Path, task_id: int, error_message: str) -> None:
+    payload = {
+        "task_id": task_id,
+        "runner_id": RUNNER_ID,
+        "error_message": error_message,
+        "created_at": utc_now().isoformat(),
+        "retry_hint": "rerun runner upload manually after backend connectivity is restored",
+    }
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "upload-pending.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
+
+
+def clear_upload_pending(job_dir: Path) -> None:
+    (job_dir / "upload-pending.json").unlink(missing_ok=True)
 
 
 def _read_text_if_exists(path: Path) -> str:
@@ -461,19 +521,57 @@ def _runner_request(
         headers["X-API-Token"] = RUNNER_TOKEN
 
     url = f"{BACKEND_URL}{path}"
-    request = Request(url, data=body, headers=headers, method=method)
-    try:
-        with urlopen(request, timeout=30) as response:
-            raw = response.read().decode("utf-8")
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"{method} {url} failed: {exc.code} {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"{method} {url} failed: {exc}") from exc
+    raw = _open_runner_request_with_retry(method, url, body, headers)
 
     if not raw:
         return None
     return json.loads(raw)
+
+
+def _open_runner_request_with_retry(
+    method: str,
+    url: str,
+    body: Optional[bytes],
+    headers: dict[str, str],
+    *,
+    attempts: int = 3,
+    retry_delay_seconds: float = 1.0,
+) -> str:
+    last_error: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        request = Request(url, data=body, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=30) as response:
+                return response.read().decode("utf-8")
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code < 500 or attempt == attempts:
+                raise RuntimeError(
+                    f"{method} {url} failed: {exc.code} {detail}"
+                ) from exc
+            last_error = exc
+            logger.warning(
+                "%s %s failed with %s; retrying attempt %s/%s",
+                method,
+                url,
+                exc.code,
+                attempt + 1,
+                attempts,
+            )
+        except URLError as exc:
+            if attempt == attempts:
+                raise RuntimeError(f"{method} {url} failed: {exc}") from exc
+            last_error = exc
+            logger.warning(
+                "%s %s failed with network error; retrying attempt %s/%s: %s",
+                method,
+                url,
+                attempt + 1,
+                attempts,
+                exc,
+            )
+        time.sleep(retry_delay_seconds)
+    raise RuntimeError(f"{method} {url} failed after retries: {last_error}")
 
 
 def parse_args() -> argparse.Namespace:

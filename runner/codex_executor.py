@@ -60,6 +60,7 @@ def execute_codex(
     result_file: Path,
     timeout_seconds: int,
     should_cancel: Optional[Callable[[], bool]] = None,
+    on_tick: Optional[Callable[[], None]] = None,
 ) -> CodexExecutionResult:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     result_file.parent.mkdir(parents=True, exist_ok=True)
@@ -150,6 +151,8 @@ def execute_codex(
                 log.flush()
                 _stop_process_tree(process, log)
                 break
+            if on_tick is not None:
+                on_tick()
             time.sleep(1)
 
         try:

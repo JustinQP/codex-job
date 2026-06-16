@@ -6,12 +6,13 @@ from typing import Iterable, Optional
 from backend.models import Project, Task, TaskStatus, TaskType
 
 
-def page(title: str, body: str) -> str:
+def page(title: str, body: str, head_extra: str = "") -> str:
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {head_extra}
   <title>{escape(title)}</title>
   <style>
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f7f7f5; color: #1f2933; }}
@@ -252,4 +253,7 @@ def task_detail(task: Task) -> str:
     <a class="button secondary" href="/tasks/{task_id}/artifacts/report">Report</a>
   </div>
 </section>"""
-    return page(f"任务 #{task_id}", body)
+    head_extra = ""
+    if task.status in {TaskStatus.PENDING, TaskStatus.RUNNING}:
+        head_extra = '<meta http-equiv="refresh" content="5">'
+    return page(f"任务 #{task_id}", body, head_extra=head_extra)

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
+from backend import ui
 from backend.db import get_session
 from backend.main import app
 from backend.models import Project, Task, TaskStatus, utc_now
@@ -128,3 +129,33 @@ def test_cancel_form_redirects_to_task_detail() -> None:
 
         assert response.status_code == 303
         assert response.headers["location"] == f"/ui/tasks/{task.id}"
+
+
+def test_task_detail_auto_refreshes_running_task() -> None:
+    task = Task(
+        id=1,
+        project_id=1,
+        prompt="running",
+        status=TaskStatus.RUNNING,
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+
+    html = ui.task_detail(task)
+
+    assert '<meta http-equiv="refresh" content="5">' in html
+
+
+def test_task_detail_does_not_auto_refresh_terminal_task() -> None:
+    task = Task(
+        id=1,
+        project_id=1,
+        prompt="done",
+        status=TaskStatus.SUCCESS,
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+
+    html = ui.task_detail(task)
+
+    assert 'http-equiv="refresh"' not in html
