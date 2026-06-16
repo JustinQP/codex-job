@@ -105,9 +105,11 @@ def test_api_token_protects_read_endpoints(monkeypatch) -> None:
         session.refresh(task)
 
         protected_paths = [
+            "/",
             "/projects",
             "/tasks",
             f"/tasks/{task.id}",
+            f"/ui/tasks/{task.id}",
             f"/tasks/{task.id}/artifacts",
             "/task-templates",
             "/runners",
@@ -120,6 +122,68 @@ def test_api_token_protects_read_endpoints(monkeypatch) -> None:
 
             assert unauthorized.status_code == 401, path
             assert authorized.status_code == 200, path
+
+
+def test_api_token_protects_runner_write_endpoints(monkeypatch) -> None:
+    monkeypatch.setenv("API_TOKEN", "secret")
+
+    for client, session in make_client():
+        project = Project(
+            name="demo",
+            path="E:\\demo",
+            enabled=True,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        task = Task(
+            project_id=project.id,
+            prompt="inspect",
+            status=TaskStatus.RUNNING,
+            runner_id="local",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+
+        endpoints = [
+            (
+                "/runner/register",
+                {"runner_id": "local", "pid": 123, "hostname": "host"},
+            ),
+            (
+                "/runner/heartbeat",
+                {"runner_id": "local", "pid": 123, "hostname": "host"},
+            ),
+            ("/runner/tasks/claim", {"runner_id": "local"}),
+            (
+                f"/runner/tasks/{task.id}/log",
+                {"runner_id": "local", "content": "log", "append": False},
+            ),
+            (
+                f"/runner/tasks/{task.id}/artifacts",
+                {"runner_id": "local", "result": "result"},
+            ),
+            (
+                f"/runner/tasks/{task.id}/finish",
+                {"runner_id": "local", "status": "SUCCESS", "exit_code": 0},
+            ),
+        ]
+
+        for path, payload in endpoints:
+            unauthorized = client.post(path, json=payload)
+            assert unauthorized.status_code == 401, path
+
+        authorized = client.post(
+            "/runner/register",
+            headers={"X-API-Token": "secret"},
+            json={"runner_id": "local", "pid": 123, "hostname": "host"},
+        )
+        assert authorized.status_code == 200
 
 
 def test_api_token_protects_artifact_reads(monkeypatch, tmp_path: Path) -> None:

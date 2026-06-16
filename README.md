@@ -227,6 +227,56 @@ result_url
 diff_url
 ```
 
+## v0.5.0 本机 HTTP smoke test
+
+以下步骤验证 Runner 通过 HTTP 注册、认领任务、上传日志和产物，不直接访问后端 SQLite：
+
+1. 启动后端：
+
+```bat
+set API_TOKEN=dev-token
+scripts\start.bat api
+```
+
+2. 新开终端，创建项目和任务：
+
+```powershell
+$headers = @{ "X-API-Token" = "dev-token" }
+$project = Invoke-RestMethod -Method Post http://127.0.0.1:8000/projects `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body '{"name":"codex-job","path":"E:\JustinQP\codex-job","enabled":true}'
+
+$task = Invoke-RestMethod -Method Post http://127.0.0.1:8000/tasks `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{project_id=$project.id; prompt="请查看 README.md 并总结项目用途。"; timeout_seconds=7200} | ConvertTo-Json)
+```
+
+3. 新开终端，启动一次性 Runner：
+
+```bat
+set BACKEND_URL=http://127.0.0.1:8000
+set RUNNER_ID=desktop-001
+set RUNNER_TOKEN=dev-token
+scripts\start.bat runner-once
+```
+
+4. 查看结果：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/tasks/$($task.id) -Headers $headers
+Invoke-RestMethod http://127.0.0.1:8000/tasks/$($task.id)/log -Headers $headers
+Invoke-RestMethod http://127.0.0.1:8000/tasks/$($task.id)/result -Headers $headers
+Invoke-RestMethod http://127.0.0.1:8000/tasks/$($task.id)/diff -Headers $headers
+```
+
+预期结果：
+
+- Runner 窗口显示正在连接 `BACKEND_URL` 并处理任务。
+- 任务状态从 `PENDING` 变为 `RUNNING`，最终变为 `SUCCESS`、`FAILED` 或 `CANCELLED`。
+- 后端 `data/jobs/<task_id>/` 能看到 Runner 通过 HTTP 上传的 `run.log`、`result.md`、`diff.patch` 等产物。
+
 ## 重跑任务
 
 ```bash
@@ -295,7 +345,7 @@ set API_TOKEN=your-token
 X-API-Token: your-token
 ```
 
-UI 表单写接口也会执行同样的 token 校验。当前 HTML 页面不提供登录或 token 输入框，因此启用 `API_TOKEN` 后建议使用 API 调用创建、重跑和取消任务。
+HTML GET 页面和 UI 表单写接口也会执行同样的 token 校验。当前 HTML 页面不提供登录或 token 输入框，因此启用 `API_TOKEN` 后建议使用 API 调用查看、创建、重跑和取消任务。
 
 可选限制项目路径白名单：
 

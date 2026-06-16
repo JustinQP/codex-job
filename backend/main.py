@@ -41,7 +41,7 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 app = FastAPI(
     title="Codex Remote Runner MVP",
-    version="0.5.0",
+    version="0.5.1",
     lifespan=lifespan,
 )
 
@@ -63,6 +63,7 @@ def index(
     status: TaskStatus | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
 ) -> HTMLResponse:
     projects = project_service.list_projects(session)
     tasks = task_service.list_tasks(
@@ -280,7 +281,11 @@ def runner_get_cancel_state(
 
 
 @app.get("/ui/tasks/{task_id}", include_in_schema=False)
-def task_detail(task_id: int, session: Session = Depends(get_session)):
+def task_detail(
+    task_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
     task = task_service.get_task_or_404(session, task_id)
     return HTMLResponse(ui.task_detail(task))
 
