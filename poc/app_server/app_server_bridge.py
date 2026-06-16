@@ -229,6 +229,18 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         route = self._route()
+        if route == [] or route == ["ui"]:
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "message": "Open /mobile for the App Server Bridge POC mobile page.",
+                    "mobile_url": "/mobile",
+                },
+            )
+            return
+        if route == ["mobile"]:
+            self._handle_mobile_page()
+            return
         if route == ["health"]:
             self._send_json(
                 HTTPStatus.OK,
@@ -310,6 +322,20 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                 "run_dir": str(bridge_thread.run_dir),
             },
         )
+
+    def _handle_mobile_page(self) -> None:
+        page_path = _state().script_dir / "mobile.html"
+        try:
+            content = page_path.read_bytes()
+        except OSError as exc:
+            self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "mobile_page_unavailable", str(exc), step="mobile")
+            return
+
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
 
     def _handle_list_threads(self) -> None:
         threads = [_thread_status(bridge_thread) for bridge_thread in _state().list_threads()]

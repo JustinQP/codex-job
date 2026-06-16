@@ -214,6 +214,69 @@ poc/app_server/bridge-runs/<bridge_thread_id>/
 - 不支持 diff UI
 - 不做持久化和恢复
 
+## POC-5：最小手机控制页
+
+启动 Bridge：
+
+```powershell
+$env:APP_SERVER_BRIDGE_TOKEN = "dev-token"
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+```
+
+本机访问：
+
+```text
+http://127.0.0.1:8766/mobile
+```
+
+页面功能：
+
+- 配置 Bridge Base URL，默认当前 origin
+- 配置 Bridge Token，并保存到 `localStorage`
+- 检查健康状态
+- 创建 Thread
+- 刷新 Thread 列表
+- 删除当前 Thread
+- 发送 message
+- 获取当前 Thread final
+- 获取当前 Thread events summary
+- 运行连续会话测试
+
+手机局域网访问：
+
+如需手机访问，可将启动 host 改为 `0.0.0.0`，并使用电脑局域网 IP 访问：
+
+```powershell
+$env:APP_SERVER_BRIDGE_TOKEN = "dev-token"
+python .\poc\app_server\app_server_bridge.py --host 0.0.0.0 --port 8766
+```
+
+```text
+http://<电脑局域网IP>:8766/mobile
+```
+
+该方式仅限可信局域网，并必须设置 `APP_SERVER_BRIDGE_TOKEN`。页面本身不鉴权，但页面调用除 `/health` 外的 Bridge API 时会带上配置的 `X-Bridge-Token`。
+
+验收步骤：
+
+1. 打开 `/mobile`
+2. 填入 Bridge Token 并保存配置
+3. 点击检查健康状态
+4. 点击创建 Thread
+5. 输入 `请只回复 mobile-ok` 并发送
+6. 点击获取当前 Thread final
+7. 点击运行连续会话测试，结果应显示 `PASS`
+8. 点击删除当前 Thread
+
+当前限制：
+
+- POC 页面不接主系统
+- 不做持久化
+- 服务重启后 thread 丢失
+- 不支持 SSE
+- 不支持审批 UI
+- 不支持 diff UI
+
 ## 协议推断
 
 当前根据 schema 推断的最小流程是：

@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>App Server Bridge POC</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #172026;
+      --muted: #63717c;
+      --line: #d9e0e6;
+      --accent: #1769aa;
+      --accent-strong: #0f4c81;
+      --danger: #b42318;
+      --ok: #147a3f;
+      --warn: #9a5b00;
+      --shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(100%, 720px);
+      margin: 0 auto;
+      padding: 12px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      margin: -12px -12px 12px;
+      padding: 12px;
+      background: rgba(246, 247, 249, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    section {
+      margin: 12px 0;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      min-height: 40px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--text);
+      background: #fff;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 104px;
+      resize: vertical;
+    }
+
+    button {
+      min-height: 40px;
+      padding: 8px 11px;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+    }
+
+    button.secondary {
+      background: #fff;
+      color: var(--accent-strong);
+    }
+
+    button.danger {
+      border-color: var(--danger);
+      background: var(--danger);
+    }
+
+    button:disabled {
+      border-color: #aab4bd;
+      background: #aab4bd;
+      color: #eef2f6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .pill {
+      display: inline-flex;
+      max-width: 100%;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #eef3f8;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .pill.ok {
+      background: #e8f5ee;
+      color: var(--ok);
+    }
+
+    .pill.warn {
+      background: #fff4df;
+      color: var(--warn);
+    }
+
+    .pill.error {
+      background: #fdecea;
+      color: var(--danger);
+    }
+
+    .thread-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .thread-item {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      text-align: left;
+    }
+
+    .thread-item.active {
+      border-color: var(--accent);
+      outline: 2px solid rgba(23, 105, 170, 0.15);
+    }
+
+    .thread-id {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    pre {
+      max-height: 280px;
+      overflow: auto;
+      margin: 8px 0 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f9fbfc;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .result {
+      min-height: 44px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f9fbfc;
+      overflow-wrap: anywhere;
+    }
+
+    .loading {
+      color: var(--warn);
+    }
+
+    @media (max-width: 520px) {
+      main {
+        padding: 10px;
+      }
+
+      header {
+        margin: -10px -10px 10px;
+        padding: 10px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      button {
+        flex: 1 1 calc(50% - 8px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>App Server Bridge</h1>
+      <div class="status">
+        <div><span id="healthPill" class="pill warn">health unknown</span></div>
+        <div><span id="tokenPill" class="pill warn">token not configured</span></div>
+        <div><span id="currentThreadPill" class="pill">no thread selected</span></div>
+      </div>
+    </header>
+
+    <section>
+      <h2>配置</h2>
+      <label for="baseUrl">Bridge Base URL</label>
+      <input id="baseUrl" autocomplete="off">
+      <label for="token">Bridge Token</label>
+      <input id="token" autocomplete="off" type="password">
+      <div class="actions">
+        <button id="saveConfigBtn" class="secondary">保存配置</button>
+        <button id="healthBtn">检查健康状态</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Thread</h2>
+      <div class="actions">
+        <button id="createThreadBtn">创建 Thread</button>
+        <button id="refreshThreadsBtn" class="secondary">刷新 Thread 列表</button>
+        <button id="deleteThreadBtn" class="danger">删除当前 Thread</button>
+      </div>
+      <div id="threadList" class="thread-list" aria-live="polite"></div>
+    </section>
+
+    <section>
+      <h2>发送消息</h2>
+      <label for="message">Message</label>
+      <textarea id="message">请只回复 mobile-ok，不要修改文件。</textarea>
+      <div class="actions">
+        <button id="sendBtn">发送</button>
+        <button id="finalBtn" class="secondary">获取当前 Thread final</button>
+        <button id="eventsBtn" class="secondary">获取当前 Thread events summary</button>
+      </div>
+      <label>Assistant Preview</label>
+      <div id="assistantPreview" class="result"></div>
+    </section>
+
+    <section>
+      <h2>连续会话测试</h2>
+      <div class="actions">
+        <button id="sessionTestBtn">运行连续会话测试</button>
+      </div>
+      <div id="sessionTestResult" class="result"></div>
+    </section>
+
+    <section>
+      <h2>Events Summary</h2>
+      <pre id="eventsSummary"></pre>
+    </section>
+
+    <section>
+      <h2>最近错误</h2>
+      <div id="errorPanel" class="result muted">No errors.</div>
+    </section>
+  </main>
+
+  <script>
+    const storageKeys = {
+      baseUrl: 'appServerBridge.baseUrl',
+      token: 'appServerBridge.token',
+      selectedThreadId: 'appServerBridge.selectedThreadId'
+    };
+
+    const state = {
+      baseUrl: localStorage.getItem(storageKeys.baseUrl) || window.location.origin,
+      token: localStorage.getItem(storageKeys.token) || '',
+      selectedThreadId: localStorage.getItem(storageKeys.selectedThreadId) || '',
+      loading: false,
+      threads: []
+    };
+
+    const el = {
+      baseUrl: document.getElementById('baseUrl'),
+      token: document.getElementById('token'),
+      healthPill: document.getElementById('healthPill'),
+      tokenPill: document.getElementById('tokenPill'),
+      currentThreadPill: document.getElementById('currentThreadPill'),
+      saveConfigBtn: document.getElementById('saveConfigBtn'),
+      healthBtn: document.getElementById('healthBtn'),
+      createThreadBtn: document.getElementById('createThreadBtn'),
+      refreshThreadsBtn: document.getElementById('refreshThreadsBtn'),
+      deleteThreadBtn: document.getElementById('deleteThreadBtn'),
+      threadList: document.getElementById('threadList'),
+      message: document.getElementById('message'),
+      sendBtn: document.getElementById('sendBtn'),
+      finalBtn: document.getElementById('finalBtn'),
+      eventsBtn: document.getElementById('eventsBtn'),
+      assistantPreview: document.getElementById('assistantPreview'),
+      sessionTestBtn: document.getElementById('sessionTestBtn'),
+      sessionTestResult: document.getElementById('sessionTestResult'),
+      eventsSummary: document.getElementById('eventsSummary'),
+      errorPanel: document.getElementById('errorPanel')
+    };
+
+    function saveConfig() {
+      state.baseUrl = normalizeBaseUrl(el.baseUrl.value);
+      state.token = el.token.value.trim();
+      localStorage.setItem(storageKeys.baseUrl, state.baseUrl);
+      localStorage.setItem(storageKeys.token, state.token);
+      renderStatus();
+    }
+
+    function normalizeBaseUrl(value) {
+      const trimmed = String(value || '').trim();
+      return trimmed ? trimmed.replace(/\/+$/, '') : window.location.origin;
+    }
+
+    function headers(extra = {}) {
+      const result = { ...extra };
+      if (state.token) {
+        result['X-Bridge-Token'] = state.token;
+      }
+      return result;
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(`${state.baseUrl}${path}`, {
+        ...options,
+        headers: headers(options.headers || {})
+      });
+      const contentType = response.headers.get('content-type') || '';
+      const data = contentType.includes('application/json')
+        ? await response.json()
+        : { text: await response.text() };
+      if (!response.ok) {
+        throw { status: response.status, data };
+      }
+      return data;
+    }
+
+    async function postJson(path, body) {
+      return api(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(body)
+      });
+    }
+
+    async function deleteJson(path) {
+      return api(path, { method: 'DELETE' });
+    }
+
+    function setLoading(isLoading) {
+      state.loading = isLoading;
+      [
+        el.saveConfigBtn,
+        el.healthBtn,
+        el.createThreadBtn,
+        el.refreshThreadsBtn,
+        el.deleteThreadBtn,
+        el.sendBtn,
+        el.finalBtn,
+        el.eventsBtn,
+        el.sessionTestBtn
+      ].forEach(button => {
+        button.disabled = isLoading;
+      });
+    }
+
+    function setError(error) {
+      if (!error) {
+        el.errorPanel.textContent = 'No errors.';
+        el.errorPanel.className = 'result muted';
+        return;
+      }
+      const data = error.data || {};
+      const err = data.error || {};
+      el.errorPanel.className = 'result';
+      el.errorPanel.textContent = [
+        `HTTP status: ${error.status || 'n/a'}`,
+        `code: ${err.code || 'n/a'}`,
+        `message: ${err.message || data.detail || error.message || 'Unknown error'}`,
+        `step: ${data.step || 'n/a'}`
+      ].join('\n');
+    }
+
+    function selectThread(threadId) {
+      state.selectedThreadId = threadId || '';
+      if (state.selectedThreadId) {
+        localStorage.setItem(storageKeys.selectedThreadId, state.selectedThreadId);
+      } else {
+        localStorage.removeItem(storageKeys.selectedThreadId);
+      }
+      renderStatus();
+      renderThreads();
+    }
+
+    function renderStatus() {
+      el.baseUrl.value = state.baseUrl;
+      el.token.value = state.token;
+      el.tokenPill.textContent = state.token ? 'token configured' : 'token not configured';
+      el.tokenPill.className = state.token ? 'pill ok' : 'pill warn';
+      el.currentThreadPill.textContent = state.selectedThreadId
+        ? `thread ${state.selectedThreadId}`
+        : 'no thread selected';
+    }
+
+    function renderThreads() {
+      el.threadList.innerHTML = '';
+      if (!state.threads.length) {
+        const empty = document.createElement('div');
+        empty.className = 'muted';
+        empty.textContent = 'No threads.';
+        el.threadList.appendChild(empty);
+        return;
+      }
+
+      state.threads.forEach(thread => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `thread-item${thread.bridge_thread_id === state.selectedThreadId ? ' active' : ''}`;
+        button.innerHTML = `
+          <div class="thread-id">${escapeHtml(thread.bridge_thread_id)}</div>
+          <div class="muted">status=${escapeHtml(thread.status)} · turns=${escapeHtml(thread.turn_count)} · updated=${escapeHtml(thread.updated_at)}</div>
+        `;
+        button.addEventListener('click', () => selectThread(thread.bridge_thread_id));
+        el.threadList.appendChild(button);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    async function runAction(action) {
+      setLoading(true);
+      setError(null);
+      try {
+        await action();
+      } catch (error) {
+        setError(error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function checkHealth() {
+      const health = await api('/health');
+      el.healthPill.textContent = `health ${health.status} · threads ${health.threads}`;
+      el.healthPill.className = 'pill ok';
+    }
+
+    async function createThread() {
+      const thread = await postJson('/threads', {});
+      selectThread(thread.bridge_thread_id);
+      await refreshThreads();
+    }
+
+    async function refreshThreads() {
+      const result = await api('/threads');
+      state.threads = result.threads || [];
+      if (state.selectedThreadId && !state.threads.some(thread => thread.bridge_thread_id === state.selectedThreadId)) {
+        selectThread('');
+      }
+      renderThreads();
+      renderStatus();
+    }
+
+    async function deleteCurrentThread() {
+      ensureThread();
+      await deleteJson(`/threads/${encodeURIComponent(state.selectedThreadId)}`);
+      selectThread('');
+      el.assistantPreview.textContent = '';
+      el.eventsSummary.textContent = '';
+      await refreshThreads();
+    }
+
+    async function sendMessage(message) {
+      ensureThread();
+      const result = await postJson(`/threads/${encodeURIComponent(state.selectedThreadId)}/turns`, { message });
+      el.assistantPreview.textContent = result.assistant_final_preview || '';
+      await fetchFinal();
+      await refreshThreads();
+      return result;
+    }
+
+    async function fetchFinal() {
+      ensureThread();
+      const result = await api(`/threads/${encodeURIComponent(state.selectedThreadId)}/final`);
+      el.assistantPreview.textContent = result.assistant_final || '';
+      return result;
+    }
+
+    async function fetchEventsSummary() {
+      ensureThread();
+      const result = await api(`/threads/${encodeURIComponent(state.selectedThreadId)}/events`);
+      el.eventsSummary.textContent = JSON.stringify(result.summary || result, null, 2);
+      return result;
+    }
+
+    async function runSessionTest() {
+      if (!state.selectedThreadId) {
+        await createThread();
+      }
+      el.sessionTestResult.textContent = 'running...';
+      el.sessionTestResult.className = 'result loading';
+      await sendMessage('请记住这个词：mobile-session-test。只回复“已记住”。');
+      await sendMessage('刚才让你记住的词是什么？只回复这个词。');
+      const final = await fetchFinal();
+      const passed = String(final.assistant_final || '').includes('mobile-session-test');
+      el.sessionTestResult.textContent = passed
+        ? `PASS\n${final.assistant_final}`
+        : `FAIL\n${final.assistant_final || ''}`;
+      el.sessionTestResult.className = 'result';
+    }
+
+    function ensureThread() {
+      if (!state.selectedThreadId) {
+        throw {
+          status: 'local',
+          data: {
+            error: {
+              code: 'no_thread',
+              message: '请先创建或选择 thread。'
+            },
+            step: 'select_thread'
+          }
+        };
+      }
+    }
+
+    el.saveConfigBtn.addEventListener('click', () => {
+      saveConfig();
+      setError(null);
+    });
+    el.healthBtn.addEventListener('click', () => runAction(checkHealth));
+    el.createThreadBtn.addEventListener('click', () => runAction(createThread));
+    el.refreshThreadsBtn.addEventListener('click', () => runAction(refreshThreads));
+    el.deleteThreadBtn.addEventListener('click', () => runAction(deleteCurrentThread));
+    el.sendBtn.addEventListener('click', () => runAction(() => sendMessage(el.message.value)));
+    el.finalBtn.addEventListener('click', () => runAction(fetchFinal));
+    el.eventsBtn.addEventListener('click', () => runAction(fetchEventsSummary));
+    el.sessionTestBtn.addEventListener('click', () => runAction(runSessionTest));
+
+    renderStatus();
+    renderThreads();
+    runAction(async () => {
+      await checkHealth();
+      await refreshThreads();
+    });
+  </script>
+</body>
+</html>
