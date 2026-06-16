@@ -17,6 +17,9 @@ class ProjectCreate(BaseModel):
     default_branch: Optional[str] = None
     require_clean_worktree: Optional[bool] = None
     default_runner_id: Optional[str] = None
+    default_model: Optional[str] = None
+    default_reasoning_effort: Optional[str] = None
+    default_sandbox: Optional[str] = None
 
 
 class ProjectRead(BaseModel):
@@ -29,6 +32,9 @@ class ProjectRead(BaseModel):
     default_branch: Optional[str]
     require_clean_worktree: Optional[bool]
     default_runner_id: Optional[str]
+    default_model: Optional[str]
+    default_reasoning_effort: Optional[str]
+    default_sandbox: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -39,6 +45,9 @@ class TaskCreate(BaseModel):
     timeout_seconds: int = Field(default=7200, ge=30, le=21600)
     task_type: TaskType = TaskType.IMPLEMENT
     assigned_runner_id: Optional[str] = None
+    model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    sandbox: Optional[str] = None
 
 
 class TaskRead(BaseModel):
@@ -48,6 +57,9 @@ class TaskRead(BaseModel):
     task_type: TaskType
     status: TaskStatus
     timeout_seconds: int
+    model: Optional[str]
+    reasoning_effort: Optional[str]
+    sandbox: Optional[str]
     exit_code: Optional[int]
     error_message: Optional[str]
     cancel_requested: bool
@@ -82,18 +94,21 @@ class RunnerRegister(BaseModel):
     runner_id: str = Field(..., min_length=1, max_length=100)
     pid: int = Field(..., ge=1)
     hostname: str = Field(..., min_length=1, max_length=200)
+    supported_models: Optional[str] = None
 
 
 class RunnerHeartbeat(BaseModel):
     runner_id: str = Field(..., min_length=1, max_length=100)
     pid: int = Field(..., ge=1)
     hostname: str = Field(..., min_length=1, max_length=200)
+    supported_models: Optional[str] = None
 
 
 class RunnerRead(BaseModel):
     runner_id: str
     pid: int
     hostname: str
+    supported_models: Optional[str]
     status: str
     registered_at: datetime
     last_heartbeat_at: datetime
@@ -113,6 +128,9 @@ class RunnerTaskClaimResponse(BaseModel):
     prompt: str
     timeout_seconds: int
     task_type: TaskType
+    model: Optional[str]
+    reasoning_effort: Optional[str]
+    sandbox: str
     require_clean_worktree: Optional[bool]
     test_command: Optional[str]
     smoke_check_command: Optional[str]

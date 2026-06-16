@@ -40,6 +40,9 @@ class Project(SQLModel, table=True):
     default_branch: Optional[str] = None
     require_clean_worktree: Optional[bool] = None
     default_runner_id: Optional[str] = Field(default=None, index=True)
+    default_model: Optional[str] = None
+    default_reasoning_effort: Optional[str] = None
+    default_sandbox: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -53,6 +56,9 @@ class Task(SQLModel, table=True):
     task_type: TaskType = Field(default=TaskType.IMPLEMENT, index=True)
     status: TaskStatus = Field(default=TaskStatus.PENDING, index=True)
     timeout_seconds: int = Field(default=7200)
+    model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    sandbox: Optional[str] = None
     exit_code: Optional[int] = None
     error_message: Optional[str] = None
     cancel_requested: bool = Field(default=False, index=True)
@@ -75,6 +81,7 @@ class RunnerRecord(SQLModel, table=True):
     runner_id: str = Field(primary_key=True)
     pid: int
     hostname: str
+    supported_models: Optional[str] = None
     status: str = Field(default="ONLINE", index=True)
     registered_at: datetime = Field(default_factory=utc_now)
     last_heartbeat_at: datetime = Field(default_factory=utc_now, index=True)

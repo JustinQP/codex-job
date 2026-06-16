@@ -37,6 +37,8 @@ TASK_TEMPLATES: dict[TaskType, tuple[str, str]] = {
     ),
 }
 
+DEFAULT_SANDBOX = "workspace-write"
+
 
 def _artifact_paths(task_id: int) -> tuple[Path, Path, Path]:
     job_dir = JOBS_DIR / str(task_id)
@@ -87,6 +89,11 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
         prompt=prompt,
         task_type=payload.task_type,
         timeout_seconds=payload.timeout_seconds,
+        model=payload.model or project.default_model,
+        reasoning_effort=(
+            payload.reasoning_effort or project.default_reasoning_effort
+        ),
+        sandbox=payload.sandbox or project.default_sandbox or DEFAULT_SANDBOX,
         status=TaskStatus.PENDING,
         assigned_runner_id=assigned_runner_id,
         created_at=now,
@@ -170,6 +177,9 @@ def to_task_read(task: Task):
         task_type=task.task_type,
         status=task.status,
         timeout_seconds=task.timeout_seconds,
+        model=task.model,
+        reasoning_effort=task.reasoning_effort,
+        sandbox=task.sandbox,
         exit_code=task.exit_code,
         error_message=task.error_message,
         cancel_requested=task.cancel_requested,

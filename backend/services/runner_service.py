@@ -34,6 +34,7 @@ def register_runner(session: Session, payload: RunnerRegister) -> RunnerRecord:
             runner_id=payload.runner_id,
             pid=payload.pid,
             hostname=payload.hostname,
+            supported_models=payload.supported_models,
             status="ONLINE",
             registered_at=now,
             last_heartbeat_at=now,
@@ -42,6 +43,7 @@ def register_runner(session: Session, payload: RunnerRegister) -> RunnerRecord:
     else:
         runner.pid = payload.pid
         runner.hostname = payload.hostname
+        runner.supported_models = payload.supported_models
         runner.status = "ONLINE"
         runner.last_heartbeat_at = now
         runner.lease_expires_at = lease_expires_at
@@ -56,6 +58,7 @@ def heartbeat(session: Session, payload: RunnerHeartbeat) -> RunnerRecord:
         runner_id=payload.runner_id,
         pid=payload.pid,
         hostname=payload.hostname,
+        supported_models=payload.supported_models,
     )
     return register_runner(session, register_payload)
 
@@ -133,6 +136,9 @@ def claim_task(session: Session, runner_id: str) -> RunnerTaskClaimResponse | No
         prompt=task.prompt,
         timeout_seconds=task.timeout_seconds,
         task_type=task.task_type,
+        model=task.model,
+        reasoning_effort=task.reasoning_effort,
+        sandbox=task.sandbox or "workspace-write",
         require_clean_worktree=project.require_clean_worktree,
         test_command=project.test_command,
         smoke_check_command=project.smoke_check_command,

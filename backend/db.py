@@ -45,9 +45,15 @@ def _ensure_sqlite_columns() -> None:
             "default_branch": "TEXT",
             "require_clean_worktree": "BOOLEAN",
             "default_runner_id": "TEXT",
+            "default_model": "TEXT",
+            "default_reasoning_effort": "TEXT",
+            "default_sandbox": "TEXT",
         },
         "tasks": {
             "task_type": "VARCHAR DEFAULT 'IMPLEMENT'",
+            "model": "TEXT",
+            "reasoning_effort": "TEXT",
+            "sandbox": "TEXT",
             "cancel_requested": "BOOLEAN DEFAULT 0",
             "assigned_runner_id": "TEXT",
             "runner_id": "TEXT",
@@ -56,6 +62,7 @@ def _ensure_sqlite_columns() -> None:
         },
         "runner_records": {
             "lease_expires_at": "TIMESTAMP",
+            "supported_models": "TEXT",
         },
     }
 

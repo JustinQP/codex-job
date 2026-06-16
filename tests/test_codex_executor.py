@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from runner.codex_executor import (
+    build_codex_command,
     check_clean_worktree,
     collect_git_artifacts,
     execute_codex,
@@ -48,6 +49,44 @@ def test_find_codex_bin_fails_when_env_path_missing(
 
     with pytest.raises(FileNotFoundError):
         find_codex_bin()
+
+
+def test_build_codex_command_includes_model_and_reasoning_effort(tmp_path: Path) -> None:
+    command = build_codex_command(
+        codex_bin="codex",
+        project_path=tmp_path,
+        result_file=tmp_path / "result.md",
+        prompt="do work",
+        model="gpt-5",
+        reasoning_effort="high",
+        sandbox="read-only",
+    )
+
+    assert command[:2] == ["codex", "exec"]
+    model_index = command.index("--model")
+    assert command[model_index : model_index + 2] == ["--model", "gpt-5"]
+    assert "-c" in command
+    assert "reasoning_effort=high" in command
+    assert command[command.index("--sandbox") + 1] == "read-only"
+    assert command[-1] == "do work"
+
+
+def test_build_codex_command_defaults_sandbox_and_skips_default_values(
+    tmp_path: Path,
+) -> None:
+    command = build_codex_command(
+        codex_bin="codex",
+        project_path=tmp_path,
+        result_file=tmp_path / "result.md",
+        prompt="do work",
+        model="default",
+        reasoning_effort="default",
+        sandbox="",
+    )
+
+    assert "--model" not in command
+    assert "-c" not in command
+    assert command[command.index("--sandbox") + 1] == "workspace-write"
 
 
 def test_check_clean_worktree_rejects_non_git_directory(

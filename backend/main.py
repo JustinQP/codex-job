@@ -30,7 +30,7 @@ from backend.schemas import (
     TaskTemplateRead,
 )
 from backend.services import project_service, runner_service, task_service
-from backend import ui
+from backend import mobile, ui
 
 
 @asynccontextmanager
@@ -41,7 +41,7 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 app = FastAPI(
     title="Codex Remote Runner MVP",
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
@@ -86,6 +86,11 @@ def index(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/mobile", include_in_schema=False)
+def mobile_console() -> HTMLResponse:
+    return HTMLResponse(mobile.mobile_console())
 
 
 @app.post("/projects", response_model=ProjectRead)

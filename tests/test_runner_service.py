@@ -135,6 +135,26 @@ def test_runner_service_claim_upload_and_finish(
         session.close()
 
 
+def test_claim_returns_codex_config(tmp_path: Path) -> None:
+    session = make_session()
+    try:
+        task = add_project_and_task(session, tmp_path / "project")
+        task.model = "gpt-5"
+        task.reasoning_effort = "high"
+        task.sandbox = "read-only"
+        session.add(task)
+        session.commit()
+
+        claimed = runner_service.claim_task(session, "runner-1")
+
+        assert claimed is not None
+        assert claimed.model == "gpt-5"
+        assert claimed.reasoning_effort == "high"
+        assert claimed.sandbox == "read-only"
+    finally:
+        session.close()
+
+
 def test_runner_service_claim_returns_none_without_pending_task() -> None:
     session = make_session()
     try:

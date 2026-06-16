@@ -75,6 +75,16 @@ def test_dashboard_renders_projects_and_tasks() -> None:
         assert f"/ui/tasks/{task.id}" in response.text
 
 
+def test_mobile_console_is_public_static_page() -> None:
+    for client, session in make_client():
+        del session
+        response = client.get("/mobile")
+
+        assert response.status_code == 200
+        assert "Codex Mobile Console" in response.text
+        assert "localStorage" in response.text
+
+
 def test_create_task_form_redirects_to_detail() -> None:
     for client, session in make_client():
         project = add_project(session)

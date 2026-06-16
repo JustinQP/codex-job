@@ -33,6 +33,7 @@ from runner.config import (  # noqa: E402
     POLL_INTERVAL_SECONDS,
     RUNNER_LOCK_FILE,
     RUNNER_ID,
+    RUNNER_SUPPORTED_MODELS,
     RUNNER_TOKEN,
     require_clean_worktree,
 )
@@ -49,6 +50,9 @@ class ClaimedTask:
     prompt: str
     timeout_seconds: int
     task_type: TaskType
+    model: Optional[str]
+    reasoning_effort: Optional[str]
+    sandbox: str
     require_clean_worktree: Optional[bool]
     test_command: Optional[str]
     smoke_check_command: Optional[str]
@@ -166,6 +170,7 @@ def register_runner() -> None:
             "runner_id": RUNNER_ID,
             "pid": os.getpid(),
             "hostname": socket.gethostname(),
+            "supported_models": RUNNER_SUPPORTED_MODELS,
         },
     )
 
@@ -178,6 +183,7 @@ def send_heartbeat() -> None:
             "runner_id": RUNNER_ID,
             "pid": os.getpid(),
             "hostname": socket.gethostname(),
+            "supported_models": RUNNER_SUPPORTED_MODELS,
         },
     )
 
@@ -197,6 +203,9 @@ def claim_next_pending_task() -> Optional[ClaimedTask]:
         prompt=payload["prompt"],
         timeout_seconds=payload.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS,
         task_type=TaskType(payload.get("task_type") or TaskType.IMPLEMENT),
+        model=payload.get("model"),
+        reasoning_effort=payload.get("reasoning_effort"),
+        sandbox=payload.get("sandbox") or "workspace-write",
         require_clean_worktree=payload.get("require_clean_worktree"),
         test_command=payload.get("test_command"),
         smoke_check_command=payload.get("smoke_check_command"),
@@ -242,6 +251,9 @@ def process_task(task: ClaimedTask) -> None:
         log_file=log_file,
         result_file=result_file,
         timeout_seconds=task.timeout_seconds,
+        model=task.model,
+        reasoning_effort=task.reasoning_effort,
+        sandbox=task.sandbox,
         should_cancel=lambda: is_cancel_requested(task.task_id),
         on_tick=log_tracker.maybe_upload,
     )
@@ -312,6 +324,9 @@ def write_task_report(
             f"- Task type: {task.task_type.value}",
             f"- Project id: {task.project_id}",
             f"- Timeout seconds: {task.timeout_seconds}",
+            f"- Model: {task.model or ''}",
+            f"- Reasoning effort: {task.reasoning_effort or ''}",
+            f"- Sandbox: {task.sandbox}",
             f"- Exit code: {exit_code}",
             "- Cancel requested: see backend task state",
             f"- Error: {error_message or ''}",

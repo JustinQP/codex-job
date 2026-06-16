@@ -235,6 +235,59 @@ def test_create_task_inherits_project_default_runner() -> None:
         assert response.json()["assigned_runner_id"] == "runner-default"
 
 
+def test_create_task_inherits_project_codex_defaults() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        project.default_model = "gpt-5"
+        project.default_reasoning_effort = "high"
+        project.default_sandbox = "read-only"
+        session.add(project)
+        session.commit()
+
+        inherited = client.post(
+            "/tasks",
+            json={
+                "project_id": project.id,
+                "prompt": "inherit config",
+            },
+        )
+        overridden = client.post(
+            "/tasks",
+            json={
+                "project_id": project.id,
+                "prompt": "override config",
+                "model": "gpt-5-codex",
+                "reasoning_effort": "medium",
+                "sandbox": "workspace-write",
+            },
+        )
+
+        assert inherited.status_code == 200
+        assert inherited.json()["model"] == "gpt-5"
+        assert inherited.json()["reasoning_effort"] == "high"
+        assert inherited.json()["sandbox"] == "read-only"
+        assert overridden.status_code == 200
+        assert overridden.json()["model"] == "gpt-5-codex"
+        assert overridden.json()["reasoning_effort"] == "medium"
+        assert overridden.json()["sandbox"] == "workspace-write"
+
+
+def test_create_task_defaults_sandbox_to_workspace_write() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+
+        response = client.post(
+            "/tasks",
+            json={
+                "project_id": project.id,
+                "prompt": "default sandbox",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["sandbox"] == "workspace-write"
+
+
 def test_cancel_pending_task_marks_cancelled() -> None:
     for client, session in make_client():
         project = add_project(session)

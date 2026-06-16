@@ -59,6 +59,9 @@ def execute_codex(
     log_file: Path,
     result_file: Path,
     timeout_seconds: int,
+    model: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
+    sandbox: str = "workspace-write",
     should_cancel: Optional[Callable[[], bool]] = None,
     on_tick: Optional[Callable[[], None]] = None,
 ) -> CodexExecutionResult:
@@ -77,17 +80,15 @@ def execute_codex(
             codex_bin=None,
         )
 
-    command = [
-        codex_bin,
-        "exec",
-        "--cd",
-        str(project_path),
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(result_file),
-        prompt,
-    ]
+    command = build_codex_command(
+        codex_bin=codex_bin,
+        project_path=project_path,
+        result_file=result_file,
+        prompt=prompt,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        sandbox=sandbox,
+    )
 
     with log_file.open("a", encoding="utf-8", errors="replace") as log:
         log.write(f"Starting codex task in {project_path}\n")
@@ -205,6 +206,34 @@ def execute_codex(
         error_message=error_message,
         codex_bin=codex_bin,
     )
+
+
+def build_codex_command(
+    *,
+    codex_bin: str,
+    project_path: Path,
+    result_file: Path,
+    prompt: str,
+    model: Optional[str],
+    reasoning_effort: Optional[str],
+    sandbox: str,
+) -> list[str]:
+    command = [
+        codex_bin,
+        "exec",
+        "--cd",
+        str(project_path),
+        "--sandbox",
+        sandbox or "workspace-write",
+        "--output-last-message",
+        str(result_file),
+    ]
+    if model and model != "default":
+        command.extend(["--model", model])
+    if reasoning_effort and reasoning_effort != "default":
+        command.extend(["-c", f"reasoning_effort={reasoning_effort}"])
+    command.append(prompt)
+    return command
 
 
 def ensure_git_repository(project_path: Path) -> Optional[str]:

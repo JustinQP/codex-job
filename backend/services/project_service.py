@@ -53,6 +53,9 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
         default_branch=payload.default_branch,
         require_clean_worktree=payload.require_clean_worktree,
         default_runner_id=payload.default_runner_id,
+        default_model=payload.default_model,
+        default_reasoning_effort=payload.default_reasoning_effort,
+        default_sandbox=payload.default_sandbox,
         created_at=utc_now(),
         updated_at=utc_now(),
     )
@@ -113,6 +116,9 @@ def to_project_read(project: Project):
         default_branch=project.default_branch,
         require_clean_worktree=project.require_clean_worktree,
         default_runner_id=project.default_runner_id,
+        default_model=project.default_model,
+        default_reasoning_effort=project.default_reasoning_effort,
+        default_sandbox=project.default_sandbox,
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
