@@ -239,9 +239,15 @@ def get_app_thread_events(session: Session, app_thread_id: int) -> AppThreadEven
     )
 
 
-def to_app_thread_read(app_thread: AppThread) -> AppThreadRead:
+def to_app_thread_read(session: Session, app_thread: AppThread) -> AppThreadRead:
     if app_thread.id is None:
         raise ValueError("app thread id is required")
+    latest_turn = _latest_success_turn(session, app_thread.id)
+    turn_count = len(
+        session.exec(
+            select(AppTurn).where(AppTurn.app_thread_id == app_thread.id)
+        ).all()
+    )
     return AppThreadRead(
         id=app_thread.id,
         project_id=app_thread.project_id,
@@ -250,6 +256,8 @@ def to_app_thread_read(app_thread: AppThread) -> AppThreadRead:
         app_thread_id=app_thread.app_thread_id,
         status=app_thread.status,
         last_error=app_thread.last_error,
+        latest_assistant_final=latest_turn.assistant_final if latest_turn else None,
+        turn_count=turn_count,
         created_at=app_thread.created_at,
         updated_at=app_thread.updated_at,
     )

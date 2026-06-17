@@ -125,7 +125,7 @@ def list_app_threads(
     _: None = Depends(require_api_token),
 ):
     return [
-        app_thread_service.to_app_thread_read(app_thread)
+        app_thread_service.to_app_thread_read(session, app_thread)
         for app_thread in app_thread_service.list_app_threads(
             session,
             project_id=project_id,
@@ -141,7 +141,7 @@ def create_app_thread(
     _: None = Depends(require_api_token),
 ):
     app_thread = app_thread_service.create_app_thread(session, payload)
-    return app_thread_service.to_app_thread_read(app_thread)
+    return app_thread_service.to_app_thread_read(session, app_thread)
 
 
 @app.get("/app-threads/{app_thread_id}", response_model=AppThreadRead)
@@ -151,7 +151,7 @@ def get_app_thread(
     _: None = Depends(require_api_token),
 ):
     app_thread = app_thread_service.get_app_thread_or_404(session, app_thread_id)
-    return app_thread_service.to_app_thread_read(app_thread)
+    return app_thread_service.to_app_thread_read(session, app_thread)
 
 
 @app.patch("/app-threads/{app_thread_id}", response_model=AppThreadRead)
@@ -162,7 +162,7 @@ def rename_app_thread(
     _: None = Depends(require_api_token),
 ):
     app_thread = app_thread_service.rename_app_thread(session, app_thread_id, payload)
-    return app_thread_service.to_app_thread_read(app_thread)
+    return app_thread_service.to_app_thread_read(session, app_thread)
 
 
 @app.delete("/app-threads/{app_thread_id}", response_model=AppThreadRead)
@@ -172,7 +172,7 @@ def close_app_thread(
     _: None = Depends(require_api_token),
 ):
     app_thread = app_thread_service.close_app_thread(session, app_thread_id)
-    return app_thread_service.to_app_thread_read(app_thread)
+    return app_thread_service.to_app_thread_read(session, app_thread)
 
 
 @app.post("/app-threads/{app_thread_id}/turns", response_model=AppTurnRead)

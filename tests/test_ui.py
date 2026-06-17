@@ -119,13 +119,24 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         html = response.text
         assert "App Server 会话" in html
         assert "检查 App Server Bridge" in html
+        assert "appOutput" in html
+        assert "查看 App Final" in html
+        assert "查看 App Events" in html
+        assert "正在等待 App Server 返回" in html
+        assert "item selected" in html
         assert 'api("/app-server-bridge/health"' in html
         assert 'api("/app-threads?limit=20"' in html
         assert 'api("/app-threads", {method: "POST"' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/turns`' in html
+        assert 'api(`/app-threads/${selectedAppThreadId}/final`' in html
+        assert 'api(`/app-threads/${selectedAppThreadId}/events`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE"' in html
         assert "${escapeHtml(t.title)}" in html
         assert "${escapeHtml(t.status)}" in html
+        assert "${escapeHtml(t.turn_count)}" in html
+        assert "${escapeHtml(t.latest_assistant_final || \"\")}" in html
+        assert "${escapeHtml(selectedAppThreadId)}" in html
+        assert "${escapeHtml(final.assistant_final || \"\")}" in html
         assert "${escapeHtml(t.assistant_final || t.error_message || \"\")}" in html
 
 

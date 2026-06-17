@@ -141,6 +141,8 @@ def test_app_threads_crud_turns_final_and_events(monkeypatch) -> None:
 
         assert created["title"] == "Chat"
         assert created["bridge_thread_id"] == "bridge-1"
+        assert created["turn_count"] == 0
+        assert created["latest_assistant_final"] is None
         assert listed.status_code == 200
         assert listed.json()[0]["id"] == created["id"]
         assert detail.status_code == 200
@@ -151,6 +153,14 @@ def test_app_threads_crud_turns_final_and_events(monkeypatch) -> None:
         assert turn.json()["bridge_turn_id"] == "turn-1"
         assert turns.status_code == 200
         assert len(turns.json()) == 1
+        listed_after_turn = client.get("/app-threads")
+        detail_after_turn = client.get(f"/app-threads/{created['id']}")
+        assert listed_after_turn.status_code == 200
+        assert detail_after_turn.status_code == 200
+        assert listed_after_turn.json()[0]["turn_count"] == 1
+        assert listed_after_turn.json()[0]["latest_assistant_final"] == "full assistant final"
+        assert detail_after_turn.json()["turn_count"] == 1
+        assert detail_after_turn.json()["latest_assistant_final"] == "full assistant final"
         assert final.status_code == 200
         assert final.json()["assistant_final"] == "full assistant final"
         assert events.status_code == 200

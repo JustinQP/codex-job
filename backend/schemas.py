@@ -185,6 +185,8 @@ class AppThreadRead(BaseModel):
     app_thread_id: Optional[str]
     status: str
     last_error: Optional[str]
+    latest_assistant_final: Optional[str] = None
+    turn_count: int = 0
     created_at: datetime
     updated_at: datetime
 

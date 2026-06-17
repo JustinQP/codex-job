@@ -27,6 +27,7 @@ def mobile_console() -> str:
     .muted { color: #64748b; font-size: 12px; }
     .item { border-top: 1px solid #e5e7eb; padding: 9px 0; }
     .item:first-child { border-top: 0; }
+    .item.selected { border-left: 4px solid #2563eb; padding-left: 8px; }
     .links { display: flex; gap: 8px; flex-wrap: wrap; }
     .links a { color: #2563eb; text-decoration: none; font-size: 13px; }
     pre { white-space: pre-wrap; word-break: break-word; background: #0f172a; color: #e5e7eb; padding: 10px; border-radius: 6px; max-height: 260px; overflow: auto; }
@@ -112,22 +113,33 @@ def mobile_console() -> str:
     <div id="appBridgeStatus" class="muted"></div>
     <label>App Thread 标题 <input id="appThreadTitle" placeholder="App Thread 标题"></label>
     <button id="createAppThread">创建 App Thread</button>
+    <div id="appThreadCurrent" class="muted">当前 App Thread: 未选择</div>
     <div id="appThreads" class="stack"></div>
     <label>App Turn Message <textarea id="appMessage" placeholder="发送到当前 App Thread 的消息"></textarea></label>
+    <div id="appWaiting" class="muted"></div>
     <div class="row">
       <button id="sendAppTurn">发送 App Turn</button>
       <button id="loadAppTurns" class="secondary">查看 Turns</button>
     </div>
+    <div class="row">
+      <button id="loadAppFinal" class="secondary">查看 App Final</button>
+      <button id="loadAppEvents" class="secondary">查看 App Events</button>
+    </div>
     <button id="closeAppThread" class="danger">关闭当前 App Thread</button>
     <div id="appThreadFinal" class="item"></div>
     <div id="appTurns" class="stack"></div>
+    <pre id="appOutput"></pre>
   </section>
 </main>
 
 <script>
 const tokenInput = document.getElementById("token");
 const output = document.getElementById("output");
+const appOutput = document.getElementById("appOutput");
+const APP_WAITING_TEXT = "正在等待 App Server 返回，请不要刷新页面。";
 let selectedAppThreadId = null;
+let selectedAppThread = null;
+let appThreadsCache = [];
 tokenInput.value = localStorage.getItem("apiToken") || "";
 
 function headers(json = false) {
@@ -140,6 +152,10 @@ function headers(json = false) {
 
 function log(text) {
   output.textContent = text;
+}
+
+function appLog(text) {
+  appOutput.textContent = text;
 }
 
 function escapeHtml(value) {
@@ -160,18 +176,21 @@ async function api(path, options = {}) {
 }
 
 async function loadAll() {
-  const [projects, runners, tasks, templates, appThreads] = await Promise.all([
+  const [projects, runners, tasks, templates] = await Promise.all([
     api("/projects", {headers: headers()}),
     api("/runners", {headers: headers()}),
     api("/tasks?limit=20", {headers: headers()}),
     api("/task-templates", {headers: headers()}),
-    api("/app-threads?limit=20", {headers: headers()}),
   ]);
   renderProjects(projects);
   renderRunners(runners);
   renderTasks(tasks);
   renderTaskTypes(templates);
-  renderAppThreads(appThreads);
+  try {
+    await loadAppThreadList();
+  } catch (err) {
+    appLog(String(err));
+  }
 }
 
 function renderProjects(projects) {
@@ -258,16 +277,41 @@ async function checkAppServerBridge() {
   const health = await api("/app-server-bridge/health", {headers: headers()});
   document.getElementById("appBridgeStatus").innerHTML =
     `status=${escapeHtml(health.status || "")} mode=${escapeHtml(health.mode || "")} sandbox=${escapeHtml(health.sandbox || "")} threads=${escapeHtml(health.threads ?? "")}`;
+  appLog(JSON.stringify(health, null, 2));
+}
+
+async function loadAppThreadList() {
+  const appThreads = await api("/app-threads?limit=20", {headers: headers()});
+  renderAppThreads(appThreads);
+  return appThreads;
+}
+
+function updateSelectedAppThreadDisplay() {
+  const target = document.getElementById("appThreadCurrent");
+  if (!selectedAppThreadId) {
+    target.textContent = "当前 App Thread: 未选择";
+    return;
+  }
+  const title = selectedAppThread ? selectedAppThread.title : "";
+  const status = selectedAppThread ? selectedAppThread.status : "";
+  target.innerHTML =
+    `当前 App Thread: #${escapeHtml(selectedAppThreadId)} ${escapeHtml(title)} ${escapeHtml(status)}`;
 }
 
 function renderAppThreads(appThreads) {
+  appThreadsCache = appThreads;
   if (selectedAppThreadId && !appThreads.some(t => t.id === selectedAppThreadId)) {
     selectedAppThreadId = null;
+    selectedAppThread = null;
+  } else if (selectedAppThreadId) {
+    selectedAppThread = appThreads.find(t => t.id === selectedAppThreadId) || selectedAppThread;
   }
+  updateSelectedAppThreadDisplay();
   document.getElementById("appThreads").innerHTML = appThreads.map(t => `
-    <div class="item">
+    <div class="${selectedAppThreadId === t.id ? "item selected" : "item"}">
       <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.title)}<br>
-      <span class="muted">project=${escapeHtml(t.project_id)} status=${escapeHtml(t.status)} updated=${escapeHtml(t.updated_at)}</span>
+      <span class="muted">project=${escapeHtml(t.project_id)} status=${escapeHtml(t.status)} turns=${escapeHtml(t.turn_count)} updated=${escapeHtml(t.updated_at)}</span><br>
+      <span>${escapeHtml(t.latest_assistant_final || "")}</span>
       <div class="links">
         <a href="#" onclick="selectAppThread(${escapeHtml(t.id)});return false;">选择</a>
       </div>
@@ -281,29 +325,43 @@ async function createAppThread() {
   };
   const appThread = await api("/app-threads", {method: "POST", headers: headers(true), body: JSON.stringify(payload)});
   selectedAppThreadId = appThread.id;
+  selectedAppThread = appThread;
   await loadAll();
+  appLog(`已创建 App Thread #${appThread.id}`);
 }
 
 function selectAppThread(id) {
   selectedAppThreadId = id;
-  document.getElementById("appThreadFinal").textContent = `当前 App Thread: #${id}`;
-  loadAppTurns().catch(err => log(String(err)));
+  selectedAppThread = appThreadsCache.find(t => t.id === id) || null;
+  updateSelectedAppThreadDisplay();
+  renderAppThreads(appThreadsCache);
+  loadAppTurns().catch(err => appLog(String(err)));
 }
 
 async function sendAppTurn() {
   if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
   const message = document.getElementById("appMessage").value.trim();
   if (!message) throw new Error("App Turn message 不能为空");
-  const appTurn = await api(`/app-threads/${selectedAppThreadId}/turns`, {
-    method: "POST",
-    headers: headers(true),
-    body: JSON.stringify({message}),
-  });
-  document.getElementById("appThreadFinal").innerHTML =
-    `<strong>assistant_final</strong><br>${escapeHtml(appTurn.assistant_final || "")}`;
-  document.getElementById("appMessage").value = "";
-  await loadAppTurns();
-  await loadAll();
+  const sendButton = document.getElementById("sendAppTurn");
+  const waiting = document.getElementById("appWaiting");
+  sendButton.disabled = true;
+  waiting.textContent = APP_WAITING_TEXT;
+  appLog(APP_WAITING_TEXT);
+  try {
+    const appTurn = await api(`/app-threads/${selectedAppThreadId}/turns`, {
+      method: "POST",
+      headers: headers(true),
+      body: JSON.stringify({message}),
+    });
+    document.getElementById("appMessage").value = "";
+    await loadAppThreadList();
+    await loadAppTurns();
+    await loadAppFinal();
+    appLog(`App Turn #${appTurn.id} ${appTurn.status}`);
+  } finally {
+    sendButton.disabled = false;
+    waiting.textContent = "";
+  }
 }
 
 async function loadAppTurns() {
@@ -317,13 +375,30 @@ async function loadAppTurns() {
     </div>`).join("");
 }
 
+async function loadAppFinal() {
+  if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  const final = await api(`/app-threads/${selectedAppThreadId}/final`, {headers: headers()});
+  document.getElementById("appThreadFinal").innerHTML =
+    `<strong>assistant_final</strong><br>${escapeHtml(final.assistant_final || "")}`;
+  return final;
+}
+
+async function loadAppEvents() {
+  if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  const events = await api(`/app-threads/${selectedAppThreadId}/events`, {headers: headers()});
+  appLog(JSON.stringify(events, null, 2));
+  return events;
+}
+
 async function closeAppThread() {
   if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
   if (!confirm("确认关闭当前 App Thread？")) return;
   await api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE", headers: headers()});
   selectedAppThreadId = null;
+  selectedAppThread = null;
   document.getElementById("appThreadFinal").textContent = "";
   document.getElementById("appTurns").innerHTML = "";
+  appLog("已关闭 App Thread");
   await loadAll();
 }
 
@@ -334,12 +409,14 @@ document.getElementById("saveToken").onclick = () => {
 document.getElementById("createTask").onclick = () => createTask().catch(err => log(String(err)));
 document.getElementById("refresh").onclick = () => loadAll().catch(err => log(String(err)));
 document.getElementById("clearOutput").onclick = () => log("");
-document.getElementById("checkAppBridge").onclick = () => checkAppServerBridge().catch(err => log(String(err)));
-document.getElementById("refreshAppThreads").onclick = () => loadAll().catch(err => log(String(err)));
-document.getElementById("createAppThread").onclick = () => createAppThread().catch(err => log(String(err)));
-document.getElementById("sendAppTurn").onclick = () => sendAppTurn().catch(err => log(String(err)));
-document.getElementById("loadAppTurns").onclick = () => loadAppTurns().catch(err => log(String(err)));
-document.getElementById("closeAppThread").onclick = () => closeAppThread().catch(err => log(String(err)));
+document.getElementById("checkAppBridge").onclick = () => checkAppServerBridge().catch(err => appLog(String(err)));
+document.getElementById("refreshAppThreads").onclick = () => loadAppThreadList().catch(err => appLog(String(err)));
+document.getElementById("createAppThread").onclick = () => createAppThread().catch(err => appLog(String(err)));
+document.getElementById("sendAppTurn").onclick = () => sendAppTurn().catch(err => appLog(String(err)));
+document.getElementById("loadAppTurns").onclick = () => loadAppTurns().catch(err => appLog(String(err)));
+document.getElementById("loadAppFinal").onclick = () => loadAppFinal().catch(err => appLog(String(err)));
+document.getElementById("loadAppEvents").onclick = () => loadAppEvents().catch(err => appLog(String(err)));
+document.getElementById("closeAppThread").onclick = () => closeAppThread().catch(err => appLog(String(err)));
 loadAll().catch(err => log(String(err)));
 </script>
 </body>

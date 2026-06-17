@@ -190,6 +190,31 @@ def test_send_app_turn_success_persists_turn_and_summary() -> None:
         assert events.event_summary == {"total_events": 2, "bridge_thread_id": "bridge-1"}
 
 
+def test_to_app_thread_read_returns_latest_final_and_turn_count() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id, title="Chat"),
+            fake,
+        )
+
+        initial_read = app_thread_service.to_app_thread_read(session, app_thread)
+        app_thread_service.send_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+            fake,
+        )
+        updated_read = app_thread_service.to_app_thread_read(session, app_thread)
+
+        assert initial_read.turn_count == 0
+        assert initial_read.latest_assistant_final is None
+        assert updated_read.turn_count == 1
+        assert updated_read.latest_assistant_final == "full assistant final"
+
+
 def test_send_app_turn_prefers_full_final_over_preview() -> None:
     for session in make_session():
         project = add_project(session)

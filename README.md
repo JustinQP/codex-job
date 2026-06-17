@@ -273,6 +273,7 @@ http://127.0.0.1:8000/mobile
 - 选择项目、Runner、任务类型、模型、推理难度、sandbox。
 - 提交任务、查看最近任务、查看 log/result/diff、取消任务。
 - v0.8.0 起，可在主线手机控制台中检查 App Server Bridge、创建 App Thread、发送 App Turn、查看 turns/final、关闭 App Thread。
+- v0.8.2 起，App Server 会话区会显示当前选中 thread、最近 final、turn 数量，并提供独立状态输出区和 final/events 查看按钮。
 
 当前目标模式只提交一次受控目标任务，不做无限自主迭代。
 
@@ -315,6 +316,26 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 # 3. 打开主线手机控制台
 http://127.0.0.1:8000/mobile
 ```
+
+v0.8.2 主线 App Server 会话 smoke：
+
+```powershell
+# 1. 启动 App Server Bridge sidecar
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+
+# 2. 启动主后端
+$env:API_TOKEN="dev-token"
+$env:APP_SERVER_BRIDGE_URL="http://127.0.0.1:8766"
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+# 3. 运行主线 App Server 会话 smoke
+$env:API_TOKEN="dev-token"
+python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\JustinKing\codex-job
+```
+
+`smoke_app_server_flow.py` 只访问主后端 `8000`，不直接访问 Bridge `8766`。如果 `assistant_final` 包含 `app-thread-smoke-ok`，则 smoke 判定通过。
 
 App Server 会话模式第一版是同步阻塞调用。Bridge sidecar 不可用时，App Thread API 返回 `502`、`503` 或 `504`。当前不持久化完整事件流，只保存最近 summary/final，不支持 SSE、审批 UI 或 diff UI。
 
