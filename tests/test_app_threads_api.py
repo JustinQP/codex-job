@@ -10,7 +10,7 @@ from sqlmodel.pool import StaticPool
 import backend.main as main_module
 from backend.db import get_session
 from backend.main import app
-from backend.models import Project, utc_now
+from backend.models import AppThread, AppTurn, Project, utc_now
 from backend.services.app_server_bridge_client import AppServerBridgeError
 
 
@@ -153,6 +153,7 @@ def test_app_threads_crud_turns_final_and_events(monkeypatch) -> None:
         assert turn.status_code == 200
         assert turn.json()["assistant_final"] == "full assistant final"
         assert turn.json()["bridge_turn_id"] == "turn-1"
+        assert turn.json()["event_summary"]["total_events"] == 2
         assert turns.status_code == 200
         assert len(turns.json()) == 1
         listed_after_turn = client.get("/app-threads")
@@ -212,6 +213,8 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
             f"/app-turns/{turn_id}/cancel",
             headers={"X-API-Token": "secret"},
         )
+        protected_recover = client.post("/app-turns/recover-stale")
+        authorized_recover = client.post("/app-turns/recover-stale", headers={"X-API-Token": "secret"})
 
         assert client.get("/health").status_code == 200
         assert protected_get.status_code == 401
@@ -226,6 +229,8 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
         assert authorized_get_turn.status_code == 200
         assert protected_cancel_turn.status_code == 401
         assert authorized_cancel_turn.status_code == 200
+        assert protected_recover.status_code == 401
+        assert authorized_recover.status_code == 200
 
 
 def test_async_app_turn_api_creates_pending_turn_and_gets_turn(monkeypatch) -> None:
@@ -329,6 +334,115 @@ def test_create_app_thread_rejects_missing_bridge_thread_id(monkeypatch) -> None
         assert response.status_code == 502
         assert response.json()["detail"]["code"] == "invalid_bridge_response"
         assert response.json()["detail"]["message"] == "Bridge response missing bridge_thread_id"
+
+
+def test_recover_stale_app_turns_api_is_idempotent(monkeypatch) -> None:
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Chat",
+            bridge_thread_id="bridge-1",
+            app_thread_id="app-1",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_turn = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="stale",
+            status="PENDING",
+            created_at=utc_now(),
+        )
+        session.add(app_turn)
+        session.commit()
+        session.refresh(app_turn)
+
+        first = client.post("/app-turns/recover-stale")
+        second = client.post("/app-turns/recover-stale")
+
+        session.refresh(app_thread)
+        session.refresh(app_turn)
+        assert first.status_code == 200
+        assert first.json() == {"recovered_count": 1, "recovered_turn_ids": [app_turn.id]}
+        assert second.status_code == 200
+        assert second.json() == {"recovered_count": 0, "recovered_turn_ids": []}
+        assert app_turn.status == "FAILED"
+        assert app_thread.status == "ERROR"
+
+
+def test_app_thread_and_turn_filters_and_cleanup_api(monkeypatch) -> None:
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        active = AppThread(
+            project_id=project.id,
+            title="Active",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        closed = AppThread(
+            project_id=project.id,
+            title="Closed",
+            status="CLOSED",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        archived = AppThread(
+            project_id=project.id,
+            title="[archived] Error",
+            status="ERROR",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(active)
+        session.add(closed)
+        session.add(archived)
+        session.commit()
+        session.refresh(active)
+        session.refresh(closed)
+        session.refresh(archived)
+        session.add(
+            AppTurn(
+                app_thread_id=active.id,
+                user_message="ok",
+                status="SUCCESS",
+                created_at=utc_now(),
+            )
+        )
+        session.add(
+            AppTurn(
+                app_thread_id=active.id,
+                user_message="bad",
+                status="FAILED",
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+
+        active_threads = client.get("/app-threads?status=ACTIVE")
+        bad_threads = client.get("/app-threads?status=BAD")
+        default_threads = client.get("/app-threads")
+        with_archived = client.get("/app-threads?include_archived=true")
+        success_turns = client.get(f"/app-threads/{active.id}/turns?status=SUCCESS")
+        bad_turns = client.get(f"/app-threads/{active.id}/turns?status=BAD")
+        cleanup_closed = client.post("/app-threads/cleanup", json={"status": "CLOSED", "limit": 50})
+        cleanup_active = client.post("/app-threads/cleanup", json={"status": "ACTIVE"})
+
+        assert active_threads.status_code == 200
+        assert [thread["status"] for thread in active_threads.json()] == ["ACTIVE"]
+        assert bad_threads.status_code == 400
+        assert all(not thread["title"].startswith("[archived]") for thread in default_threads.json())
+        assert any(thread["title"].startswith("[archived]") for thread in with_archived.json())
+        assert success_turns.status_code == 200
+        assert [turn["status"] for turn in success_turns.json()] == ["SUCCESS"]
+        assert bad_turns.status_code == 400
+        assert cleanup_closed.status_code == 200
+        assert cleanup_closed.json() == {"archived_count": 1, "archived_thread_ids": [closed.id]}
+        assert cleanup_active.status_code == 400
 
 
 def test_app_threads_not_found_and_empty_turn(monkeypatch) -> None:

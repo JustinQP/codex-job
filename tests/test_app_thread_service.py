@@ -189,7 +189,10 @@ def test_send_app_turn_success_persists_turn_and_summary() -> None:
         assert app_turn.completed_at is not None
         assert final.assistant_final == "full assistant final"
         assert events.latest_turn_id == app_turn.id
-        assert events.event_summary == {"total_events": 2, "bridge_thread_id": "bridge-1"}
+        assert events.event_summary["total_events"] == 2
+        assert events.event_summary["event_type_counts"] == {}
+        assert events.event_summary["has_error"] is False
+        assert events.event_summary["raw"]["bridge_thread_id"] == "bridge-1"
 
 
 def test_to_app_thread_read_returns_latest_final_and_turn_count() -> None:
@@ -533,6 +536,225 @@ def test_to_app_turn_read_returns_duration_seconds() -> None:
 
         assert app_turn_read.duration_seconds is not None
         assert app_turn_read.duration_seconds >= 0
+        assert app_turn_read.event_summary["total_events"] == 2
+
+
+def test_normalize_event_summary_standardizes_bridge_summary() -> None:
+    normalized = app_thread_service.normalize_event_summary(
+        {
+            "summary": {
+                "total_events": 3,
+                "event_counts": {"turn/started": 1, "turn/completed": 1},
+                "has_error": True,
+                "errors": [{"message": "boom"}],
+                "assistant_text_preview": "hello",
+                "assistant_text_length": 5,
+            }
+        }
+    )
+
+    assert normalized == {
+        "total_events": 3,
+        "event_type_counts": {"turn/started": 1, "turn/completed": 1},
+        "has_error": True,
+        "errors": [{"message": "boom"}],
+        "assistant_text_length": 5,
+        "assistant_text_preview": "hello",
+        "raw": {
+            "total_events": 3,
+            "event_counts": {"turn/started": 1, "turn/completed": 1},
+            "has_error": True,
+            "errors": [{"message": "boom"}],
+            "assistant_text_preview": "hello",
+            "assistant_text_length": 5,
+        },
+    }
+
+
+def test_to_app_turn_read_compatible_with_partial_and_invalid_summary() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        partial = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="partial",
+            status="SUCCESS",
+            event_summary_json='{"total_events": 4}',
+            created_at=utc_now(),
+        )
+        invalid = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="invalid",
+            status="SUCCESS",
+            event_summary_json="not-json",
+            created_at=utc_now(),
+        )
+        session.add(partial)
+        session.add(invalid)
+        session.commit()
+        session.refresh(partial)
+        session.refresh(invalid)
+
+        partial_read = app_thread_service.to_app_turn_read(partial)
+        invalid_read = app_thread_service.to_app_turn_read(invalid)
+
+        assert partial_read.event_summary["total_events"] == 4
+        assert partial_read.event_summary["event_type_counts"] == {}
+        assert invalid_read.event_summary == {"invalid_summary": "not-json"}
+
+
+def test_get_app_thread_events_returns_latest_turn_with_summary() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        with_summary = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="with summary",
+            status="SUCCESS",
+            event_summary_json='{"summary":{"total_events": 7}}',
+            created_at=utc_now(),
+        )
+        without_summary = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="without summary",
+            status="SUCCESS",
+            created_at=utc_now(),
+        )
+        session.add(with_summary)
+        session.add(without_summary)
+        session.commit()
+        session.refresh(with_summary)
+
+        events = app_thread_service.get_app_thread_events(session, app_thread.id)
+
+        assert events.latest_turn_id == with_summary.id
+        assert events.event_summary["total_events"] == 7
+
+
+def test_list_app_threads_filters_status_and_hides_archived_by_default() -> None:
+    for session in make_session():
+        project = add_project(session)
+        active = AppThread(
+            project_id=project.id,
+            title="Active",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        error = AppThread(
+            project_id=project.id,
+            title="Error",
+            status="ERROR",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        archived = AppThread(
+            project_id=project.id,
+            title="[archived] Closed",
+            status="CLOSED",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(active)
+        session.add(error)
+        session.add(archived)
+        session.commit()
+
+        active_threads = app_thread_service.list_app_threads(session, status_filter="ACTIVE")
+        default_threads = app_thread_service.list_app_threads(session)
+        all_threads = app_thread_service.list_app_threads(session, include_archived=True)
+
+        assert [thread.status for thread in active_threads] == ["ACTIVE"]
+        assert all(not thread.title.startswith("[archived]") for thread in default_threads)
+        assert any(thread.title.startswith("[archived]") for thread in all_threads)
+
+
+def test_list_app_threads_rejects_invalid_status() -> None:
+    for session in make_session():
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.list_app_threads(session, status_filter="BAD")
+
+        assert exc.value.status_code == 400
+
+
+def test_list_app_turns_filters_status_and_rejects_invalid_status() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        for turn_status in ("SUCCESS", "FAILED"):
+            session.add(
+                AppTurn(
+                    app_thread_id=app_thread.id,
+                    user_message=turn_status,
+                    status=turn_status,
+                    created_at=utc_now(),
+                )
+            )
+        session.commit()
+
+        success_turns = app_thread_service.list_app_turns(session, app_thread.id, status_filter="SUCCESS")
+        assert [turn.status for turn in success_turns] == ["SUCCESS"]
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.list_app_turns(session, app_thread.id, status_filter="BAD")
+        assert exc.value.status_code == 400
+
+
+def test_cleanup_app_threads_archives_closed_and_error_only() -> None:
+    for session in make_session():
+        project = add_project(session)
+        closed = AppThread(
+            project_id=project.id,
+            title="Closed",
+            status="CLOSED",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        already_archived = AppThread(
+            project_id=project.id,
+            title="[archived] Old",
+            status="CLOSED",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        active = AppThread(
+            project_id=project.id,
+            title="Active",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(closed)
+        session.add(already_archived)
+        session.add(active)
+        session.commit()
+        session.refresh(closed)
+        session.refresh(already_archived)
+
+        result = app_thread_service.cleanup_app_threads(session, "CLOSED", limit=50)
+        session.refresh(closed)
+        session.refresh(already_archived)
+
+        assert result == {"archived_count": 1, "archived_thread_ids": [closed.id]}
+        assert closed.title == "[archived] Closed"
+        assert already_archived.title == "[archived] Old"
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.cleanup_app_threads(session, "ACTIVE")
+        assert exc.value.status_code == 400
 
 
 def test_cancel_app_turn_pending_and_running_marks_cancelled(monkeypatch) -> None:

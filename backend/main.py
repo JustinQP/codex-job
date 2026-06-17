@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+import traceback
 from urllib.parse import parse_qs
 from typing import Iterable
 
@@ -10,9 +11,11 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, sta
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlmodel import Session
 
-from backend.db import JOBS_DIR, get_session, init_db
+from backend.db import JOBS_DIR, engine, get_session, init_db
 from backend.models import TaskStatus, TaskType
 from backend.schemas import (
+    AppThreadCleanupRead,
+    AppThreadCleanupRequest,
     AppThreadCreate,
     AppThreadEventsRead,
     AppThreadFinalRead,
@@ -20,6 +23,7 @@ from backend.schemas import (
     AppThreadUpdate,
     AppTurnCreate,
     AppTurnRead,
+    AppTurnRecoveryRead,
     ProjectCreate,
     ProjectRead,
     RunnerHeartbeat,
@@ -44,6 +48,11 @@ from backend import mobile, ui
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> Iterable[None]:
     init_db()
+    try:
+        with Session(engine) as session:
+            app_thread_service.recover_stale_app_turns(session)
+    except Exception:
+        traceback.print_exc()
     yield
 
 
@@ -120,6 +129,8 @@ def mobile_console() -> HTMLResponse:
 @app.get("/app-threads", response_model=list[AppThreadRead])
 def list_app_threads(
     project_id: int | None = None,
+    status: str | None = None,
+    include_archived: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     session: Session = Depends(get_session),
     _: None = Depends(require_api_token),
@@ -129,7 +140,9 @@ def list_app_threads(
         for app_thread in app_thread_service.list_app_threads(
             session,
             project_id=project_id,
+            status_filter=status,
             limit=limit,
+            include_archived=include_archived,
         )
     ]
 
@@ -142,6 +155,19 @@ def create_app_thread(
 ):
     app_thread = app_thread_service.create_app_thread(session, payload)
     return app_thread_service.to_app_thread_read(session, app_thread)
+
+
+@app.post("/app-threads/cleanup", response_model=AppThreadCleanupRead)
+def cleanup_app_threads(
+    payload: AppThreadCleanupRequest,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return app_thread_service.cleanup_app_threads(
+        session,
+        status_filter=payload.status,
+        limit=payload.limit,
+    )
 
 
 @app.get("/app-threads/{app_thread_id}", response_model=AppThreadRead)
@@ -207,6 +233,14 @@ def create_async_app_turn(
     return app_thread_service.to_app_turn_read(app_turn)
 
 
+@app.post("/app-turns/recover-stale", response_model=AppTurnRecoveryRead)
+def recover_stale_app_turns(
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return app_thread_service.recover_stale_app_turns(session)
+
+
 @app.get("/app-turns/{app_turn_id}", response_model=AppTurnRead)
 def get_app_turn(
     app_turn_id: int,
@@ -230,12 +264,19 @@ def cancel_app_turn(
 @app.get("/app-threads/{app_thread_id}/turns", response_model=list[AppTurnRead])
 def list_app_turns(
     app_thread_id: int,
+    status: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
     session: Session = Depends(get_session),
     _: None = Depends(require_api_token),
 ):
     return [
         app_thread_service.to_app_turn_read(app_turn)
-        for app_turn in app_thread_service.list_app_turns(session, app_thread_id)
+        for app_turn in app_thread_service.list_app_turns(
+            session,
+            app_thread_id,
+            status_filter=status,
+            limit=limit,
+        )
     ]
 
 

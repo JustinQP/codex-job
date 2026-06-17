@@ -35,6 +35,23 @@ APP_TURN_SUCCESS = "SUCCESS"
 APP_TURN_FAILED = "FAILED"
 APP_TURN_CANCELLED = "CANCELLED"
 
+STALE_TURN_ERROR = "backend restarted before app turn completed"
+ARCHIVED_PREFIX = "[archived] "
+
+APP_THREAD_STATUSES = {
+    APP_THREAD_CREATED,
+    APP_THREAD_ACTIVE,
+    APP_THREAD_ERROR,
+    APP_THREAD_CLOSED,
+}
+APP_TURN_STATUSES = {
+    APP_TURN_PENDING,
+    APP_TURN_RUNNING,
+    APP_TURN_SUCCESS,
+    APP_TURN_FAILED,
+    APP_TURN_CANCELLED,
+}
+
 
 def create_app_thread(
     session: Session,
@@ -74,13 +91,52 @@ def create_app_thread(
 def list_app_threads(
     session: Session,
     project_id: int | None = None,
+    status_filter: str | None = None,
     limit: int = 50,
+    include_archived: bool = False,
 ) -> list[AppThread]:
+    normalized_status = _normalize_status(status_filter, APP_THREAD_STATUSES, "app thread status")
     statement = select(AppThread)
     if project_id is not None:
         statement = statement.where(AppThread.project_id == project_id)
+    if normalized_status is not None:
+        statement = statement.where(AppThread.status == normalized_status)
+    if not include_archived:
+        statement = statement.where(AppThread.title.not_like(f"{ARCHIVED_PREFIX}%"))
     statement = statement.order_by(AppThread.id.desc()).limit(limit)
     return list(session.exec(statement).all())
+
+
+def cleanup_app_threads(session: Session, status_filter: str, limit: int = 50) -> dict[str, Any]:
+    normalized_status = _normalize_status(status_filter, {APP_THREAD_CLOSED, APP_THREAD_ERROR}, "cleanup status")
+    if normalized_status is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cleanup status is required")
+
+    app_threads = list(
+        session.exec(
+            select(AppThread)
+            .where(
+                AppThread.status == normalized_status,
+                AppThread.title.not_like(f"{ARCHIVED_PREFIX}%"),
+            )
+            .order_by(AppThread.id.desc())
+            .limit(limit)
+        ).all()
+    )
+    archived_ids: list[int] = []
+    now = utc_now()
+    for app_thread in app_threads:
+        if app_thread.id is None:
+            continue
+        app_thread.title = f"{ARCHIVED_PREFIX}{app_thread.title}"
+        app_thread.updated_at = now
+        session.add(app_thread)
+        archived_ids.append(app_thread.id)
+    session.commit()
+    return {
+        "archived_count": len(archived_ids),
+        "archived_thread_ids": archived_ids,
+    }
 
 
 def get_app_thread_or_404(session: Session, app_thread_id: int) -> AppThread:
@@ -273,15 +329,66 @@ def create_async_app_turn(
     return app_turn
 
 
-def list_app_turns(session: Session, app_thread_id: int) -> list[AppTurn]:
+def list_app_turns(
+    session: Session,
+    app_thread_id: int,
+    status_filter: str | None = None,
+    limit: int = 100,
+) -> list[AppTurn]:
     get_app_thread_or_404(session, app_thread_id)
-    return list(
+    normalized_status = _normalize_status(status_filter, APP_TURN_STATUSES, "app turn status")
+    statement = (
+        select(AppTurn)
+        .where(AppTurn.app_thread_id == app_thread_id)
+        .order_by(AppTurn.id)
+        .limit(limit)
+    )
+    if normalized_status is not None:
+        statement = (
+            select(AppTurn)
+            .where(AppTurn.app_thread_id == app_thread_id, AppTurn.status == normalized_status)
+            .order_by(AppTurn.id)
+            .limit(limit)
+        )
+    return list(session.exec(statement).all())
+
+
+def recover_stale_app_turns(session: Session) -> dict[str, Any]:
+    stale_turns = list(
         session.exec(
             select(AppTurn)
-            .where(AppTurn.app_thread_id == app_thread_id)
+            .where(AppTurn.status.in_([APP_TURN_PENDING, APP_TURN_RUNNING]))
             .order_by(AppTurn.id)
         ).all()
     )
+    if not stale_turns:
+        return {"recovered_count": 0, "recovered_turn_ids": []}
+
+    now = utc_now()
+    recovered_turn_ids: list[int] = []
+    touched_thread_ids: set[int] = set()
+    for app_turn in stale_turns:
+        app_turn.status = APP_TURN_FAILED
+        app_turn.error_message = STALE_TURN_ERROR
+        app_turn.completed_at = now
+        session.add(app_turn)
+        if app_turn.id is not None:
+            recovered_turn_ids.append(app_turn.id)
+        touched_thread_ids.add(app_turn.app_thread_id)
+
+    for app_thread_id in touched_thread_ids:
+        app_thread = session.get(AppThread, app_thread_id)
+        if app_thread is None:
+            continue
+        app_thread.status = APP_THREAD_ERROR
+        app_thread.last_error = STALE_TURN_ERROR
+        app_thread.updated_at = now
+        session.add(app_thread)
+    session.commit()
+    return {
+        "recovered_count": len(recovered_turn_ids),
+        "recovered_turn_ids": recovered_turn_ids,
+    }
 
 
 def get_app_turn_or_404(session: Session, app_turn_id: int) -> AppTurn:
@@ -330,19 +437,16 @@ def get_app_thread_events(session: Session, app_thread_id: int) -> AppThreadEven
     get_app_thread_or_404(session, app_thread_id)
     latest_turn = session.exec(
         select(AppTurn)
-        .where(AppTurn.app_thread_id == app_thread_id)
+        .where(
+            AppTurn.app_thread_id == app_thread_id,
+            AppTurn.event_summary_json.is_not(None),
+        )
         .order_by(AppTurn.id.desc())
     ).first()
-    event_summary = None
-    if latest_turn and latest_turn.event_summary_json:
-        try:
-            event_summary = json.loads(latest_turn.event_summary_json)
-        except json.JSONDecodeError:
-            event_summary = {"invalid_summary": latest_turn.event_summary_json}
     return AppThreadEventsRead(
         app_thread_id=app_thread_id,
         latest_turn_id=latest_turn.id if latest_turn else None,
-        event_summary=event_summary,
+        event_summary=_event_summary_from_json(latest_turn.event_summary_json) if latest_turn else None,
     )
 
 
@@ -388,6 +492,7 @@ def to_app_turn_read(app_turn: AppTurn) -> AppTurnRead:
         started_at=app_turn.started_at,
         completed_at=app_turn.completed_at,
         duration_seconds=duration_seconds,
+        event_summary=_event_summary_from_json(app_turn.event_summary_json),
     )
 
 
@@ -478,12 +583,122 @@ def _bridge_final(client: AppServerBridgeClient, bridge_thread_id: str) -> str |
 
 
 def _summary_json(events_result: dict[str, Any] | None) -> str | None:
-    if not events_result:
+    normalized = normalize_event_summary(events_result)
+    if normalized is None:
         return None
+    return json.dumps(normalized, ensure_ascii=False)
+
+
+def normalize_event_summary(events_result: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(events_result, dict) or not events_result:
+        return None
+
     summary = events_result.get("summary")
-    if summary is None:
+    if not isinstance(summary, dict):
         summary = events_result
-    return json.dumps(summary, ensure_ascii=False)
+
+    if _looks_like_normalized_summary(summary):
+        event_type_counts = _dict_or_empty(summary.get("event_type_counts"))
+        errors = _list_or_empty(summary.get("errors"))
+        assistant_preview = _string_or_default(summary.get("assistant_text_preview"))
+        return {
+            "total_events": _int_or_default(summary.get("total_events"), 0),
+            "event_type_counts": event_type_counts,
+            "has_error": _bool_or_default(summary.get("has_error"), bool(errors)),
+            "errors": errors,
+            "assistant_text_length": _int_or_default(summary.get("assistant_text_length"), len(assistant_preview)),
+            "assistant_text_preview": assistant_preview,
+            "raw": _dict_or_empty(summary.get("raw")),
+        }
+
+    event_type_counts = _dict_or_empty(
+        summary.get("event_type_counts")
+        or summary.get("event_counts")
+        or summary.get("type_counts")
+    )
+    errors = _list_or_empty(summary.get("errors"))
+    has_error = _bool_or_default(summary.get("has_error"), bool(errors))
+    assistant_preview = _string_or_default(
+        summary.get("assistant_text_preview")
+        or summary.get("assistant_final_preview")
+        or summary.get("assistant_preview")
+        or _extract_text_preview(summary)
+    )
+    assistant_length = _int_or_default(summary.get("assistant_text_length"), len(assistant_preview))
+    return {
+        "total_events": _int_or_default(summary.get("total_events"), 0),
+        "event_type_counts": event_type_counts,
+        "has_error": has_error,
+        "errors": errors,
+        "assistant_text_length": assistant_length,
+        "assistant_text_preview": assistant_preview,
+        "raw": summary,
+    }
+
+
+def _event_summary_from_json(raw_value: str | None) -> dict[str, Any] | None:
+    if raw_value is None:
+        return None
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return {"invalid_summary": raw_value}
+    if not isinstance(parsed, dict):
+        return {"invalid_summary": raw_value}
+    normalized = normalize_event_summary(parsed)
+    return normalized or parsed
+
+
+def _looks_like_normalized_summary(value: dict[str, Any]) -> bool:
+    return "raw" in value
+
+
+def _normalize_status(value: str | None, allowed: set[str], field_name: str) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().upper()
+    if not normalized:
+        return None
+    if normalized not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"invalid {field_name}: {value}",
+        )
+    return normalized
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _bool_or_default(value: Any, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
+
+
+def _int_or_default(value: Any, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return default
+
+
+def _string_or_default(value: Any, default: str = "") -> str:
+    return value if isinstance(value, str) else default
+
+
+def _extract_text_preview(summary: dict[str, Any]) -> str:
+    for key in ("text", "content", "output", "message"):
+        value = summary.get(key)
+        if isinstance(value, str):
+            return value[:500]
+    return ""
 
 
 def _clean_title(value: str | None) -> str:

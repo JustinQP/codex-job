@@ -126,7 +126,13 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "异步发送 App Turn" in html
         assert "刷新当前 Turn" in html
         assert "取消当前 Turn" in html
+        assert "恢复卡住的 App Turn" in html
+        assert "Thread 状态筛选" in html
+        assert "清理 CLOSED" in html
+        assert "清理 ERROR" in html
+        assert "显示 archived" in html
         assert "appTurnStatus" in html
+        assert "appEventsSummary" in html
         assert "CANCELLED" in html
         assert "正在等待 App Server 返回" in html
         assert "当前 App Thread 已关闭" in html
@@ -136,8 +142,10 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert ".badge.closed" in html
         assert 'class="badge ${escapeHtml(className)}"' in html
         assert 'api("/app-server-bridge/health"' in html
-        assert 'api("/app-threads?limit=20"' in html
+        assert 'new URLSearchParams({limit: "20"})' in html
         assert 'api("/app-threads", {method: "POST"' in html
+        assert 'api("/app-turns/recover-stale"' in html
+        assert 'api("/app-threads/cleanup"' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/turns`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/turns/async`' in html
         assert 'api(`/app-turns/${selectedAppTurnId}`' in html
@@ -160,6 +168,10 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "${escapeHtml(turn.assistant_final || turn.error_message || \"\")}" in html
         assert "${escapeHtml(final.assistant_final || \"\")}" in html
         assert "${escapeHtml(t.assistant_final || t.error_message || \"\")}" in html
+        assert "total_events=${escapeHtml(summary.total_events ?? 0)}" in html
+        assert "has_error=${escapeHtml(summary.has_error ?? false)}" in html
+        assert "event_type_counts=${escapeHtml(JSON.stringify(eventCounts))}" in html
+        assert "assistant_text_preview=${escapeHtml(summary.assistant_text_preview || \"\")}" in html
 
 
 def test_create_task_form_redirects_to_detail() -> None:

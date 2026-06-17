@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+import json
 from typing import Any
 
 from sqlmodel import SQLModel, Session, create_engine, select
@@ -96,6 +97,7 @@ def test_execute_app_turn_once_success(monkeypatch) -> None:
         assert app_turn.assistant_final == "full assistant final"
         assert app_turn.bridge_turn_id == "turn-1"
         assert app_turn.event_summary_json is not None
+        assert json.loads(app_turn.event_summary_json)["total_events"] == 2
         assert app_turn.started_at is not None
         assert app_turn.completed_at is not None
         assert app_thread.status == "ACTIVE"

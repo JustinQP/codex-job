@@ -86,9 +86,34 @@ def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
     cleanup_error = None
     async_conflict_checked = False
     async_conflict_passed = False
+    recover_stale_called = False
+    recovered_count = 0
+    recovered_turn_ids: list[int] = []
 
     try:
         backend_health = request_json(base_url, "GET", "/health", token=token, step="backend_health")
+        if args.recover_stale:
+            recover_result = request_json(
+                base_url,
+                "POST",
+                "/app-turns/recover-stale",
+                token=token,
+                step="recover_stale_app_turns",
+            )
+            recover_stale_called = True
+            if isinstance(recover_result, dict):
+                recovered_count = int(recover_result.get("recovered_count") or 0)
+                raw_ids = recover_result.get("recovered_turn_ids")
+                recovered_turn_ids = raw_ids if isinstance(raw_ids, list) else []
+            if not args.async_turn:
+                return {
+                    "backend_health": backend_health,
+                    "recover_stale_called": recover_stale_called,
+                    "recovered_count": recovered_count,
+                    "recovered_turn_ids": recovered_turn_ids,
+                    "pass": True,
+                }
+
         bridge_health = request_json(
             base_url,
             "GET",
@@ -211,6 +236,9 @@ def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
         "final_turn_status": final_turn_status,
         "async_conflict_checked": async_conflict_checked,
         "async_conflict_passed": async_conflict_passed,
+        "recover_stale_called": recover_stale_called,
+        "recovered_count": recovered_count,
+        "recovered_turn_ids": recovered_turn_ids,
         "pass": passed,
     }
 
@@ -319,6 +347,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--poll-interval-seconds", type=float, default=2)
     parser.add_argument("--poll-timeout-seconds", type=float, default=300)
     parser.add_argument("--check-async-conflict", action="store_true")
+    parser.add_argument("--recover-stale", action="store_true")
     return parser.parse_args(argv)
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -158,12 +157,7 @@ def _bridge_final(client, bridge_thread_id: str) -> str | None:
 
 
 def _summary_json(events_result: dict | None) -> str | None:
-    if not events_result:
-        return None
-    summary = events_result.get("summary")
-    if summary is None:
-        summary = events_result
-    return json.dumps(summary, ensure_ascii=False)
+    return app_thread_service._summary_json(events_result)
 
 
 def _string_or_none(value) -> str | None:

@@ -205,6 +205,82 @@ def test_run_smoke_flow_async_success(monkeypatch) -> None:
     assert ("DELETE", "/app-threads/20") in calls
 
 
+def test_run_smoke_flow_recover_stale_only(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del base_url, payload, kwargs
+        calls.append((method, path))
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/app-turns/recover-stale":
+            return {"recovered_count": 2, "recovered_turn_ids": [1, 2]}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(smoke_app_server_flow, "request_json", fake_request_json)
+    args = smoke_app_server_flow.parse_args(["--recover-stale"])
+
+    summary = smoke_app_server_flow.run_smoke_flow(args)
+
+    assert summary["pass"] is True
+    assert summary["recover_stale_called"] is True
+    assert summary["recovered_count"] == 2
+    assert summary["recovered_turn_ids"] == [1, 2]
+    assert calls == [("GET", "/health"), ("POST", "/app-turns/recover-stale")]
+
+
+def test_run_smoke_flow_recover_stale_before_async(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del base_url, payload, kwargs
+        calls.append((method, path))
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/app-turns/recover-stale":
+            return {"recovered_count": 0, "recovered_turn_ids": []}
+        if path == "/app-server-bridge/health":
+            return {"status": "ok"}
+        if path == "/projects":
+            return {"id": 10}
+        if path == "/app-threads":
+            return {"id": 20}
+        if path == "/app-threads/20/turns/async" and method == "POST":
+            return {"id": 30, "status": "SUCCESS"}
+        if path == "/app-turns/30":
+            return {"id": 30, "status": "SUCCESS"}
+        if path == "/app-threads/20/final":
+            return {"assistant_final": "app-thread-smoke-ok"}
+        if path == "/app-threads/20/turns" and method == "GET":
+            return [{"id": 30}]
+        if path == "/app-threads/20/events":
+            return {"event_summary": {"total_events": 2}}
+        if path == "/app-threads/20" and method == "DELETE":
+            return {"status": "CLOSED"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(smoke_app_server_flow, "request_json", fake_request_json)
+    args = smoke_app_server_flow.parse_args(["--recover-stale", "--async-turn", "--poll-interval-seconds", "0"])
+
+    summary = smoke_app_server_flow.run_smoke_flow(args)
+
+    assert summary["pass"] is True
+    assert summary["recover_stale_called"] is True
+    assert calls[:2] == [("GET", "/health"), ("POST", "/app-turns/recover-stale")]
+
+
 def test_run_smoke_flow_async_conflict_check_success(monkeypatch) -> None:
     async_create_calls = 0
 

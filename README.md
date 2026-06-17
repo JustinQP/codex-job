@@ -401,52 +401,63 @@ A: 手机访问时要使用电脑局域网 IP，不是 `127.0.0.1`。
 Q5: 不要公网暴露  
 A: 当前仍是本地可信局域网工具，API Token 保存在 localStorage。
 
-## v0.9.0 App Turn 异步执行
+## v0.9 App Server 异步会话能力
 
-v0.9.0 新增异步 App Turn 链路，保留原有同步接口不变。
+v0.9 系列把 App Server 主线会话能力收口为同步/异步均可用的本地 POC 链路，保留原有 Runner/codex exec 主链路不变。
 
-### 1. 异步 API
+### 1. API 能力
 
 ```text
 POST /app-threads/{id}/turns/async
 GET  /app-turns/{turn_id}
+POST /app-turns/{turn_id}/cancel
+POST /app-turns/recover-stale
+GET  /app-threads?status=ACTIVE&include_archived=false&limit=50
+GET  /app-threads/{id}/turns?status=SUCCESS&limit=100
+POST /app-threads/cleanup
 ```
 
-`POST /app-threads/{id}/turns/async` 会立即创建 `PENDING` AppTurn 并提交到单进程后台线程池。手机端可以通过 `GET /app-turns/{turn_id}` 轮询 `PENDING` / `RUNNING` / `SUCCESS` / `FAILED` 状态。
+- `POST /app-threads/{id}/turns/async` 会立即创建 `PENDING` AppTurn，并提交到单进程后台线程池。
+- 手机端通过 `GET /app-turns/{turn_id}` 轮询 `PENDING` / `RUNNING` / `SUCCESS` / `FAILED` / `CANCELLED`。
+- 同一 AppThread 同时只允许一个 `PENDING` / `RUNNING` 异步 AppTurn，冲突返回 409。
+- `POST /app-turns/{turn_id}/cancel` 是本地状态取消。
+- `POST /app-turns/recover-stale` 会把重启后残留的 `PENDING` / `RUNNING` AppTurn 标记为 `FAILED`。
+- `event_summary` 会统一返回 `total_events`、`event_type_counts`、`has_error`、`errors`、`assistant_text_preview` 等摘要字段。
+- AppThread/AppTurn 列表支持状态筛选；`POST /app-threads/cleanup` 可将 `CLOSED` / `ERROR` thread 标记为 `[archived]`，默认列表隐藏 archived。
 
-### 2. 异步 smoke
+### 2. 手机控制台
+
+主线 `/mobile` 的 App Server 区块支持：
+
+- 异步发送、轮询、刷新当前 turn、取消当前 turn。
+- 查看 final 和更清晰的 event summary。
+- 按 AppThread 状态筛选、显示 archived、清理 `CLOSED` / `ERROR`。
+- 手动“恢复卡住的 App Turn”。
+
+### 3. Smoke 命令
 
 ```powershell
+# 基础异步 smoke
 $env:API_TOKEN="dev-token"
 python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\JustinKing\codex-job --async-turn
+
+# 并发保护 smoke
+python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\JustinKing\codex-job --async-turn --check-async-conflict
+
+# stale turn 恢复
+python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --recover-stale
 ```
 
-### 3. 当前限制
+### 4. 当前限制
 
 - 当前异步执行是单进程线程池。
-- 服务重启后 `RUNNING` / `PENDING` AppTurn 不会自动恢复。
-- 不支持取消。
+- 服务重启后不会继续执行 `RUNNING` / `PENDING` turn，会将其恢复为 `FAILED`。
+- 取消是本地状态取消，不保证中断正在执行的 Codex App Server turn。
+- `APP_TURN_EXECUTION_TIMEOUT_SECONDS` 默认 `600` 秒；timeout 是 Bridge HTTP 调用超时，不是强杀 Codex 子进程。
 - 不支持 SSE。
 - 不支持审批 UI。
 - 不支持 diff UI。
 - 不替换 Runner/codex exec 主链路。
-
-## v0.9.1 App Turn 并发保护与取消
-
-v0.9.1 对异步 App Turn 增加最小受控能力：
-
-- 同一 AppThread 同时只允许一个 `PENDING` / `RUNNING` 异步 AppTurn。
-- 新增 `POST /app-turns/{id}/cancel`。
-- 取消是本地状态取消，不保证中断正在执行的 Codex App Server turn。
-- 新增 `APP_TURN_EXECUTION_TIMEOUT_SECONDS`，默认 `600` 秒。
-- timeout 是 Bridge HTTP 调用超时，不是强杀 Codex 子进程。
-
-并发保护 smoke：
-
-```powershell
-$env:APP_TURN_EXECUTION_TIMEOUT_SECONDS="600"
-python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\JustinKing\codex-job --async-turn --check-async-conflict
-```
 
 ## Demo 脚本
 

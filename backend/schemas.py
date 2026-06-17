@@ -207,6 +207,22 @@ class AppTurnRead(BaseModel):
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     duration_seconds: Optional[float] = None
+    event_summary: Optional[dict] = None
+
+
+class AppTurnRecoveryRead(BaseModel):
+    recovered_count: int
+    recovered_turn_ids: list[int]
+
+
+class AppThreadCleanupRequest(BaseModel):
+    status: str
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class AppThreadCleanupRead(BaseModel):
+    archived_count: int
+    archived_thread_ids: list[int]
 
 
 class AppThreadFinalRead(BaseModel):
