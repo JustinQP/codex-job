@@ -119,6 +119,20 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         html = response.text
         assert "App Server 会话" in html
         assert "App Server 会话为 sidecar POC" in html
+        assert 'class="bottom-nav"' in html
+        assert 'data-tab="tasks"' in html
+        assert 'data-tab="app"' in html
+        assert 'data-tab="runner"' in html
+        assert 'data-tab="settings"' in html
+        assert ">任务</button>" in html
+        assert ">App 会话</button>" in html
+        assert ">Runner</button>" in html
+        assert ">设置</button>" in html
+        assert 'id="toast"' in html
+        assert "function showToast(message, type = \"info\")" in html
+        assert "async function withButtonLoading(button, loadingText, fn)" in html
+        assert "<summary>高级参数</summary>" in html
+        assert "<summary>调试输出</summary>" in html
         assert "检查 App Server Bridge" in html
         assert "appOutput" in html
         assert "查看 App Final" in html
@@ -140,8 +154,15 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "当前 App Thread 已关闭" in html
         assert "item selected" in html
         assert ".badge.active" in html
+        assert ".badge.success" in html
+        assert ".badge.pending" in html
+        assert ".badge.running" in html
+        assert ".badge.failed" in html
+        assert ".badge.cancelled" in html
         assert ".badge.error" in html
         assert ".badge.closed" in html
+        assert ".toast.success" in html
+        assert ".toast.error" in html
         assert 'class="badge ${escapeHtml(className)}"' in html
         assert 'api("/app-server-bridge/health"' in html
         assert 'new URLSearchParams({limit: "20"})' in html
@@ -162,6 +183,9 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'api(`/app-threads/${selectedAppThreadId}/events`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/reopen`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE"' in html
+        assert 'api("/tasks?limit=20"' in html
+        assert 'api("/runners"' in html
+        assert 'api("/task-templates"' in html
         assert "${escapeHtml(t.title)}" in html
         assert "${escapeHtml(t.status)}" in html
         assert "${escapeHtml(t.turn_count)}" in html
@@ -171,7 +195,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "${escapeHtml(normalized)} ${escapeHtml(label)}" in html
         assert "${escapeHtml(selectedAppThreadId)}" in html
         assert "${escapeHtml(turn.id)}" in html
-        assert "${escapeHtml(turn.status)}" in html
+        assert "statusBadge(turn.status)" in html
         assert "${escapeHtml(turn.duration_seconds ?? \"\")}" in html
         assert "${escapeHtml(turn.assistant_final || turn.error_message || \"\")}" in html
         assert "${escapeHtml(final.assistant_final || \"\")}" in html
