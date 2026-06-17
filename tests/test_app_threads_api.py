@@ -207,6 +207,11 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
             f"/app-turns/{turn_id}",
             headers={"X-API-Token": "secret"},
         )
+        protected_cancel_turn = client.post(f"/app-turns/{turn_id}/cancel")
+        authorized_cancel_turn = client.post(
+            f"/app-turns/{turn_id}/cancel",
+            headers={"X-API-Token": "secret"},
+        )
 
         assert client.get("/health").status_code == 200
         assert protected_get.status_code == 401
@@ -219,6 +224,8 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
         assert authorized_async.status_code == 200
         assert protected_get_turn.status_code == 401
         assert authorized_get_turn.status_code == 200
+        assert protected_cancel_turn.status_code == 401
+        assert authorized_cancel_turn.status_code == 200
 
 
 def test_async_app_turn_api_creates_pending_turn_and_gets_turn(monkeypatch) -> None:
@@ -255,6 +262,37 @@ def test_async_app_turn_rejects_closed_thread(monkeypatch) -> None:
 
         assert closed.status_code == 200
         assert response.status_code == 400
+
+
+def test_cancel_app_turn_api_success(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        created = create_app_thread(client, project.id)
+        turn = client.post(f"/app-threads/{created['id']}/turns/async", json={"message": "hello"}).json()
+
+        response = client.post(f"/app-turns/{turn['id']}/cancel")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "CANCELLED"
+        assert body["error_message"] == "cancelled by user"
+
+
+def test_async_app_turn_conflict_api(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        created = create_app_thread(client, project.id)
+        first = client.post(f"/app-threads/{created['id']}/turns/async", json={"message": "first"})
+
+        second = client.post(f"/app-threads/{created['id']}/turns/async", json={"message": "second"})
+
+        assert first.status_code == 200
+        assert second.status_code == 409
+        detail = second.json()["detail"]
+        assert detail["code"] == "app_turn_conflict"
+        assert detail["app_turn_id"] == first.json()["id"]
 
 
 def test_reopen_app_thread_api_returns_read_with_stats(monkeypatch) -> None:

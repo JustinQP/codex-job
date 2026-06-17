@@ -431,6 +431,23 @@ python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --pro
 - 不支持 diff UI。
 - 不替换 Runner/codex exec 主链路。
 
+## v0.9.1 App Turn 并发保护与取消
+
+v0.9.1 对异步 App Turn 增加最小受控能力：
+
+- 同一 AppThread 同时只允许一个 `PENDING` / `RUNNING` 异步 AppTurn。
+- 新增 `POST /app-turns/{id}/cancel`。
+- 取消是本地状态取消，不保证中断正在执行的 Codex App Server turn。
+- 新增 `APP_TURN_EXECUTION_TIMEOUT_SECONDS`，默认 `600` 秒。
+- timeout 是 Bridge HTTP 调用超时，不是强杀 Codex 子进程。
+
+并发保护 smoke：
+
+```powershell
+$env:APP_TURN_EXECUTION_TIMEOUT_SECONDS="600"
+python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\JustinKing\codex-job --async-turn --check-async-conflict
+```
+
 ## Demo 脚本
 
 在后端启动后运行：

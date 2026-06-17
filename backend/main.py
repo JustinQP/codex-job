@@ -217,6 +217,16 @@ def get_app_turn(
     return app_thread_service.to_app_turn_read(app_turn)
 
 
+@app.post("/app-turns/{app_turn_id}/cancel", response_model=AppTurnRead)
+def cancel_app_turn(
+    app_turn_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_turn = app_thread_service.cancel_app_turn(session, app_turn_id)
+    return app_thread_service.to_app_turn_read(app_turn)
+
+
 @app.get("/app-threads/{app_thread_id}/turns", response_model=list[AppTurnRead])
 def list_app_turns(
     app_thread_id: int,

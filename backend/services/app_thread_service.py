@@ -33,6 +33,7 @@ APP_TURN_PENDING = "PENDING"
 APP_TURN_RUNNING = "RUNNING"
 APP_TURN_SUCCESS = "SUCCESS"
 APP_TURN_FAILED = "FAILED"
+APP_TURN_CANCELLED = "CANCELLED"
 
 
 def create_app_thread(
@@ -243,6 +244,16 @@ def create_async_app_turn(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread is closed")
     if not app_thread.bridge_thread_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread has no bridge thread id")
+    active_turn = _get_active_app_turn(session, app_thread.id)
+    if active_turn is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "app_turn_conflict",
+                "message": "app thread already has a pending or running app turn",
+                "app_turn_id": active_turn.id,
+            },
+        )
 
     app_turn = AppTurn(
         app_thread_id=app_thread.id,
@@ -277,6 +288,32 @@ def get_app_turn_or_404(session: Session, app_turn_id: int) -> AppTurn:
     app_turn = session.get(AppTurn, app_turn_id)
     if app_turn is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="app turn not found")
+    return app_turn
+
+
+def cancel_app_turn(session: Session, app_turn_id: int) -> AppTurn:
+    app_turn = get_app_turn_or_404(session, app_turn_id)
+    if app_turn.status in {APP_TURN_SUCCESS, APP_TURN_FAILED, APP_TURN_CANCELLED}:
+        return app_turn
+
+    # Local cancellation only: this marks backend state and does not guarantee
+    # interruption of an already-running Codex App Server turn.
+    app_turn.status = APP_TURN_CANCELLED
+    app_turn.error_message = "cancelled by user"
+    app_turn.completed_at = utc_now()
+
+    app_thread = session.get(AppThread, app_turn.app_thread_id)
+    if app_thread is not None:
+        latest_active_turn = _get_active_app_turn(session, app_thread.id)
+        if latest_active_turn is None or latest_active_turn.id == app_turn.id:
+            app_thread.status = APP_THREAD_ACTIVE
+            app_thread.last_error = None
+            app_thread.updated_at = app_turn.completed_at
+            session.add(app_thread)
+
+    session.add(app_turn)
+    session.commit()
+    session.refresh(app_turn)
     return app_turn
 
 
@@ -412,6 +449,17 @@ def _latest_success_turn(session: Session, app_thread_id: int) -> AppTurn | None
         select(AppTurn)
         .where(AppTurn.app_thread_id == app_thread_id, AppTurn.status == APP_TURN_SUCCESS)
         .order_by(AppTurn.id.desc())
+    ).first()
+
+
+def _get_active_app_turn(session: Session, app_thread_id: int) -> AppTurn | None:
+    return session.exec(
+        select(AppTurn)
+        .where(
+            AppTurn.app_thread_id == app_thread_id,
+            AppTurn.status.in_([APP_TURN_PENDING, APP_TURN_RUNNING]),
+        )
+        .order_by(AppTurn.id)
     ).first()
 
 

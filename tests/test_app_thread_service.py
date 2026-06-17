@@ -438,6 +438,73 @@ def test_create_async_app_turn_rejects_closed_thread(monkeypatch) -> None:
         assert exc.value.status_code == 400
 
 
+def test_create_async_app_turn_conflicts_with_pending_or_running_turn(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for status in ("PENDING", "RUNNING"):
+        for session in make_session():
+            project = add_project(session)
+            fake = FakeBridgeClient()
+            app_thread = app_thread_service.create_app_thread(
+                session,
+                AppThreadCreate(project_id=project.id),
+                fake,
+            )
+            active_turn = AppTurn(
+                app_thread_id=app_thread.id,
+                user_message="active",
+                status=status,
+                created_at=utc_now(),
+            )
+            session.add(active_turn)
+            session.commit()
+            session.refresh(active_turn)
+
+            with pytest.raises(HTTPException) as exc:
+                app_thread_service.create_async_app_turn(
+                    session,
+                    app_thread.id,
+                    AppTurnCreate(message="hello"),
+                )
+
+            assert exc.value.status_code == 409
+            assert exc.value.detail["code"] == "app_turn_conflict"
+            assert exc.value.detail["app_turn_id"] == active_turn.id
+
+
+def test_create_async_app_turn_allows_terminal_history(monkeypatch) -> None:
+    submitted: list[int] = []
+    monkeypatch.setattr(
+        "backend.services.app_turn_executor.submit_app_turn",
+        lambda app_turn_id: submitted.append(app_turn_id),
+    )
+    for terminal_status in ("SUCCESS", "FAILED", "CANCELLED"):
+        for session in make_session():
+            project = add_project(session)
+            fake = FakeBridgeClient()
+            app_thread = app_thread_service.create_app_thread(
+                session,
+                AppThreadCreate(project_id=project.id),
+                fake,
+            )
+            historical_turn = AppTurn(
+                app_thread_id=app_thread.id,
+                user_message="old",
+                status=terminal_status,
+                created_at=utc_now(),
+            )
+            session.add(historical_turn)
+            session.commit()
+
+            app_turn = app_thread_service.create_async_app_turn(
+                session,
+                app_thread.id,
+                AppTurnCreate(message="new"),
+            )
+
+            assert app_turn.status == "PENDING"
+            assert submitted[-1] == app_turn.id
+
+
 def test_get_app_turn_or_404_not_found() -> None:
     for session in make_session():
         with pytest.raises(HTTPException) as exc:
@@ -466,3 +533,71 @@ def test_to_app_turn_read_returns_duration_seconds() -> None:
 
         assert app_turn_read.duration_seconds is not None
         assert app_turn_read.duration_seconds >= 0
+
+
+def test_cancel_app_turn_pending_and_running_marks_cancelled(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for initial_status in ("PENDING", "RUNNING"):
+        for session in make_session():
+            project = add_project(session)
+            fake = FakeBridgeClient()
+            app_thread = app_thread_service.create_app_thread(
+                session,
+                AppThreadCreate(project_id=project.id),
+                fake,
+            )
+            app_turn = AppTurn(
+                app_thread_id=app_thread.id,
+                user_message="hello",
+                status=initial_status,
+                created_at=utc_now(),
+                started_at=utc_now() if initial_status == "RUNNING" else None,
+            )
+            session.add(app_turn)
+            session.commit()
+            session.refresh(app_turn)
+
+            cancelled = app_thread_service.cancel_app_turn(session, app_turn.id)
+            session.refresh(app_thread)
+
+            assert cancelled.status == "CANCELLED"
+            assert cancelled.error_message == "cancelled by user"
+            assert cancelled.completed_at is not None
+            assert app_thread.status == "ACTIVE"
+            assert app_thread.last_error is None
+
+
+def test_cancel_app_turn_terminal_status_is_idempotent() -> None:
+    for terminal_status in ("SUCCESS", "FAILED", "CANCELLED"):
+        for session in make_session():
+            project = add_project(session)
+            fake = FakeBridgeClient()
+            app_thread = app_thread_service.create_app_thread(
+                session,
+                AppThreadCreate(project_id=project.id),
+                fake,
+            )
+            app_turn = AppTurn(
+                app_thread_id=app_thread.id,
+                user_message="hello",
+                status=terminal_status,
+                error_message="existing",
+                created_at=utc_now(),
+                completed_at=utc_now(),
+            )
+            session.add(app_turn)
+            session.commit()
+            session.refresh(app_turn)
+
+            returned = app_thread_service.cancel_app_turn(session, app_turn.id)
+
+            assert returned.status == terminal_status
+            assert returned.error_message == "existing"
+
+
+def test_cancel_app_turn_not_found() -> None:
+    for session in make_session():
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.cancel_app_turn(session, 404)
+
+        assert exc.value.status_code == 404

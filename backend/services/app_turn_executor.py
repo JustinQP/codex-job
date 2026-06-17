@@ -10,7 +10,7 @@ from sqlmodel import Session
 from backend.db import engine
 from backend.models import AppThread, AppTurn, utc_now
 from backend.services import app_thread_service
-from backend.services.app_server_bridge_client import AppServerBridgeError, get_default_client
+from backend.services.app_server_bridge_client import AppServerBridgeClient, AppServerBridgeError
 
 
 def _max_workers() -> int:
@@ -20,6 +20,15 @@ def _max_workers() -> int:
     except ValueError:
         return 2
     return max(1, value)
+
+
+def _execution_timeout_seconds() -> float:
+    raw_value = os.environ.get("APP_TURN_EXECUTION_TIMEOUT_SECONDS", "600")
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return 600.0
+    return max(0.1, value)
 
 
 _executor = ThreadPoolExecutor(max_workers=_max_workers())
@@ -45,6 +54,8 @@ def _execute_with_session(session: Session, app_turn_id: int) -> None:
     app_turn = session.get(AppTurn, app_turn_id)
     if app_turn is None:
         return
+    if app_turn.status == app_thread_service.APP_TURN_CANCELLED:
+        return
     if app_turn.status not in {app_thread_service.APP_TURN_PENDING, app_thread_service.APP_TURN_RUNNING}:
         return
 
@@ -60,6 +71,9 @@ def _execute_with_session(session: Session, app_turn_id: int) -> None:
         return
 
     now = utc_now()
+    session.refresh(app_turn)
+    if app_turn.status == app_thread_service.APP_TURN_CANCELLED:
+        return
     app_turn.status = app_thread_service.APP_TURN_RUNNING
     if app_turn.started_at is None:
         app_turn.started_at = now
@@ -68,16 +82,25 @@ def _execute_with_session(session: Session, app_turn_id: int) -> None:
     session.refresh(app_turn)
     session.refresh(app_thread)
 
-    client = get_default_client()
+    client = _build_bridge_client()
     try:
         bridge_result = client.send_turn(app_thread.bridge_thread_id, app_turn.user_message)
+        session.refresh(app_turn)
+        if app_turn.status == app_thread_service.APP_TURN_CANCELLED:
+            return
         events_result = _best_effort_events(client, app_thread.bridge_thread_id)
         full_final = _bridge_final(client, app_thread.bridge_thread_id)
         preview_final = _string_or_none(bridge_result.get("assistant_final_preview"))
     except AppServerBridgeError as exc:
+        session.refresh(app_turn)
+        if app_turn.status == app_thread_service.APP_TURN_CANCELLED:
+            return
         _mark_failed(session, app_thread, app_turn, exc.message)
         return
     except Exception as exc:
+        session.refresh(app_turn)
+        if app_turn.status == app_thread_service.APP_TURN_CANCELLED:
+            return
         _mark_failed(session, app_thread, app_turn, str(exc))
         return
 
@@ -121,6 +144,10 @@ def _best_effort_events(client, bridge_thread_id: str) -> dict | None:
         return client.get_events(bridge_thread_id)
     except AppServerBridgeError:
         return None
+
+
+def _build_bridge_client() -> AppServerBridgeClient:
+    return AppServerBridgeClient(timeout_seconds=_execution_timeout_seconds())
 
 
 def _bridge_final(client, bridge_thread_id: str) -> str | None:

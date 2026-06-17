@@ -205,6 +205,102 @@ def test_run_smoke_flow_async_success(monkeypatch) -> None:
     assert ("DELETE", "/app-threads/20") in calls
 
 
+def test_run_smoke_flow_async_conflict_check_success(monkeypatch) -> None:
+    async_create_calls = 0
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal async_create_calls
+        del base_url, payload, kwargs
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/app-server-bridge/health":
+            return {"status": "ok"}
+        if path == "/projects":
+            return {"id": 10}
+        if path == "/app-threads":
+            return {"id": 20}
+        if path == "/app-threads/20/turns/async" and method == "POST":
+            async_create_calls += 1
+            if async_create_calls == 1:
+                return {"id": 30, "status": "PENDING"}
+            raise smoke_app_server_flow.SmokeFlowError(
+                "check_async_conflict",
+                "HTTP request failed",
+                status_code=409,
+                body='{"detail":{"code":"app_turn_conflict"}}',
+            )
+        if path == "/app-turns/30":
+            return {"id": 30, "status": "SUCCESS"}
+        if path == "/app-threads/20/final":
+            return {"assistant_final": "app-thread-smoke-ok"}
+        if path == "/app-threads/20/turns" and method == "GET":
+            return [{"id": 30}]
+        if path == "/app-threads/20/events":
+            return {"event_summary": {}}
+        if path == "/app-threads/20" and method == "DELETE":
+            return {"status": "CLOSED"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(smoke_app_server_flow, "request_json", fake_request_json)
+    args = smoke_app_server_flow.parse_args(
+        ["--async-turn", "--check-async-conflict", "--poll-interval-seconds", "0"]
+    )
+
+    summary = smoke_app_server_flow.run_smoke_flow(args)
+
+    assert summary["pass"] is True
+    assert summary["async_conflict_checked"] is True
+    assert summary["async_conflict_passed"] is True
+
+
+def test_run_smoke_flow_async_conflict_check_fails_without_409(monkeypatch) -> None:
+    async_create_calls = 0
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal async_create_calls
+        del base_url, payload, kwargs
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/app-server-bridge/health":
+            return {"status": "ok"}
+        if path == "/projects":
+            return {"id": 10}
+        if path == "/app-threads":
+            return {"id": 20}
+        if path == "/app-threads/20/turns/async" and method == "POST":
+            async_create_calls += 1
+            return {"id": 30 + async_create_calls, "status": "PENDING"}
+        if path == "/app-threads/20" and method == "DELETE":
+            return {"status": "CLOSED"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(smoke_app_server_flow, "request_json", fake_request_json)
+    args = smoke_app_server_flow.parse_args(
+        ["--async-turn", "--check-async-conflict", "--poll-interval-seconds", "0"]
+    )
+
+    try:
+        smoke_app_server_flow.run_smoke_flow(args)
+    except smoke_app_server_flow.SmokeFlowError as exc:
+        assert exc.step == "check_async_conflict"
+        assert "did not return 409" in str(exc)
+        assert exc.cleanup_status == "CLOSED"
+    else:
+        raise AssertionError("expected SmokeFlowError")
+
+
 def test_run_smoke_flow_async_failed_turn_cleans_up(monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
 

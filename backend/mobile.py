@@ -129,6 +129,7 @@ def mobile_console() -> str:
       <button id="loadAppTurns" class="secondary">查看 Turns</button>
       <button id="refreshAppTurn" class="secondary">刷新当前 Turn</button>
     </div>
+    <button id="cancelAppTurn" class="danger">取消当前 Turn</button>
     <div class="row">
       <button id="loadAppFinal" class="secondary">查看 App Final</button>
       <button id="loadAppEvents" class="secondary">查看 App Events</button>
@@ -147,6 +148,7 @@ const tokenInput = document.getElementById("token");
 const output = document.getElementById("output");
 const appOutput = document.getElementById("appOutput");
 const APP_WAITING_TEXT = "正在等待 App Server 返回，请不要刷新页面。";
+const APP_TURN_TERMINAL_STATUSES = ["SUCCESS", "FAILED", "CANCELLED"];
 let selectedAppThreadId = null;
 let selectedAppThread = null;
 let selectedAppTurnId = null;
@@ -455,7 +457,7 @@ async function refreshCurrentAppTurn() {
   if (!selectedAppTurnId) throw new Error("请先提交或选择 App Turn");
   const turn = await api(`/app-turns/${selectedAppTurnId}`, {headers: headers()});
   renderAppTurnStatus(turn);
-  if (turn.status === "SUCCESS" || turn.status === "FAILED") {
+  if (APP_TURN_TERMINAL_STATUSES.includes(turn.status)) {
     stopAppTurnPolling();
     await loadAppTurns();
     await loadAppThreadList();
@@ -465,6 +467,20 @@ async function refreshCurrentAppTurn() {
       appLog(turn.error_message || "App Turn failed");
     }
   }
+  return turn;
+}
+
+async function cancelCurrentAppTurn() {
+  if (!selectedAppTurnId) throw new Error("请先提交或选择 App Turn");
+  stopAppTurnPolling();
+  const turn = await api(`/app-turns/${selectedAppTurnId}/cancel`, {
+    method: "POST",
+    headers: headers(),
+  });
+  renderAppTurnStatus(turn);
+  await loadAppTurns();
+  await loadAppThreadList();
+  appLog(`已取消 App Turn #${turn.id}`);
   return turn;
 }
 
@@ -535,6 +551,7 @@ document.getElementById("sendAppTurn").onclick = () => sendAppTurn().catch(err =
 document.getElementById("sendAsyncAppTurn").onclick = () => sendAsyncAppTurn().catch(err => appLog(String(err)));
 document.getElementById("loadAppTurns").onclick = () => loadAppTurns().catch(err => appLog(String(err)));
 document.getElementById("refreshAppTurn").onclick = () => refreshCurrentAppTurn().catch(err => appLog(String(err)));
+document.getElementById("cancelAppTurn").onclick = () => cancelCurrentAppTurn().catch(err => appLog(String(err)));
 document.getElementById("loadAppFinal").onclick = () => loadAppFinal().catch(err => appLog(String(err)));
 document.getElementById("loadAppEvents").onclick = () => loadAppEvents().catch(err => appLog(String(err)));
 document.getElementById("reopenAppThread").onclick = () => reopenAppThread().catch(err => appLog(String(err)));

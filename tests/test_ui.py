@@ -125,7 +125,9 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "重开当前 App Thread" in html
         assert "异步发送 App Turn" in html
         assert "刷新当前 Turn" in html
+        assert "取消当前 Turn" in html
         assert "appTurnStatus" in html
+        assert "CANCELLED" in html
         assert "正在等待 App Server 返回" in html
         assert "当前 App Thread 已关闭" in html
         assert "item selected" in html
@@ -139,6 +141,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'api(`/app-threads/${selectedAppThreadId}/turns`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/turns/async`' in html
         assert 'api(`/app-turns/${selectedAppTurnId}`' in html
+        assert 'api(`/app-turns/${selectedAppTurnId}/cancel`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/final`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/events`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/reopen`' in html

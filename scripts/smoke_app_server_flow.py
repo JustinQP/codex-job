@@ -24,6 +24,7 @@ class SmokeFlowError(RuntimeError):
         body: str | None = None,
         cleanup_status: str = "SKIPPED",
         cleanup_error: str | None = None,
+        response: Any = None,
     ) -> None:
         super().__init__(message)
         self.step = step
@@ -31,6 +32,7 @@ class SmokeFlowError(RuntimeError):
         self.body = body
         self.cleanup_status = cleanup_status
         self.cleanup_error = cleanup_error
+        self.response = response
 
 
 def request_json(
@@ -63,6 +65,7 @@ def request_json(
             "HTTP request failed",
             status_code=exc.code,
             body=body,
+            response=_parse_json_or_none(body),
         ) from exc
     except urllib.error.URLError as exc:
         raise SmokeFlowError(step or path, f"Request failed: {exc.reason}") from exc
@@ -81,6 +84,8 @@ def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
     created_app_thread_id: int | None = None
     cleanup_status = "SKIPPED"
     cleanup_error = None
+    async_conflict_checked = False
+    async_conflict_passed = False
 
     try:
         backend_health = request_json(base_url, "GET", "/health", token=token, step="backend_health")
@@ -122,7 +127,14 @@ def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
         created_app_thread_id = int(app_thread["id"])
 
         if args.async_turn:
-            turn, poll_count = _run_async_turn(base_url, token, created_app_thread_id, args)
+            turn, poll_count, conflict_checked, conflict_passed = _run_async_turn(
+                base_url,
+                token,
+                created_app_thread_id,
+                args,
+            )
+            async_conflict_checked = conflict_checked
+            async_conflict_passed = conflict_passed
             turn_id = turn.get("id")
             final_turn_status = turn.get("status")
             if final_turn_status == "FAILED":
@@ -197,6 +209,8 @@ def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
         "async_turn": bool(args.async_turn),
         "poll_count": poll_count,
         "final_turn_status": final_turn_status,
+        "async_conflict_checked": async_conflict_checked,
+        "async_conflict_passed": async_conflict_passed,
         "pass": passed,
     }
 
@@ -206,7 +220,7 @@ def _run_async_turn(
     token: str | None,
     app_thread_id: int,
     args: argparse.Namespace,
-) -> tuple[dict[str, Any], int]:
+) -> tuple[dict[str, Any], int, bool, bool]:
     turn = request_json(
         base_url,
         "POST",
@@ -218,6 +232,27 @@ def _run_async_turn(
     turn_id = turn.get("id")
     if not isinstance(turn_id, int):
         raise SmokeFlowError("create_async_app_turn", "async turn response missing id")
+
+    conflict_checked = False
+    conflict_passed = False
+    if args.check_async_conflict:
+        conflict_checked = True
+        try:
+            request_json(
+                base_url,
+                "POST",
+                f"/app-threads/{app_thread_id}/turns/async",
+                {"message": args.message},
+                token=token,
+                step="check_async_conflict",
+            )
+        except SmokeFlowError as exc:
+            if exc.status_code == 409:
+                conflict_passed = True
+            else:
+                raise
+        else:
+            raise SmokeFlowError("check_async_conflict", "second async turn did not return 409")
 
     poll_count = 0
     deadline = time.monotonic() + args.poll_timeout_seconds
@@ -236,7 +271,7 @@ def _run_async_turn(
             )
         poll_count += 1
         if turn.get("status") in {"SUCCESS", "FAILED"}:
-            return turn, poll_count
+            return turn, poll_count, conflict_checked, conflict_passed
 
 
 def cleanup_app_thread(base_url: str, token: str | None, app_thread_id: int | None) -> tuple[str, str | None]:
@@ -263,6 +298,13 @@ def _cleanup_status(payload: Any) -> str:
     return "CLOSED"
 
 
+def _parse_json_or_none(raw_body: str) -> Any:
+    try:
+        return json.loads(raw_body)
+    except json.JSONDecodeError:
+        return None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Smoke test the main App Server thread API flow")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
@@ -276,6 +318,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--async-turn", action="store_true")
     parser.add_argument("--poll-interval-seconds", type=float, default=2)
     parser.add_argument("--poll-timeout-seconds", type=float, default=300)
+    parser.add_argument("--check-async-conflict", action="store_true")
     return parser.parse_args(argv)
 
 
