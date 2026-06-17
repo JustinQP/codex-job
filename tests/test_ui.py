@@ -150,6 +150,19 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'id="toast"' in html
         assert "function showToast(message, type = \"info\")" in html
         assert "async function withButtonLoading(button, loadingText, fn)" in html
+        assert "function classifyError(error)" in html
+        assert "function showErrorSheet(error, context = \"\")" in html
+        assert "function errorActionHtml(action)" in html
+        assert "function bindErrorAction(action)" in html
+        assert "function showBridgeHelpSheet()" in html
+        assert "Token 无效或未保存" in html
+        assert "App Server Bridge 不可用" in html
+        assert "当前会话已有 Turn 正在运行" in html
+        assert "网络请求失败" in html
+        assert "error.code=${escapeHtml(info.code)}" in html
+        assert "去保存 Token" in html
+        assert "查看启动提示" in html
+        assert "刷新页面状态" in html
         assert 'activeTab: "mobile.activeTab"' in html
         assert 'taskStatusFilter: "mobile.taskStatusFilter"' in html
         assert 'appThreadStatusFilter: "mobile.appThreadStatusFilter"' in html
@@ -185,6 +198,13 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'class="floating-action"' in html
         assert "普通使用只需要选择项目、Prompt 和任务类型" in html
         assert "v1.2 mobile app UI/UX POC" in html
+        assert ".empty-state strong" in html
+        assert ".empty-state button" in html
+        assert "没有在线 Runner" in html
+        assert "没有匹配任务" in html
+        assert "还没有 App 会话" in html
+        assert "暂无 AppThread" in html
+        assert "暂无 AppTurn" in html
         assert "<h2>任务</h2>" in html
         assert 'id="taskStatusFilter"' in html
         assert "任务状态筛选" in html
@@ -222,6 +242,15 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert '<summary>事件摘要</summary>' not in html
         assert 'class="app-hidden-state"' in html
         assert 'class="card app-composer"' in html
+        assert 'id="appMessageHint"' in html
+        assert 'id="appMessageCount"' in html
+        assert ".composer-meta" in html
+        assert "function updateAppComposerState()" in html
+        assert 'document.getElementById("appMessage").oninput = updateAppComposerState' in html
+        assert 'updateAppComposerState();' in html
+        assert "输入消息后即可发送" in html
+        assert "请先选择或新建会话" in html
+        assert "异步发送，不要刷新页面" in html
         assert 'class="chat-list"' in html
         assert "切换会话" in html
         assert "会话更多" in html

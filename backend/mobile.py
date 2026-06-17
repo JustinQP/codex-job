@@ -197,6 +197,16 @@ def mobile_head() -> str:
       background: var(--surface-soft);
       color: var(--muted);
       font-size: 13px;
+      display: grid;
+      gap: 8px;
+    }
+    .empty-state strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+    .empty-state button {
+      width: auto;
+      justify-self: start;
     }
     .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .links a { color: var(--primary); text-decoration: none; font-size: 13px; font-weight: 650; }
@@ -503,6 +513,14 @@ def mobile_head() -> str:
       box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
     }
     .app-composer textarea { min-height: 96px; }
+    .composer-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      min-height: 18px;
+    }
     .send-mode-row {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr);
@@ -648,6 +666,10 @@ def mobile_body() -> str:
 
     <div class="card app-composer">
       <label>发送消息 <textarea id="appMessage" placeholder="发送到当前 App Thread 的消息"></textarea></label>
+      <div class="composer-meta">
+        <span id="appMessageHint">请选择会话后发送消息</span>
+        <span id="appMessageCount">0 字</span>
+      </div>
       <div id="appWaiting" class="muted"></div>
       <div class="send-mode-row">
         <label class="send-mode-toggle"><input id="appSendAsync" type="checkbox" checked> 异步</label>
@@ -848,6 +870,151 @@ function showToast(message, type = "info") {
   }, 2600);
 }
 
+function errorText(value) {
+  return String(value && value.message ? value.message : value || "");
+}
+
+function classifyError(error) {
+  const text = errorText(error);
+  const lower = text.toLowerCase();
+  if (lower.includes("unknown bridge thread id")) {
+    return {
+      code: "stale_bridge_thread",
+      title: "会话需要重开",
+      message: "Bridge 或 App Server 重启后，旧会话已经不在 sidecar 内存中。",
+      primaryAction: "reopen_app_thread",
+    };
+  }
+  if (lower.includes("401") || lower.includes("invalid api token") || lower.includes("unauthorized")) {
+    return {
+      code: "token_invalid",
+      title: "Token 无效或未保存",
+      message: "请到「我的」页重新保存 API Token。",
+      primaryAction: "open_settings_token",
+    };
+  }
+  if (lower.includes("503") || lower.includes("bridge") && (lower.includes("unavailable") || lower.includes("refused") || lower.includes("failed"))) {
+    return {
+      code: "bridge_unavailable",
+      title: "App Server Bridge 不可用",
+      message: "请确认 App Server Bridge sidecar 已启动，并检查 Backend 中的 Bridge 配置。",
+      primaryAction: "open_bridge_help",
+    };
+  }
+  if (lower.includes("409") || lower.includes("conflict") || lower.includes("turn") && lower.includes("running")) {
+    return {
+      code: "turn_conflict",
+      title: "当前会话已有 Turn 正在运行",
+      message: "请先刷新当前 Turn，等待完成，或取消当前 Turn 后再发送。",
+      primaryAction: "refresh_current_turn",
+    };
+  }
+  if (lower.includes("app thread") && lower.includes("closed")) {
+    return {
+      code: "app_thread_closed",
+      title: "App Thread 已关闭",
+      message: "当前会话已关闭，需要重开后才能继续发送。",
+      primaryAction: "reopen_app_thread",
+    };
+  }
+  if (lower.includes("failed to fetch") || lower.includes("networkerror") || lower.includes("network failed")) {
+    return {
+      code: "network_failed",
+      title: "网络请求失败",
+      message: "请确认后端服务仍在运行，并检查手机与电脑是否在同一可信网络。",
+      primaryAction: "refresh_all",
+    };
+  }
+  if (lower.includes("cancel") && (lower.includes("not allowed") || lower.includes("terminal"))) {
+    return {
+      code: "cancel_not_allowed",
+      title: "当前状态不能取消",
+      message: "任务或 Turn 已经结束，无法再次取消。",
+      primaryAction: "refresh_all",
+    };
+  }
+  return {
+    code: "unknown",
+    title: "操作失败",
+    message: "请查看错误详情，必要时刷新页面后重试。",
+    primaryAction: "refresh_all",
+  };
+}
+
+function showErrorSheet(error, context = "") {
+  const info = classifyError(error);
+  const text = errorText(error);
+  openSheet(info.title, `
+    <div class="task-detail-sheet">
+      <div class="detail-section">
+        <h3>恢复建议</h3>
+        <p>${escapeHtml(info.message)}</p>
+        <p class="muted">error.code=${escapeHtml(info.code)}${context ? ` step=${escapeHtml(context)}` : ""}</p>
+      </div>
+      <div class="detail-section">
+        <h3>下一步</h3>
+        <div id="errorActions" class="task-actions">${errorActionHtml(info.primaryAction)}</div>
+      </div>
+      <details>
+        <summary>错误详情</summary>
+        <pre>${escapeHtml(text)}</pre>
+      </details>
+    </div>`);
+  bindErrorAction(info.primaryAction);
+}
+
+function errorActionHtml(action) {
+  if (action === "open_settings_token") return `<button id="errorGoSettings" class="secondary">去保存 Token</button>`;
+  if (action === "open_bridge_help") return `<button id="errorBridgeHelp" class="secondary">查看启动提示</button>`;
+  if (action === "reopen_app_thread") {
+    return selectedAppThreadId
+      ? `<button id="errorReopenThread" class="secondary">重开当前会话</button>`
+      : `<button id="errorSwitchThread" class="secondary">选择或新建会话</button>`;
+  }
+  if (action === "refresh_current_turn") return `<button id="errorRefreshTurn" class="secondary">刷新当前 Turn</button><button id="errorCancelTurn" class="danger">取消当前 Turn</button>`;
+  return `<button id="errorRefreshAll" class="secondary">刷新页面状态</button>`;
+}
+
+function bindErrorAction(action) {
+  const bind = (id, handler) => {
+    const button = document.getElementById(id);
+    if (button) button.onclick = handler;
+  };
+  bind("errorGoSettings", () => {
+    closeSheet();
+    switchTab("settings");
+    tokenInput.focus();
+  });
+  bind("errorBridgeHelp", () => {
+    closeSheet();
+    switchTab("settings");
+    showBridgeHelpSheet();
+  });
+  bind("errorReopenThread", () => withButtonLoading("errorReopenThread", "处理中...", async () => {
+    await reopenAppThread();
+    closeSheet();
+  }));
+  bind("errorSwitchThread", () => {
+    closeSheet();
+    showAppThreadSwitcher();
+  });
+  bind("errorRefreshTurn", () => withButtonLoading("errorRefreshTurn", "处理中...", refreshCurrentAppTurn));
+  bind("errorCancelTurn", () => withButtonLoading("errorCancelTurn", "处理中...", cancelCurrentAppTurn));
+  bind("errorRefreshAll", () => withButtonLoading("errorRefreshAll", "处理中...", loadAll));
+}
+
+function showBridgeHelpSheet() {
+  openSheet("Bridge 启动提示", `
+    <div class="task-detail-sheet">
+      <div class="detail-section">
+        <h3>本机启动</h3>
+        <pre>$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python .\\poc\\app_server\\app_server_bridge.py --host 127.0.0.1 --port 8766</pre>
+      </div>
+      <p class="muted">仅限可信局域网试用，不要公网暴露。</p>
+    </div>`);
+}
+
 async function withButtonLoading(button, loadingText, fn) {
   const target = typeof button === "string" ? document.getElementById(button) : button;
   const originalText = target ? target.textContent : "";
@@ -863,6 +1030,8 @@ async function withButtonLoading(button, loadingText, fn) {
     appLog(String(err));
     if (isStaleBridgeThreadError(err)) {
       showStaleBridgeThreadSheet(err);
+    } else {
+      showErrorSheet(err, target ? target.id || target.textContent : "");
     }
     return null;
   } finally {
@@ -870,6 +1039,7 @@ async function withButtonLoading(button, loadingText, fn) {
       target.disabled = false;
       target.textContent = originalText;
     }
+    updateAppComposerState();
   }
 }
 
@@ -1078,11 +1248,16 @@ function renderRunners(runners) {
       `<option value="">自动 / 项目默认</option>` +
       runners.map(r => `<option value="${escapeHtml(r.runner_id)}">${escapeHtml(r.runner_id)} (${escapeHtml(r.status)})</option>`).join("");
   }
-  document.getElementById("runners").innerHTML = runners.map(r => `
+  document.getElementById("runners").innerHTML = runners.length ? runners.map(r => `
     <div class="item">
       <strong>${escapeHtml(r.runner_id)}</strong> ${statusBadge(r.status)}<br>
       <span class="muted">${escapeHtml(r.hostname)} pid=${escapeHtml(r.pid)} models=${escapeHtml(r.supported_models || "")}</span>
-    </div>`).join("");
+    </div>`).join("") : `
+    <div class="empty-state">
+      <strong>没有在线 Runner</strong>
+      <span>请先启动 runner/runner.py 或 scripts/start.bat runner，再刷新 Runner 状态。</span>
+      <button class="secondary" onclick="withButtonLoading(this, '处理中...', async () => { const runners = await api('/runners', {headers: headers()}); renderRunners(runners); showToast('Runner 已刷新', 'success'); })">刷新 Runner</button>
+    </div>`;
 }
 
 function loadFormOptions() {
@@ -1151,7 +1326,11 @@ function renderHomeTasks(tasks) {
           <a href="#" onclick="switchTab('tasks'); showTask(${escapeHtml(t.id)}); return false;">打开详情</a>
         </div>
       </div>`).join("")
-    : `<div class="empty-state">还没有任务。点击「新建任务」开始第一次 Codex 执行。</div>`;
+    : `<div class="empty-state">
+        <strong>还没有任务</strong>
+        <span>点击下方按钮开始第一次 Codex 执行。</span>
+        <button class="secondary" onclick="switchTab('tasks'); renderCreateTaskSheet();">新建任务</button>
+      </div>`;
 }
 
 function renderHomeThreads(appThreads, appThreadsResult) {
@@ -1169,7 +1348,11 @@ function renderHomeThreads(appThreads, appThreadsResult) {
           <a href="#" onclick="switchTab('app'); selectAppThread(${escapeHtml(t.id)}); return false;">打开会话</a>
         </div>
       </div>`).join("")
-    : `<div class="empty-state">还没有 App 会话。进入「会话」后新建一次 App Server 对话。</div>`;
+    : `<div class="empty-state">
+        <strong>还没有 App 会话</strong>
+        <span>进入「会话」后新建一次 App Server 对话。</span>
+        <button class="secondary" onclick="switchTab('app'); showAppThreadSwitcher();">新建会话</button>
+      </div>`;
 }
 
 function selectedTaskStatusFilter() {
@@ -1194,6 +1377,10 @@ function renderFilteredTasks() {
 }
 
 function renderTasks(tasks) {
+  const statusFilter = selectedTaskStatusFilter();
+  const emptyMessage = statusFilter
+    ? `当前筛选 ${statusFilter} 下没有任务。可以切换为「全部」或新建任务。`
+    : "还没有任务。点击下方按钮开始第一次 Codex 执行。";
   document.getElementById("tasks").innerHTML = tasks.length
     ? tasks.map(t => `
       <div class="item task-card">
@@ -1216,7 +1403,11 @@ function renderTasks(tasks) {
           <a href="#" onclick="showTaskMore(${escapeHtml(t.id)});return false;">更多</a>
         </div>
       </div>`).join("")
-    : `<div class="empty-state">还没有任务。点击下方「新建任务」开始第一次 Codex 执行。</div>`;
+    : `<div class="empty-state">
+        <strong>没有匹配任务</strong>
+        <span>${escapeHtml(emptyMessage)}</span>
+        <button class="secondary" onclick="renderCreateTaskSheet()">新建任务</button>
+      </div>`;
 }
 
 function hasActiveTasks() {
@@ -1431,6 +1622,7 @@ function updateSelectedAppThreadDisplay() {
         </div>
         <div class="app-session-actions">
           <button class="secondary" onclick="showAppThreadSwitcher()">切换会话</button>
+          <button class="secondary" onclick="showAppThreadSwitcher()">新建会话</button>
           <button class="ghost" onclick="showAppSessionMore()" disabled>更多</button>
         </div>
       </div>`;
@@ -1633,8 +1825,6 @@ function updateAppActionState() {
   const hasThread = Boolean(selectedAppThreadId);
   sendButton.disabled = !hasThread || status === "CLOSED";
   asyncButton.disabled = !hasThread || status === "CLOSED";
-  const unifiedSendButton = document.getElementById("sendAppMessage");
-  if (unifiedSendButton) unifiedSendButton.disabled = !hasThread || status === "CLOSED";
   threadButtons.forEach(id => {
     const button = document.getElementById(id);
     if (button) button.disabled = !hasThread;
@@ -1644,6 +1834,31 @@ function updateAppActionState() {
   } else if (["当前 App Thread 已关闭，请先重开。", ""].includes(document.getElementById("appWaiting").textContent)) {
     document.getElementById("appWaiting").textContent = "";
   }
+  updateAppComposerState();
+}
+
+function updateAppComposerState() {
+  const input = document.getElementById("appMessage");
+  const hint = document.getElementById("appMessageHint");
+  const count = document.getElementById("appMessageCount");
+  const unifiedSendButton = document.getElementById("sendAppMessage");
+  const rawMessage = input ? input.value : "";
+  const message = rawMessage.trim();
+  const status = selectedAppThread ? selectedAppThread.status : "";
+  const hasThread = Boolean(selectedAppThreadId);
+  if (count) count.textContent = `${rawMessage.length} 字`;
+  if (hint) {
+    if (!hasThread) {
+      hint.textContent = "请先选择或新建会话";
+    } else if (status === "CLOSED") {
+      hint.textContent = "当前会话已关闭，请先重开";
+    } else if (!message) {
+      hint.textContent = "输入消息后即可发送";
+    } else {
+      hint.textContent = selectedSendMode() === "async" ? "异步发送，不要刷新页面" : "同步发送，等待完成后返回";
+    }
+  }
+  if (unifiedSendButton) unifiedSendButton.disabled = !hasThread || status === "CLOSED" || !message;
 }
 
 function renderAppTurnStatus(turn) {
@@ -1675,7 +1890,12 @@ function renderAppThreads(appThreads) {
   ].filter(Boolean);
   if (!appThreads.length) {
     threadTargets.forEach(target => {
-      target.innerHTML = `<div class="empty-state">暂无 AppThread。</div>`;
+      target.innerHTML = `
+        <div class="empty-state">
+          <strong>暂无 AppThread</strong>
+          <span>当前筛选下没有会话，可以调整筛选或新建会话。</span>
+          <button class="secondary" onclick="showAppThreadSwitcher()">新建会话</button>
+        </div>`;
     });
     return;
   }
@@ -1791,6 +2011,7 @@ async function sendAppTurn() {
       body: JSON.stringify({message}),
     });
     document.getElementById("appMessage").value = "";
+    updateAppComposerState();
     await loadAppThreadList();
     await loadAppTurns();
     await loadAppFinal();
@@ -1818,6 +2039,7 @@ async function sendAsyncAppTurn() {
       body: JSON.stringify({message}),
     });
     document.getElementById("appMessage").value = "";
+    updateAppComposerState();
     await loadAppThreadList();
     await loadAppTurns();
     renderAppTurnStatus(appTurn);
@@ -1919,7 +2141,11 @@ async function loadAppTurns() {
   resumeActiveAppTurnPolling();
   document.getElementById("appTurns").innerHTML = turns.length
     ? turns.map(renderAppTurnConversation).join("")
-    : `<div class="empty-state">暂无 AppTurn。请在底部输入消息后发送。</div>`;
+    : `<div class="empty-state">
+        <strong>暂无 AppTurn</strong>
+        <span>请在底部输入消息后发送，或通过「更多」查看 Bridge 状态。</span>
+        <button class="secondary" onclick="document.getElementById('appMessage').focus()">输入消息</button>
+      </div>`;
 }
 
 function resumeActiveAppTurnPolling() {
@@ -2207,7 +2433,11 @@ document.getElementById("createAppThread").onclick = () => withButtonLoading("cr
 document.getElementById("sendAppTurn").onclick = () => withButtonLoading("sendAppTurn", "处理中...", sendAppTurn);
 document.getElementById("sendAsyncAppTurn").onclick = () => withButtonLoading("sendAsyncAppTurn", "处理中...", sendAsyncAppTurn);
 document.getElementById("sendAppMessage").onclick = () => withButtonLoading("sendAppMessage", "处理中...", sendAppMessage);
-document.getElementById("appSendAsync").onchange = persistSendMode;
+document.getElementById("appMessage").oninput = updateAppComposerState;
+document.getElementById("appSendAsync").onchange = () => {
+  persistSendMode();
+  updateAppComposerState();
+};
 document.getElementById("loadAppTurns").onclick = () => withButtonLoading("loadAppTurns", "处理中...", async () => {
   await loadAppTurns();
   showToast("Turns 已刷新", "success");
@@ -2226,6 +2456,7 @@ document.getElementById("reopenAppThread").onclick = () => withButtonLoading("re
 document.getElementById("closeAppThread").onclick = () => withButtonLoading("closeAppThread", "处理中...", closeAppThread);
 document.addEventListener("visibilitychange", handleVisibilityChange);
 restoreInitialUiState();
+updateAppComposerState();
 loadAll().catch(err => {
   showToast(String(err), "error");
   log(String(err));
