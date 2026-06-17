@@ -30,6 +30,10 @@ def mobile_console() -> str:
     .item.selected { border-left: 4px solid #2563eb; padding-left: 8px; }
     .links { display: flex; gap: 8px; flex-wrap: wrap; }
     .links a { color: #2563eb; text-decoration: none; font-size: 13px; }
+    .badge { display: inline-block; padding: 2px 6px; border-radius: 999px; font-size: 12px; background: #e5e7eb; }
+    .badge.active { background: #dcfce7; color: #166534; }
+    .badge.error { background: #fee2e2; color: #991b1b; }
+    .badge.closed { background: #e5e7eb; color: #374151; }
     pre { white-space: pre-wrap; word-break: break-word; background: #0f172a; color: #e5e7eb; padding: 10px; border-radius: 6px; max-height: 260px; overflow: auto; }
   </style>
 </head>
@@ -125,6 +129,7 @@ def mobile_console() -> str:
       <button id="loadAppFinal" class="secondary">查看 App Final</button>
       <button id="loadAppEvents" class="secondary">查看 App Events</button>
     </div>
+    <button id="reopenAppThread" class="secondary">重开当前 App Thread</button>
     <button id="closeAppThread" class="danger">关闭当前 App Thread</button>
     <div id="appThreadFinal" class="item"></div>
     <div id="appTurns" class="stack"></div>
@@ -290,12 +295,35 @@ function updateSelectedAppThreadDisplay() {
   const target = document.getElementById("appThreadCurrent");
   if (!selectedAppThreadId) {
     target.textContent = "当前 App Thread: 未选择";
+    updateAppActionState();
     return;
   }
   const title = selectedAppThread ? selectedAppThread.title : "";
   const status = selectedAppThread ? selectedAppThread.status : "";
+  const lastError = selectedAppThread ? selectedAppThread.last_error : "";
   target.innerHTML =
-    `当前 App Thread: #${escapeHtml(selectedAppThreadId)} ${escapeHtml(title)} ${escapeHtml(status)}`;
+    `当前 App Thread: #${escapeHtml(selectedAppThreadId)} ${escapeHtml(title)} ${statusBadge(status)} ${lastError ? "last_error=" + escapeHtml(lastError) : ""}`;
+  updateAppActionState();
+}
+
+function statusBadge(status) {
+  const normalized = String(status || "").toUpperCase();
+  const labelMap = {ACTIVE: "正常", ERROR: "错误", CLOSED: "已关闭"};
+  const classMap = {ACTIVE: "active", ERROR: "error", CLOSED: "closed"};
+  const label = labelMap[normalized] || normalized || "UNKNOWN";
+  const className = classMap[normalized] || "";
+  return `<span class="badge ${escapeHtml(className)}">${escapeHtml(normalized)} ${escapeHtml(label)}</span>`;
+}
+
+function updateAppActionState() {
+  const sendButton = document.getElementById("sendAppTurn");
+  const status = selectedAppThread ? selectedAppThread.status : "";
+  sendButton.disabled = status === "CLOSED";
+  if (status === "CLOSED") {
+    document.getElementById("appWaiting").textContent = "当前 App Thread 已关闭，请先重开。";
+  } else if (document.getElementById("appWaiting").textContent === "当前 App Thread 已关闭，请先重开。") {
+    document.getElementById("appWaiting").textContent = "";
+  }
 }
 
 function renderAppThreads(appThreads) {
@@ -310,8 +338,10 @@ function renderAppThreads(appThreads) {
   document.getElementById("appThreads").innerHTML = appThreads.map(t => `
     <div class="${selectedAppThreadId === t.id ? "item selected" : "item"}">
       <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.title)}<br>
+      ${statusBadge(t.status)}<br>
       <span class="muted">project=${escapeHtml(t.project_id)} status=${escapeHtml(t.status)} turns=${escapeHtml(t.turn_count)} updated=${escapeHtml(t.updated_at)}</span><br>
       <span>${escapeHtml(t.latest_assistant_final || "")}</span>
+      ${t.last_error ? `<br><span class="muted">last_error=${escapeHtml(t.last_error)}</span>` : ""}
       <div class="links">
         <a href="#" onclick="selectAppThread(${escapeHtml(t.id)});return false;">选择</a>
       </div>
@@ -340,6 +370,9 @@ function selectAppThread(id) {
 
 async function sendAppTurn() {
   if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  if (selectedAppThread && selectedAppThread.status === "CLOSED") {
+    throw new Error("当前 App Thread 已关闭，请先重开。");
+  }
   const message = document.getElementById("appMessage").value.trim();
   if (!message) throw new Error("App Turn message 不能为空");
   const sendButton = document.getElementById("sendAppTurn");
@@ -362,6 +395,18 @@ async function sendAppTurn() {
     sendButton.disabled = false;
     waiting.textContent = "";
   }
+}
+
+async function reopenAppThread() {
+  if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  const reopened = await api(`/app-threads/${selectedAppThreadId}/reopen`, {
+    method: "POST",
+    headers: headers(),
+  });
+  selectedAppThread = reopened;
+  await loadAppThreadList();
+  updateSelectedAppThreadDisplay();
+  appLog(`已重开 App Thread，新 bridge_thread_id=${reopened.bridge_thread_id || ""}`);
 }
 
 async function loadAppTurns() {
@@ -416,6 +461,7 @@ document.getElementById("sendAppTurn").onclick = () => sendAppTurn().catch(err =
 document.getElementById("loadAppTurns").onclick = () => loadAppTurns().catch(err => appLog(String(err)));
 document.getElementById("loadAppFinal").onclick = () => loadAppFinal().catch(err => appLog(String(err)));
 document.getElementById("loadAppEvents").onclick = () => loadAppEvents().catch(err => appLog(String(err)));
+document.getElementById("reopenAppThread").onclick = () => reopenAppThread().catch(err => appLog(String(err)));
 document.getElementById("closeAppThread").onclick = () => closeAppThread().catch(err => appLog(String(err)));
 loadAll().catch(err => log(String(err)));
 </script>

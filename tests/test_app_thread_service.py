@@ -17,6 +17,7 @@ from backend.services import app_thread_service
 class FakeBridgeClient:
     def __init__(self) -> None:
         self.created_titles: list[str] = []
+        self.create_count = 0
         self.renamed: list[tuple[str, str]] = []
         self.deleted: list[str] = []
         self.fail_send = False
@@ -31,14 +32,15 @@ class FakeBridgeClient:
         if self.fail_create:
             raise AppServerBridgeError(None, "network_error", "bridge down", "request")
         self.created_titles.append(title)
+        self.create_count += 1
         if self.missing_bridge_thread_id:
             return {
                 "app_thread_id": "app-1",
                 "title": title,
             }
         return {
-            "bridge_thread_id": "bridge-1",
-            "app_thread_id": "app-1",
+            "bridge_thread_id": f"bridge-{self.create_count}",
+            "app_thread_id": f"app-{self.create_count}",
             "title": title,
         }
 
@@ -325,3 +327,61 @@ def test_rename_app_thread_syncs_bridge_title() -> None:
 
         assert renamed.title == "New"
         assert fake.renamed == [("bridge-1", "New")]
+
+
+def test_reopen_app_thread_updates_bridge_ids_and_keeps_turn_history() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id, title="Chat"),
+            fake,
+        )
+        app_turn = app_thread_service.send_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+            fake,
+        )
+        app_thread.status = "ERROR"
+        app_thread.last_error = "thread_not_found"
+        session.add(app_thread)
+        session.commit()
+
+        reopened = app_thread_service.reopen_app_thread(session, app_thread.id, fake)
+        turns = app_thread_service.list_app_turns(session, app_thread.id)
+
+        assert reopened.bridge_thread_id == "bridge-2"
+        assert reopened.app_thread_id == "app-2"
+        assert reopened.status == "ACTIVE"
+        assert reopened.last_error is None
+        assert [turn.id for turn in turns] == [app_turn.id]
+
+
+def test_reopen_app_thread_not_found() -> None:
+    for session in make_session():
+        fake = FakeBridgeClient()
+
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.reopen_app_thread(session, 404, fake)
+
+        assert exc.value.status_code == 404
+
+
+def test_reopen_app_thread_rejects_missing_bridge_thread_id() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id, title="Chat"),
+            fake,
+        )
+        fake.missing_bridge_thread_id = True
+
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.reopen_app_thread(session, app_thread.id, fake)
+
+        assert exc.value.status_code == 502
+        assert exc.value.detail["code"] == "invalid_bridge_response"

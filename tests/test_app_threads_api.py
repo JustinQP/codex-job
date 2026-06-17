@@ -17,6 +17,7 @@ from backend.services.app_server_bridge_client import AppServerBridgeError
 class FakeBridgeClient:
     def __init__(self) -> None:
         self.deleted: list[str] = []
+        self.create_count = 0
         self.missing_bridge_thread_id = False
         self.preview_final = "short preview"
         self.full_final = "full assistant final"
@@ -25,14 +26,15 @@ class FakeBridgeClient:
         return {"status": "ok", "mode": "poc", "sandbox": "readOnly", "threads": 0}
 
     def create_thread(self, title: str) -> dict[str, Any]:
+        self.create_count += 1
         if self.missing_bridge_thread_id:
             return {
-                "app_thread_id": "app-1",
+                "app_thread_id": f"app-{self.create_count}",
                 "title": title,
             }
         return {
-            "bridge_thread_id": "bridge-1",
-            "app_thread_id": "app-1",
+            "bridge_thread_id": f"bridge-{self.create_count}",
+            "app_thread_id": f"app-{self.create_count}",
             "title": title,
         }
 
@@ -183,12 +185,40 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
             headers={"X-API-Token": "secret"},
             json={"project_id": project.id},
         )
+        created = authorized_post.json()
+        protected_reopen = client.post(f"/app-threads/{created['id']}/reopen")
+        authorized_reopen = client.post(
+            f"/app-threads/{created['id']}/reopen",
+            headers={"X-API-Token": "secret"},
+        )
 
         assert client.get("/health").status_code == 200
         assert protected_get.status_code == 401
         assert authorized_get.status_code == 200
         assert protected_post.status_code == 401
         assert authorized_post.status_code == 200
+        assert protected_reopen.status_code == 401
+        assert authorized_reopen.status_code == 200
+
+
+def test_reopen_app_thread_api_returns_read_with_stats(monkeypatch) -> None:
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        created = create_app_thread(client, project.id)
+        turn = client.post(f"/app-threads/{created['id']}/turns", json={"message": "hello"})
+
+        reopened = client.post(f"/app-threads/{created['id']}/reopen")
+
+        assert turn.status_code == 200
+        assert reopened.status_code == 200
+        body = reopened.json()
+        assert body["id"] == created["id"]
+        assert body["bridge_thread_id"] == "bridge-2"
+        assert body["app_thread_id"] == "app-2"
+        assert body["status"] == "ACTIVE"
+        assert body["last_error"] is None
+        assert body["turn_count"] == 1
+        assert body["latest_assistant_final"] == "full assistant final"
 
 
 def test_create_app_thread_rejects_missing_bridge_thread_id(monkeypatch) -> None:

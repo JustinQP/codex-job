@@ -339,6 +339,68 @@ python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --pro
 
 App Server 会话模式第一版是同步阻塞调用。Bridge sidecar 不可用时，App Thread API 返回 `502`、`503` 或 `504`。当前不持久化完整事件流，只保存最近 summary/final，不支持 SSE、审批 UI 或 diff UI。
 
+## v0.8.3 App Server 日常使用流程
+
+### 1. 一键启动
+
+在项目根目录运行：
+
+```powershell
+.\scripts\start_app_server_stack.ps1 -ApiToken dev-token -BridgeToken dev-token
+```
+
+带 smoke：
+
+```powershell
+.\scripts\start_app_server_stack.ps1 -ApiToken dev-token -BridgeToken dev-token -RunSmoke
+```
+
+脚本会分别启动 App Server Bridge sidecar 和主后端，并输出主线 mobile、Bridge POC mobile 与 smoke 命令。
+
+### 2. 手动启动
+
+窗口 1：启动 App Server Bridge sidecar。
+
+```powershell
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+```
+
+窗口 2：启动主后端。
+
+```powershell
+$env:API_TOKEN="dev-token"
+$env:APP_SERVER_BRIDGE_URL="http://127.0.0.1:8766"
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+### 3. Smoke
+
+```powershell
+$env:API_TOKEN="dev-token"
+python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\JustinKing\codex-job
+```
+
+smoke 脚本只访问主后端 `8000`。如果创建 AppThread 后后续步骤失败，脚本会尽量调用 `DELETE /app-threads/{id}` 清理残留。
+
+### 4. 常见问题
+
+Q1: `/app-server-bridge/health` 返回 `503`  
+A: Bridge sidecar 没启动，或 `APP_SERVER_BRIDGE_URL` 配错。
+
+Q2: AppThread 发送失败，提示 `thread_not_found` / bridge thread missing  
+A: Bridge 重启后内存态 thread 丢失，点击“重开 App Thread”。
+
+Q3: smoke 失败后残留 AppThread  
+A: v0.8.3 smoke 会尽量自动 `DELETE`；如仍残留，可在 mobile 中关闭。
+
+Q4: 手机打不开 `127.0.0.1:8000/mobile`  
+A: 手机访问时要使用电脑局域网 IP，不是 `127.0.0.1`。
+
+Q5: 不要公网暴露  
+A: 当前仍是本地可信局域网工具，API Token 保存在 localStorage。
+
 ## Demo 脚本
 
 在后端启动后运行：

@@ -175,6 +175,16 @@ def close_app_thread(
     return app_thread_service.to_app_thread_read(session, app_thread)
 
 
+@app.post("/app-threads/{app_thread_id}/reopen", response_model=AppThreadRead)
+def reopen_app_thread(
+    app_thread_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_thread = app_thread_service.reopen_app_thread(session, app_thread_id)
+    return app_thread_service.to_app_thread_read(session, app_thread)
+
+
 @app.post("/app-threads/{app_thread_id}/turns", response_model=AppTurnRead)
 def send_app_turn(
     app_thread_id: int,

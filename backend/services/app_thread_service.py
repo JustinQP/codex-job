@@ -145,6 +145,35 @@ def close_app_thread(
     return app_thread
 
 
+def reopen_app_thread(
+    session: Session,
+    app_thread_id: int,
+    bridge_client: AppServerBridgeClient | None = None,
+) -> AppThread:
+    app_thread = get_app_thread_or_404(session, app_thread_id)
+    client = bridge_client or get_default_client()
+    try:
+        bridge_thread = client.create_thread(app_thread.title)
+    except AppServerBridgeError as exc:
+        app_thread.status = APP_THREAD_ERROR
+        app_thread.last_error = exc.message
+        app_thread.updated_at = utc_now()
+        session.add(app_thread)
+        session.commit()
+        raise _bridge_http_exception(exc) from exc
+
+    bridge_thread_id = _require_bridge_thread_id(bridge_thread)
+    app_thread.bridge_thread_id = bridge_thread_id
+    app_thread.app_thread_id = _string_or_none(bridge_thread.get("app_thread_id"))
+    app_thread.status = APP_THREAD_ACTIVE
+    app_thread.last_error = None
+    app_thread.updated_at = utc_now()
+    session.add(app_thread)
+    session.commit()
+    session.refresh(app_thread)
+    return app_thread
+
+
 def send_app_turn(
     session: Session,
     app_thread_id: int,

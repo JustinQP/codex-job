@@ -21,11 +21,15 @@ class SmokeFlowError(RuntimeError):
         *,
         status_code: int | None = None,
         body: str | None = None,
+        cleanup_status: str = "SKIPPED",
+        cleanup_error: str | None = None,
     ) -> None:
         super().__init__(message)
         self.step = step
         self.status_code = status_code
         self.body = body
+        self.cleanup_status = cleanup_status
+        self.cleanup_error = cleanup_error
 
 
 def request_json(
@@ -73,98 +77,136 @@ def request_json(
 def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
     base_url = args.base_url
     token = args.token
+    created_app_thread_id: int | None = None
+    cleanup_status = "SKIPPED"
+    cleanup_error = None
 
-    backend_health = request_json(base_url, "GET", "/health", token=token, step="backend_health")
-    bridge_health = request_json(
-        base_url,
-        "GET",
-        "/app-server-bridge/health",
-        token=token,
-        step="bridge_health",
-    )
+    try:
+        backend_health = request_json(base_url, "GET", "/health", token=token, step="backend_health")
+        bridge_health = request_json(
+            base_url,
+            "GET",
+            "/app-server-bridge/health",
+            token=token,
+            step="bridge_health",
+        )
 
-    project_id = args.project_id
-    if project_id is None:
-        project = request_json(
+        project_id = args.project_id
+        if project_id is None:
+            project = request_json(
+                base_url,
+                "POST",
+                "/projects",
+                {
+                    "name": args.project_name,
+                    "path": str(Path(args.project_path).expanduser().resolve()),
+                    "enabled": True,
+                },
+                token=token,
+                step="create_project",
+            )
+            project_id = int(project["id"])
+
+        app_thread = request_json(
             base_url,
             "POST",
-            "/projects",
+            "/app-threads",
             {
-                "name": args.project_name,
-                "path": str(Path(args.project_path).expanduser().resolve()),
-                "enabled": True,
+                "project_id": project_id,
+                "title": args.title,
             },
             token=token,
-            step="create_project",
+            step="create_app_thread",
         )
-        project_id = int(project["id"])
+        created_app_thread_id = int(app_thread["id"])
 
-    app_thread = request_json(
-        base_url,
-        "POST",
-        "/app-threads",
-        {
-            "project_id": project_id,
-            "title": args.title,
-        },
-        token=token,
-        step="create_app_thread",
-    )
-    app_thread_id = int(app_thread["id"])
+        turn = request_json(
+            base_url,
+            "POST",
+            f"/app-threads/{created_app_thread_id}/turns",
+            {"message": args.message},
+            token=token,
+            timeout=args.turn_timeout_seconds,
+            step="send_app_turn",
+        )
+        turn_id = turn.get("id")
 
-    turn = request_json(
-        base_url,
-        "POST",
-        f"/app-threads/{app_thread_id}/turns",
-        {"message": args.message},
-        token=token,
-        timeout=args.turn_timeout_seconds,
-        step="send_app_turn",
-    )
-    turn_id = turn.get("id")
-
-    final = request_json(
-        base_url,
-        "GET",
-        f"/app-threads/{app_thread_id}/final",
-        token=token,
-        step="get_app_thread_final",
-    )
-    turns = request_json(
-        base_url,
-        "GET",
-        f"/app-threads/{app_thread_id}/turns",
-        token=token,
-        step="list_app_turns",
-    )
-    events = request_json(
-        base_url,
-        "GET",
-        f"/app-threads/{app_thread_id}/events",
-        token=token,
-        step="get_app_thread_events",
-    )
-    closed = request_json(
-        base_url,
-        "DELETE",
-        f"/app-threads/{app_thread_id}",
-        token=token,
-        step="close_app_thread",
-    )
+        final = request_json(
+            base_url,
+            "GET",
+            f"/app-threads/{created_app_thread_id}/final",
+            token=token,
+            step="get_app_thread_final",
+        )
+        turns = request_json(
+            base_url,
+            "GET",
+            f"/app-threads/{created_app_thread_id}/turns",
+            token=token,
+            step="list_app_turns",
+        )
+        events = request_json(
+            base_url,
+            "GET",
+            f"/app-threads/{created_app_thread_id}/events",
+            token=token,
+            step="get_app_thread_events",
+        )
+        closed = request_json(
+            base_url,
+            "DELETE",
+            f"/app-threads/{created_app_thread_id}",
+            token=token,
+            step="close_app_thread",
+        )
+        cleanup_status = _cleanup_status(closed)
+    except SmokeFlowError as exc:
+        cleanup_status, cleanup_error = cleanup_app_thread(base_url, token, created_app_thread_id)
+        exc.cleanup_status = cleanup_status
+        exc.cleanup_error = cleanup_error
+        raise
 
     assistant_final = final.get("assistant_final") if isinstance(final, dict) else None
+    passed = EXPECTED_TOKEN in str(assistant_final or "")
     return {
         "backend_health": backend_health,
         "bridge_health": bridge_health,
         "project_id": project_id,
-        "app_thread_id": app_thread_id,
+        "app_thread_id": created_app_thread_id,
+        "created_app_thread_id": created_app_thread_id,
         "turn_id": turn_id,
         "assistant_final": assistant_final,
         "turn_count": len(turns) if isinstance(turns, list) else None,
         "events_summary": events.get("event_summary") if isinstance(events, dict) else events,
         "closed_status": closed.get("status") if isinstance(closed, dict) else None,
-        "pass": EXPECTED_TOKEN in str(assistant_final or ""),
+        "cleanup_status": cleanup_status,
+        "cleanup_error": cleanup_error,
+        "pass": passed,
     }
+
+
+def cleanup_app_thread(base_url: str, token: str | None, app_thread_id: int | None) -> tuple[str, str | None]:
+    if app_thread_id is None:
+        return "SKIPPED", None
+    try:
+        closed = request_json(
+            base_url,
+            "DELETE",
+            f"/app-threads/{app_thread_id}",
+            token=token,
+            step="cleanup_app_thread",
+        )
+    except SmokeFlowError as exc:
+        return "FAILED", f"{exc.step}: {exc}"
+    return _cleanup_status(closed), None
+
+
+def _cleanup_status(payload: Any) -> str:
+    if isinstance(payload, dict):
+        status = payload.get("status")
+        if isinstance(status, str) and status:
+            return status
+    return "CLOSED"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -193,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
                     "status_code": exc.status_code,
                     "body": exc.body,
                     "error": str(exc),
+                    "cleanup_status": exc.cleanup_status,
+                    "cleanup_error": exc.cleanup_error,
                 },
                 ensure_ascii=False,
                 indent=2,
