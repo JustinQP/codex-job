@@ -102,11 +102,32 @@ def mobile_console() -> str:
     <div id="taskDetail"></div>
     <pre id="output"></pre>
   </section>
+
+  <section>
+    <h2>App Server 会话</h2>
+    <div class="row">
+      <button id="checkAppBridge" class="secondary">检查 App Server Bridge</button>
+      <button id="refreshAppThreads" class="secondary">刷新 App Threads</button>
+    </div>
+    <div id="appBridgeStatus" class="muted"></div>
+    <label>App Thread 标题 <input id="appThreadTitle" placeholder="App Thread 标题"></label>
+    <button id="createAppThread">创建 App Thread</button>
+    <div id="appThreads" class="stack"></div>
+    <label>App Turn Message <textarea id="appMessage" placeholder="发送到当前 App Thread 的消息"></textarea></label>
+    <div class="row">
+      <button id="sendAppTurn">发送 App Turn</button>
+      <button id="loadAppTurns" class="secondary">查看 Turns</button>
+    </div>
+    <button id="closeAppThread" class="danger">关闭当前 App Thread</button>
+    <div id="appThreadFinal" class="item"></div>
+    <div id="appTurns" class="stack"></div>
+  </section>
 </main>
 
 <script>
 const tokenInput = document.getElementById("token");
 const output = document.getElementById("output");
+let selectedAppThreadId = null;
 tokenInput.value = localStorage.getItem("apiToken") || "";
 
 function headers(json = false) {
@@ -139,16 +160,18 @@ async function api(path, options = {}) {
 }
 
 async function loadAll() {
-  const [projects, runners, tasks, templates] = await Promise.all([
+  const [projects, runners, tasks, templates, appThreads] = await Promise.all([
     api("/projects", {headers: headers()}),
     api("/runners", {headers: headers()}),
     api("/tasks?limit=20", {headers: headers()}),
     api("/task-templates", {headers: headers()}),
+    api("/app-threads?limit=20", {headers: headers()}),
   ]);
   renderProjects(projects);
   renderRunners(runners);
   renderTasks(tasks);
   renderTaskTypes(templates);
+  renderAppThreads(appThreads);
 }
 
 function renderProjects(projects) {
@@ -231,6 +254,79 @@ async function cancelTask(id) {
   await showTask(id);
 }
 
+async function checkAppServerBridge() {
+  const health = await api("/app-server-bridge/health", {headers: headers()});
+  document.getElementById("appBridgeStatus").innerHTML =
+    `status=${escapeHtml(health.status || "")} mode=${escapeHtml(health.mode || "")} sandbox=${escapeHtml(health.sandbox || "")} threads=${escapeHtml(health.threads ?? "")}`;
+}
+
+function renderAppThreads(appThreads) {
+  if (selectedAppThreadId && !appThreads.some(t => t.id === selectedAppThreadId)) {
+    selectedAppThreadId = null;
+  }
+  document.getElementById("appThreads").innerHTML = appThreads.map(t => `
+    <div class="item">
+      <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.title)}<br>
+      <span class="muted">project=${escapeHtml(t.project_id)} status=${escapeHtml(t.status)} updated=${escapeHtml(t.updated_at)}</span>
+      <div class="links">
+        <a href="#" onclick="selectAppThread(${escapeHtml(t.id)});return false;">选择</a>
+      </div>
+    </div>`).join("");
+}
+
+async function createAppThread() {
+  const payload = {
+    project_id: Number(document.getElementById("project").value),
+    title: document.getElementById("appThreadTitle").value || null,
+  };
+  const appThread = await api("/app-threads", {method: "POST", headers: headers(true), body: JSON.stringify(payload)});
+  selectedAppThreadId = appThread.id;
+  await loadAll();
+}
+
+function selectAppThread(id) {
+  selectedAppThreadId = id;
+  document.getElementById("appThreadFinal").textContent = `当前 App Thread: #${id}`;
+  loadAppTurns().catch(err => log(String(err)));
+}
+
+async function sendAppTurn() {
+  if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  const message = document.getElementById("appMessage").value.trim();
+  if (!message) throw new Error("App Turn message 不能为空");
+  const appTurn = await api(`/app-threads/${selectedAppThreadId}/turns`, {
+    method: "POST",
+    headers: headers(true),
+    body: JSON.stringify({message}),
+  });
+  document.getElementById("appThreadFinal").innerHTML =
+    `<strong>assistant_final</strong><br>${escapeHtml(appTurn.assistant_final || "")}`;
+  document.getElementById("appMessage").value = "";
+  await loadAppTurns();
+  await loadAll();
+}
+
+async function loadAppTurns() {
+  if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  const turns = await api(`/app-threads/${selectedAppThreadId}/turns`, {headers: headers()});
+  document.getElementById("appTurns").innerHTML = turns.map(t => `
+    <div class="item">
+      <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.status)}<br>
+      <span class="muted">created=${escapeHtml(t.created_at)} bridge_turn=${escapeHtml(t.bridge_turn_id || "")}</span><br>
+      <span>${escapeHtml(t.assistant_final || t.error_message || "")}</span>
+    </div>`).join("");
+}
+
+async function closeAppThread() {
+  if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  if (!confirm("确认关闭当前 App Thread？")) return;
+  await api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE", headers: headers()});
+  selectedAppThreadId = null;
+  document.getElementById("appThreadFinal").textContent = "";
+  document.getElementById("appTurns").innerHTML = "";
+  await loadAll();
+}
+
 document.getElementById("saveToken").onclick = () => {
   localStorage.setItem("apiToken", tokenInput.value);
   loadAll().catch(err => log(String(err)));
@@ -238,6 +334,12 @@ document.getElementById("saveToken").onclick = () => {
 document.getElementById("createTask").onclick = () => createTask().catch(err => log(String(err)));
 document.getElementById("refresh").onclick = () => loadAll().catch(err => log(String(err)));
 document.getElementById("clearOutput").onclick = () => log("");
+document.getElementById("checkAppBridge").onclick = () => checkAppServerBridge().catch(err => log(String(err)));
+document.getElementById("refreshAppThreads").onclick = () => loadAll().catch(err => log(String(err)));
+document.getElementById("createAppThread").onclick = () => createAppThread().catch(err => log(String(err)));
+document.getElementById("sendAppTurn").onclick = () => sendAppTurn().catch(err => log(String(err)));
+document.getElementById("loadAppTurns").onclick = () => loadAppTurns().catch(err => log(String(err)));
+document.getElementById("closeAppThread").onclick = () => closeAppThread().catch(err => log(String(err)));
 loadAll().catch(err => log(String(err)));
 </script>
 </body>

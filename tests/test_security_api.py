@@ -71,6 +71,15 @@ def test_health_remains_public_when_api_token_is_enabled(monkeypatch) -> None:
 
 def test_api_token_protects_read_endpoints(monkeypatch) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
+    monkeypatch.setattr(
+        main_module,
+        "get_default_client",
+        lambda: type(
+            "FakeBridgeClient",
+            (),
+            {"get_health": lambda self: {"status": "ok"}},
+        )(),
+    )
 
     for client, session in make_client():
         project = Project(
@@ -108,6 +117,8 @@ def test_api_token_protects_read_endpoints(monkeypatch) -> None:
             "/",
             "/projects",
             "/tasks",
+            "/app-server-bridge/health",
+            "/app-threads",
             f"/tasks/{task.id}",
             f"/ui/tasks/{task.id}",
             f"/tasks/{task.id}/artifacts",

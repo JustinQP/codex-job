@@ -86,3 +86,33 @@ class RunnerRecord(SQLModel, table=True):
     registered_at: datetime = Field(default_factory=utc_now)
     last_heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
     lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class AppThread(SQLModel, table=True):
+    __tablename__ = "app_threads"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="projects.id", index=True)
+    title: str
+    bridge_thread_id: Optional[str] = Field(default=None, index=True)
+    app_thread_id: Optional[str] = None
+    status: str = Field(default="CREATED", index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    last_error: Optional[str] = None
+
+
+class AppTurn(SQLModel, table=True):
+    __tablename__ = "app_turns"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    app_thread_id: int = Field(foreign_key="app_threads.id", index=True)
+    user_message: str
+    assistant_final: Optional[str] = None
+    status: str = Field(default="PENDING", index=True)
+    error_message: Optional[str] = None
+    bridge_turn_id: Optional[str] = None
+    event_summary_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=utc_now)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None

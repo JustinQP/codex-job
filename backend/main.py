@@ -13,6 +13,13 @@ from sqlmodel import Session
 from backend.db import JOBS_DIR, get_session, init_db
 from backend.models import TaskStatus, TaskType
 from backend.schemas import (
+    AppThreadCreate,
+    AppThreadEventsRead,
+    AppThreadFinalRead,
+    AppThreadRead,
+    AppThreadUpdate,
+    AppTurnCreate,
+    AppTurnRead,
     ProjectCreate,
     ProjectRead,
     RunnerHeartbeat,
@@ -29,7 +36,8 @@ from backend.schemas import (
     TaskRead,
     TaskTemplateRead,
 )
-from backend.services import project_service, runner_service, task_service
+from backend.services import app_thread_service, project_service, runner_service, task_service
+from backend.services.app_server_bridge_client import AppServerBridgeError, get_default_client
 from backend import mobile, ui
 
 
@@ -88,9 +96,124 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/app-server-bridge/health")
+def app_server_bridge_health(_: None = Depends(require_api_token)):
+    try:
+        return get_default_client().get_health()
+    except AppServerBridgeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "unavailable",
+                "error": exc.message,
+                "code": exc.code,
+                "step": exc.step,
+            },
+        ) from exc
+
+
 @app.get("/mobile", include_in_schema=False)
 def mobile_console() -> HTMLResponse:
     return HTMLResponse(mobile.mobile_console())
+
+
+@app.get("/app-threads", response_model=list[AppThreadRead])
+def list_app_threads(
+    project_id: int | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return [
+        app_thread_service.to_app_thread_read(app_thread)
+        for app_thread in app_thread_service.list_app_threads(
+            session,
+            project_id=project_id,
+            limit=limit,
+        )
+    ]
+
+
+@app.post("/app-threads", response_model=AppThreadRead)
+def create_app_thread(
+    payload: AppThreadCreate,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_thread = app_thread_service.create_app_thread(session, payload)
+    return app_thread_service.to_app_thread_read(app_thread)
+
+
+@app.get("/app-threads/{app_thread_id}", response_model=AppThreadRead)
+def get_app_thread(
+    app_thread_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_thread = app_thread_service.get_app_thread_or_404(session, app_thread_id)
+    return app_thread_service.to_app_thread_read(app_thread)
+
+
+@app.patch("/app-threads/{app_thread_id}", response_model=AppThreadRead)
+def rename_app_thread(
+    app_thread_id: int,
+    payload: AppThreadUpdate,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_thread = app_thread_service.rename_app_thread(session, app_thread_id, payload)
+    return app_thread_service.to_app_thread_read(app_thread)
+
+
+@app.delete("/app-threads/{app_thread_id}", response_model=AppThreadRead)
+def close_app_thread(
+    app_thread_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_thread = app_thread_service.close_app_thread(session, app_thread_id)
+    return app_thread_service.to_app_thread_read(app_thread)
+
+
+@app.post("/app-threads/{app_thread_id}/turns", response_model=AppTurnRead)
+def send_app_turn(
+    app_thread_id: int,
+    payload: AppTurnCreate,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_turn = app_thread_service.send_app_turn(session, app_thread_id, payload)
+    return app_thread_service.to_app_turn_read(app_turn)
+
+
+@app.get("/app-threads/{app_thread_id}/turns", response_model=list[AppTurnRead])
+def list_app_turns(
+    app_thread_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return [
+        app_thread_service.to_app_turn_read(app_turn)
+        for app_turn in app_thread_service.list_app_turns(session, app_thread_id)
+    ]
+
+
+@app.get("/app-threads/{app_thread_id}/final", response_model=AppThreadFinalRead)
+def get_app_thread_final(
+    app_thread_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return app_thread_service.get_app_thread_final(session, app_thread_id)
+
+
+@app.get("/app-threads/{app_thread_id}/events", response_model=AppThreadEventsRead)
+def get_app_thread_events(
+    app_thread_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return app_thread_service.get_app_thread_events(session, app_thread_id)
 
 
 @app.post("/projects", response_model=ProjectRead)

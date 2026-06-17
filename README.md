@@ -19,6 +19,13 @@ v0.7.0 增加移动端控制台和 Codex 参数配置：
 - 可选择项目、Runner、任务类型、模型、推理难度和 sandbox。
 - 当前目标模式只支持一次性 GOAL/受控目标任务，不支持无限自主迭代。
 
+v0.8.0 增加 App Server 会话模式主线集成：
+
+- App Server Bridge 仍作为 sidecar 独立运行。
+- 主后端通过 `APP_SERVER_BRIDGE_URL` 调用 Bridge。
+- 主线手机控制台可以创建 App Thread、发送 App Turn、查看 final。
+- 不替换 Runner/codex exec 主链路。
+
 v0.1 只覆盖单机 MVP：
 
 - Python + FastAPI 后端
@@ -270,7 +277,7 @@ http://127.0.0.1:8000/mobile
 
 ## App Server POC
 
-App Server POC 是独立 sidecar 试验链路，只在 `poc/app_server` 下运行，不接入 `backend/runner` 主系统，也不替换当前 `codex exec` Runner 主链路。
+App Server POC 是独立 sidecar 链路，只在 `poc/app_server` 下运行。v0.8.0 起，主后端可以通过 HTTP 调用该 sidecar 创建 App Thread 和发送 App Turn，但它仍不替换当前 `codex exec` Runner 主链路。
 
 入口区分：
 
@@ -290,6 +297,25 @@ python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
 ```
 
 POC 当前限制见 `poc/app_server/README.md`。不要将该 POC 公网暴露；如需手机局域网访问，必须设置 `APP_SERVER_BRIDGE_TOKEN`。
+
+v0.8.0 启动顺序：
+
+```powershell
+# 1. 启动 App Server Bridge sidecar
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+
+# 2. 启动主后端
+$env:API_TOKEN="dev-token"
+$env:APP_SERVER_BRIDGE_URL="http://127.0.0.1:8766"
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+# 3. 打开主线手机控制台
+http://127.0.0.1:8000/mobile
+```
+
+App Server 会话模式第一版是同步阻塞调用。Bridge sidecar 不可用时，App Thread API 返回 `502`、`503` 或 `504`。当前不持久化完整事件流，只保存最近 summary/final，不支持 SSE、审批 UI 或 diff UI。
 
 ## Demo 脚本
 

@@ -166,3 +166,52 @@ class RunnerTaskCancelState(BaseModel):
     task_id: int
     cancel_requested: bool
     status: TaskStatus
+
+
+class AppThreadCreate(BaseModel):
+    project_id: int
+    title: Optional[str] = None
+
+
+class AppThreadUpdate(BaseModel):
+    title: str = Field(..., min_length=1)
+
+
+class AppThreadRead(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    bridge_thread_id: Optional[str]
+    app_thread_id: Optional[str]
+    status: str
+    last_error: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class AppTurnCreate(BaseModel):
+    message: str = Field(..., min_length=1)
+
+
+class AppTurnRead(BaseModel):
+    id: int
+    app_thread_id: int
+    user_message: str
+    assistant_final: Optional[str]
+    status: str
+    error_message: Optional[str]
+    bridge_turn_id: Optional[str]
+    created_at: datetime
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+
+
+class AppThreadFinalRead(BaseModel):
+    app_thread_id: int
+    assistant_final: Optional[str]
+
+
+class AppThreadEventsRead(BaseModel):
+    app_thread_id: int
+    latest_turn_id: Optional[int]
+    event_summary: Optional[dict]

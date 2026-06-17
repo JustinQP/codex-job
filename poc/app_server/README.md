@@ -2,7 +2,7 @@
 
 本目录是独立 POC，用于验证 Python/HTTP Bridge 是否可以通过 stdio JSONL 与 `codex app-server` 通信，并提供最小手机控制页。
 
-当前不接入 `backend/main.py`、`runner/runner.py`、数据库模型或现有任务系统。它是 sidecar 试验链路，不替换主线 `codex exec` Runner。
+v0.8.0 起，主后端可以通过 HTTP 调用本目录的 Bridge sidecar 创建 App Thread 和发送 App Turn。Bridge 仍独立运行，不合并进 `backend/main.py`，不替换主线 `codex exec` Runner。
 
 ## 当前推荐运行方式
 
@@ -31,6 +31,19 @@ http://<电脑局域网IP>:8766/mobile
 ```
 
 局域网访问仅限可信网络，必须设置 `APP_SERVER_BRIDGE_TOKEN`。页面本身不鉴权，但页面调用 Bridge API 时会带 `X-Bridge-Token`。不要公网暴露该 POC 服务。
+
+作为 v0.8.0 主后端 sidecar 使用时，主后端需要配置：
+
+```powershell
+$env:APP_SERVER_BRIDGE_URL="http://127.0.0.1:8766"
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+```
+
+主线手机控制台入口仍是：
+
+```text
+http://127.0.0.1:8000/mobile
+```
 
 可选配置：
 
@@ -178,7 +191,10 @@ Bridge 每轮 turn 会保存：
 
 - 单进程内存态
 - 服务重启后 thread 丢失
-- 不接 backend/runner 主系统
+- 作为 sidecar 被主后端 HTTP 调用，不合并进 backend
+- 不替换 backend/runner/codex exec 主链路
+- 主线第一版同步阻塞等待 turn 完成
+- 主系统只保存 latest summary/final，不持久化完整事件流
 - 不支持 SSE
 - 不支持审批 UI
 - 不支持 diff UI

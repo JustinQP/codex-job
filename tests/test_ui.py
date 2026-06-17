@@ -110,6 +110,25 @@ def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:
         assert 'href="${escapeHtml(task.diff_url)}"' in html
 
 
+def test_mobile_console_contains_app_server_session_block() -> None:
+    for client, session in make_client():
+        del session
+        response = client.get("/mobile")
+
+        assert response.status_code == 200
+        html = response.text
+        assert "App Server 会话" in html
+        assert "检查 App Server Bridge" in html
+        assert 'api("/app-server-bridge/health"' in html
+        assert 'api("/app-threads?limit=20"' in html
+        assert 'api("/app-threads", {method: "POST"' in html
+        assert 'api(`/app-threads/${selectedAppThreadId}/turns`' in html
+        assert 'api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE"' in html
+        assert "${escapeHtml(t.title)}" in html
+        assert "${escapeHtml(t.status)}" in html
+        assert "${escapeHtml(t.assistant_final || t.error_message || \"\")}" in html
+
+
 def test_create_task_form_redirects_to_detail() -> None:
     for client, session in make_client():
         project = add_project(session)
