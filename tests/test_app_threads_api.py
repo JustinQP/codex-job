@@ -17,11 +17,19 @@ from backend.services.app_server_bridge_client import AppServerBridgeError
 class FakeBridgeClient:
     def __init__(self) -> None:
         self.deleted: list[str] = []
+        self.missing_bridge_thread_id = False
+        self.preview_final = "short preview"
+        self.full_final = "full assistant final"
 
     def get_health(self) -> dict[str, Any]:
         return {"status": "ok", "mode": "poc", "sandbox": "readOnly", "threads": 0}
 
     def create_thread(self, title: str) -> dict[str, Any]:
+        if self.missing_bridge_thread_id:
+            return {
+                "app_thread_id": "app-1",
+                "title": title,
+            }
         return {
             "bridge_thread_id": "bridge-1",
             "app_thread_id": "app-1",
@@ -38,14 +46,14 @@ class FakeBridgeClient:
     def send_turn(self, bridge_thread_id: str, message: str) -> dict[str, Any]:
         return {
             "turn_id": "turn-1",
-            "assistant_final_preview": f"assistant:{message}",
+            "assistant_final_preview": self.preview_final,
         }
 
     def get_events(self, bridge_thread_id: str) -> dict[str, Any]:
         return {"summary": {"total_events": 2, "bridge_thread_id": bridge_thread_id}}
 
     def get_final(self, bridge_thread_id: str) -> dict[str, Any]:
-        return {"assistant_final": "final fallback"}
+        return {"assistant_final": self.full_final}
 
 
 def make_client(monkeypatch, fake: FakeBridgeClient | None = None) -> Generator[tuple[TestClient, Session, FakeBridgeClient], None, None]:
@@ -139,12 +147,12 @@ def test_app_threads_crud_turns_final_and_events(monkeypatch) -> None:
         assert renamed.status_code == 200
         assert renamed.json()["title"] == "Renamed"
         assert turn.status_code == 200
-        assert turn.json()["assistant_final"] == "assistant:hello"
+        assert turn.json()["assistant_final"] == "full assistant final"
         assert turn.json()["bridge_turn_id"] == "turn-1"
         assert turns.status_code == 200
         assert len(turns.json()) == 1
         assert final.status_code == 200
-        assert final.json()["assistant_final"] == "assistant:hello"
+        assert final.json()["assistant_final"] == "full assistant final"
         assert events.status_code == 200
         assert events.json()["event_summary"]["total_events"] == 2
         assert closed.status_code == 200
@@ -171,6 +179,22 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
         assert authorized_get.status_code == 200
         assert protected_post.status_code == 401
         assert authorized_post.status_code == 200
+
+
+def test_create_app_thread_rejects_missing_bridge_thread_id(monkeypatch) -> None:
+    fake = FakeBridgeClient()
+    fake.missing_bridge_thread_id = True
+    for client, session, _fake in make_client(monkeypatch, fake):
+        project = add_project(session)
+
+        response = client.post(
+            "/app-threads",
+            json={"project_id": project.id, "title": "Chat"},
+        )
+
+        assert response.status_code == 502
+        assert response.json()["detail"]["code"] == "invalid_bridge_response"
+        assert response.json()["detail"]["message"] == "Bridge response missing bridge_thread_id"
 
 
 def test_app_threads_not_found_and_empty_turn(monkeypatch) -> None:

@@ -272,6 +272,7 @@ http://127.0.0.1:8000/mobile
 - 查看 Runner 列表和状态。
 - 选择项目、Runner、任务类型、模型、推理难度、sandbox。
 - 提交任务、查看最近任务、查看 log/result/diff、取消任务。
+- v0.8.0 起，可在主线手机控制台中检查 App Server Bridge、创建 App Thread、发送 App Turn、查看 turns/final、关闭 App Thread。
 
 当前目标模式只提交一次受控目标任务，不做无限自主迭代。
 

@@ -22,11 +22,20 @@ class FakeBridgeClient:
         self.fail_send = False
         self.fail_create = False
         self.fail_rename = False
+        self.fail_final = False
+        self.missing_bridge_thread_id = False
+        self.preview_final = "short preview"
+        self.full_final = "full assistant final"
 
     def create_thread(self, title: str) -> dict[str, Any]:
         if self.fail_create:
             raise AppServerBridgeError(None, "network_error", "bridge down", "request")
         self.created_titles.append(title)
+        if self.missing_bridge_thread_id:
+            return {
+                "app_thread_id": "app-1",
+                "title": title,
+            }
         return {
             "bridge_thread_id": "bridge-1",
             "app_thread_id": "app-1",
@@ -48,14 +57,16 @@ class FakeBridgeClient:
             raise AppServerBridgeError(504, "turn_timeout", "timeout", "turn/completed")
         return {
             "turn_id": "turn-1",
-            "assistant_final_preview": f"assistant:{message}",
+            "assistant_final_preview": self.preview_final,
         }
 
     def get_events(self, bridge_thread_id: str) -> dict[str, Any]:
         return {"summary": {"total_events": 2, "bridge_thread_id": bridge_thread_id}}
 
     def get_final(self, bridge_thread_id: str) -> dict[str, Any]:
-        return {"assistant_final": "final fallback"}
+        if self.fail_final:
+            raise AppServerBridgeError(502, "final_failed", "final unavailable", "final")
+        return {"assistant_final": self.full_final}
 
 
 def make_session() -> Generator[Session, None, None]:
@@ -131,6 +142,26 @@ def test_create_app_thread_bridge_failure_does_not_persist_thread() -> None:
         assert session.exec(select(AppThread)).all() == []
 
 
+def test_create_app_thread_rejects_missing_bridge_thread_id() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        fake.missing_bridge_thread_id = True
+
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.create_app_thread(
+                session,
+                AppThreadCreate(project_id=project.id, title="Chat"),
+                fake,
+            )
+
+        assert exc.value.status_code == 502
+        assert exc.value.detail["code"] == "invalid_bridge_response"
+        assert exc.value.detail["message"] == "Bridge response missing bridge_thread_id"
+        assert exc.value.detail["step"] == "create_thread"
+        assert session.exec(select(AppThread)).all() == []
+
+
 def test_send_app_turn_success_persists_turn_and_summary() -> None:
     for session in make_session():
         project = add_project(session)
@@ -151,12 +182,59 @@ def test_send_app_turn_success_persists_turn_and_summary() -> None:
         events = app_thread_service.get_app_thread_events(session, app_thread.id)
 
         assert app_turn.status == "SUCCESS"
-        assert app_turn.assistant_final == "assistant:hello"
+        assert app_turn.assistant_final == "full assistant final"
         assert app_turn.bridge_turn_id == "turn-1"
         assert app_turn.completed_at is not None
-        assert final.assistant_final == "assistant:hello"
+        assert final.assistant_final == "full assistant final"
         assert events.latest_turn_id == app_turn.id
         assert events.event_summary == {"total_events": 2, "bridge_thread_id": "bridge-1"}
+
+
+def test_send_app_turn_prefers_full_final_over_preview() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        fake.preview_final = "short preview"
+        fake.full_final = "full assistant final"
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+
+        app_turn = app_thread_service.send_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+            fake,
+        )
+        final = app_thread_service.get_app_thread_final(session, app_thread.id)
+
+        assert app_turn.assistant_final == "full assistant final"
+        assert final.assistant_final == "full assistant final"
+
+
+def test_send_app_turn_falls_back_to_preview_when_final_unavailable() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        fake.preview_final = "short preview"
+        fake.fail_final = True
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+
+        app_turn = app_thread_service.send_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+            fake,
+        )
+
+        assert app_turn.status == "SUCCESS"
+        assert app_turn.assistant_final == "short preview"
 
 
 def test_send_app_turn_failure_marks_turn_failed_and_thread_error() -> None:

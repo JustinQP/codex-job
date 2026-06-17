@@ -51,12 +51,13 @@ def create_app_thread(
         bridge_thread = client.create_thread(title)
     except AppServerBridgeError as exc:
         raise _bridge_http_exception(exc) from exc
+    bridge_thread_id = _require_bridge_thread_id(bridge_thread)
 
     now = utc_now()
     app_thread = AppThread(
         project_id=payload.project_id,
         title=title,
-        bridge_thread_id=_string_or_none(bridge_thread.get("bridge_thread_id")),
+        bridge_thread_id=bridge_thread_id,
         app_thread_id=_string_or_none(bridge_thread.get("app_thread_id")),
         status=APP_THREAD_ACTIVE,
         created_at=now,
@@ -181,8 +182,10 @@ def send_app_turn(
         raise _bridge_http_exception(exc) from exc
 
     completed_at = utc_now()
+    full_final = _bridge_final(client, app_thread.bridge_thread_id)
+    preview_final = _string_or_none(bridge_result.get("assistant_final_preview"))
     app_turn.status = APP_TURN_SUCCESS
-    app_turn.assistant_final = _string_or_none(bridge_result.get("assistant_final_preview")) or _bridge_final(client, app_thread.bridge_thread_id)
+    app_turn.assistant_final = full_final or preview_final
     app_turn.bridge_turn_id = _string_or_none(bridge_result.get("turn_id"))
     app_turn.event_summary_json = _summary_json(events_result)
     app_turn.completed_at = completed_at
@@ -286,6 +289,20 @@ def _bridge_http_exception(exc: AppServerBridgeError) -> HTTPException:
             "code": exc.code,
             "message": exc.message,
             "step": exc.step,
+        },
+    )
+
+
+def _require_bridge_thread_id(payload: dict[str, Any]) -> str:
+    bridge_thread_id = _string_or_none(payload.get("bridge_thread_id"))
+    if bridge_thread_id:
+        return bridge_thread_id
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail={
+            "code": "invalid_bridge_response",
+            "message": "Bridge response missing bridge_thread_id",
+            "step": "create_thread",
         },
     )
 

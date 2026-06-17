@@ -49,7 +49,7 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 app = FastAPI(
     title="Codex Remote Runner MVP",
-    version="0.7.0",
+    version="0.8.1",
     lifespan=lifespan,
 )
 
