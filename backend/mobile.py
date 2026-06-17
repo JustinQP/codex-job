@@ -612,7 +612,7 @@ def mobile_body() -> str:
       <h2>设置</h2>
       <div class="item">
         <strong>当前版本</strong><br>
-        <span class="muted">v1.1.1 mobile app session UX POC</span>
+        <span class="muted">v1.1.2 mobile UI/UX POC</span>
       </div>
       <div class="item">
         <strong>Backend 地址</strong><br>
@@ -1021,11 +1021,9 @@ function renderAppTurnStatus(turn) {
 
 function renderAppThreads(appThreads) {
   appThreadsCache = appThreads;
-  if (selectedAppThreadId && !appThreads.some(t => t.id === selectedAppThreadId)) {
-    selectedAppThreadId = null;
-    selectedAppThread = null;
-  } else if (selectedAppThreadId) {
-    selectedAppThread = appThreads.find(t => t.id === selectedAppThreadId) || selectedAppThread;
+  if (selectedAppThreadId) {
+    const listedThread = appThreads.find(t => t.id === selectedAppThreadId);
+    if (listedThread) selectedAppThread = listedThread;
   }
   updateSelectedAppThreadDisplay();
   if (!appThreads.length) {
@@ -1171,6 +1169,7 @@ async function refreshCurrentAppTurn() {
 
 async function cancelCurrentAppTurn() {
   if (!selectedAppTurnId) throw new Error("请先提交或选择 App Turn");
+  if (!confirm(`确认取消 App Turn #${selectedAppTurnId}？`)) return null;
   stopAppTurnPolling();
   const turn = await api(`/app-turns/${selectedAppTurnId}/cancel`, {
     method: "POST",
@@ -1179,6 +1178,7 @@ async function cancelCurrentAppTurn() {
   renderAppTurnStatus(turn);
   await loadAppTurns();
   await loadAppThreadList();
+  document.getElementById("appWaiting").textContent = "";
   showToast(`已取消 App Turn #${turn.id}`, "warning");
   appLog(`已取消 App Turn #${turn.id}`);
   return turn;

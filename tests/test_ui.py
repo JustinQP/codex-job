@@ -133,6 +133,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "async function withButtonLoading(button, loadingText, fn)" in html
         assert "快速创建任务" in html
         assert "普通使用只需要选择项目、任务类型并填写 Prompt" in html
+        assert "v1.1.2 mobile UI/UX POC" in html
         assert "最近任务" in html
         assert "任务详情" in html
         assert "function renderTasks(tasks)" in html
@@ -203,6 +204,9 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'confirm(`确认将 CLOSED AppThread 标记为 archived？`)' in html
         assert 'confirm(`确认将 ERROR AppThread 标记为 archived？`)' in html
         assert 'confirm("确认将所有 PENDING/RUNNING AppTurn 标记为 FAILED？")' in html
+        assert 'confirm(`确认取消 App Turn #${selectedAppTurnId}？`)' in html
+        assert 'document.getElementById("appWaiting").textContent = "";' in html
+        assert "const listedThread = appThreads.find(t => t.id === selectedAppThreadId);" in html
         assert 'String(t.title || "").startsWith("[archived]")' in html
         assert "确认将 CLOSED AppThread 标记为 archived？" in html
         assert "确认将 ERROR AppThread 标记为 archived？" in html
