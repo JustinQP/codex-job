@@ -143,6 +143,10 @@ def rerun_task(session: Session, task_id: int) -> Task:
         prompt=original.prompt,
         timeout_seconds=original.timeout_seconds,
         task_type=original.task_type,
+        assigned_runner_id=original.assigned_runner_id,
+        model=original.model,
+        reasoning_effort=original.reasoning_effort,
+        sandbox=original.sandbox,
     )
     return create_task(session, payload)
 

@@ -121,6 +121,15 @@ function log(text) {
   output.textContent = text;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
@@ -145,37 +154,37 @@ async function loadAll() {
 function renderProjects(projects) {
   document.getElementById("project").innerHTML = projects
     .filter(p => p.enabled)
-    .map(p => `<option value="${p.id}">${p.name}</option>`)
+    .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
     .join("");
 }
 
 function renderTaskTypes(templates) {
   document.getElementById("taskType").innerHTML = templates
-    .map(t => `<option value="${t.task_type}">${t.task_type}</option>`)
+    .map(t => `<option value="${escapeHtml(t.task_type)}">${escapeHtml(t.task_type)}</option>`)
     .join("");
 }
 
 function renderRunners(runners) {
   document.getElementById("runner").innerHTML =
     `<option value="">自动 / 项目默认</option>` +
-    runners.map(r => `<option value="${r.runner_id}">${r.runner_id} (${r.status})</option>`).join("");
+    runners.map(r => `<option value="${escapeHtml(r.runner_id)}">${escapeHtml(r.runner_id)} (${escapeHtml(r.status)})</option>`).join("");
   document.getElementById("runners").innerHTML = runners.map(r => `
     <div class="item">
-      <strong>${r.runner_id}</strong> ${r.status}<br>
-      <span class="muted">${r.hostname} pid=${r.pid} models=${r.supported_models || ""}</span>
+      <strong>${escapeHtml(r.runner_id)}</strong> ${escapeHtml(r.status)}<br>
+      <span class="muted">${escapeHtml(r.hostname)} pid=${escapeHtml(r.pid)} models=${escapeHtml(r.supported_models || "")}</span>
     </div>`).join("");
 }
 
 function renderTasks(tasks) {
   document.getElementById("tasks").innerHTML = tasks.map(t => `
     <div class="item">
-      <strong>#${t.id}</strong> ${t.status} ${t.task_type}<br>
-      <span class="muted">project=${t.project_id} runner=${t.assigned_runner_id || t.runner_id || ""} model=${t.model || ""}</span>
+      <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.status)} ${escapeHtml(t.task_type)}<br>
+      <span class="muted">project=${escapeHtml(t.project_id)} runner=${escapeHtml(t.assigned_runner_id || t.runner_id || "")} model=${escapeHtml(t.model || "")}</span>
       <div class="links">
-        <a href="#" onclick="showTask(${t.id});return false;">详情</a>
-        <a href="/tasks/${t.id}/log" target="_blank">log</a>
-        <a href="/tasks/${t.id}/result" target="_blank">result</a>
-        <a href="/tasks/${t.id}/diff" target="_blank">diff</a>
+        <a href="#" onclick="showTask(${escapeHtml(t.id)});return false;">详情</a>
+        <a href="${escapeHtml(t.log_url)}" target="_blank">log</a>
+        <a href="${escapeHtml(t.result_url)}" target="_blank">result</a>
+        <a href="${escapeHtml(t.diff_url)}" target="_blank">diff</a>
       </div>
     </div>`).join("");
 }
@@ -200,14 +209,14 @@ async function showTask(id) {
   const task = await api(`/tasks/${id}`, {headers: headers()});
   document.getElementById("taskDetail").innerHTML = `
     <div class="item">
-      <strong>#${task.id}</strong> ${task.status}<br>
-      <span class="muted">model=${task.model || ""} reasoning=${task.reasoning_effort || ""} sandbox=${task.sandbox || ""}</span>
+      <strong>#${escapeHtml(task.id)}</strong> ${escapeHtml(task.status)}<br>
+      <span class="muted">model=${escapeHtml(task.model || "")} reasoning=${escapeHtml(task.reasoning_effort || "")} sandbox=${escapeHtml(task.sandbox || "")}</span>
       <div class="links">
-        <a href="${task.log_url}" target="_blank">log</a>
-        <a href="${task.result_url}" target="_blank">result</a>
-        <a href="${task.diff_url}" target="_blank">diff</a>
+        <a href="${escapeHtml(task.log_url)}" target="_blank">log</a>
+        <a href="${escapeHtml(task.result_url)}" target="_blank">result</a>
+        <a href="${escapeHtml(task.diff_url)}" target="_blank">diff</a>
       </div>
-      <button class="danger" onclick="cancelTask(${task.id})">取消任务</button>
+      <button class="danger" onclick="cancelTask(${escapeHtml(task.id)})">取消任务</button>
     </div>`;
   try {
     log(await api(task.log_url, {headers: headers()}));

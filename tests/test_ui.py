@@ -85,6 +85,31 @@ def test_mobile_console_is_public_static_page() -> None:
         assert "localStorage" in response.text
 
 
+def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:
+    for client, session in make_client():
+        del session
+        response = client.get("/mobile")
+
+        assert response.status_code == 200
+        html = response.text
+        assert "function escapeHtml(value)" in html
+        assert 'replaceAll("<", "&lt;")' in html
+        assert "${escapeHtml(p.name)}" in html
+        assert "${escapeHtml(r.runner_id)}" in html
+        assert "${escapeHtml(r.status)}" in html
+        assert "${escapeHtml(r.hostname)}" in html
+        assert "${escapeHtml(r.supported_models || \"\")}" in html
+        assert "${escapeHtml(t.status)}" in html
+        assert "${escapeHtml(t.task_type)}" in html
+        assert "${escapeHtml(t.assigned_runner_id || t.runner_id || \"\")}" in html
+        assert "${escapeHtml(t.model || \"\")}" in html
+        assert "${escapeHtml(task.reasoning_effort || \"\")}" in html
+        assert "${escapeHtml(task.sandbox || \"\")}" in html
+        assert 'href="${escapeHtml(task.log_url)}"' in html
+        assert 'href="${escapeHtml(task.result_url)}"' in html
+        assert 'href="${escapeHtml(task.diff_url)}"' in html
+
+
 def test_create_task_form_redirects_to_detail() -> None:
     for client, session in make_client():
         project = add_project(session)

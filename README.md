@@ -253,7 +253,7 @@ Task payload > Project default > system default
 
 ## 手机控制台
 
-入口：
+主线手机控制台入口：
 
 ```text
 http://127.0.0.1:8000/mobile
@@ -267,6 +267,29 @@ http://127.0.0.1:8000/mobile
 - 提交任务、查看最近任务、查看 log/result/diff、取消任务。
 
 当前目标模式只提交一次受控目标任务，不做无限自主迭代。
+
+## App Server POC
+
+App Server POC 是独立 sidecar 试验链路，只在 `poc/app_server` 下运行，不接入 `backend/runner` 主系统，也不替换当前 `codex exec` Runner 主链路。
+
+入口区分：
+
+```text
+主线手机控制台：
+http://127.0.0.1:8000/mobile
+
+App Server POC 手机控制台：
+http://127.0.0.1:8766/mobile
+```
+
+启动 App Server POC Bridge：
+
+```powershell
+$env:APP_SERVER_BRIDGE_TOKEN="dev-token"
+python .\poc\app_server\app_server_bridge.py --host 127.0.0.1 --port 8766
+```
+
+POC 当前限制见 `poc/app_server/README.md`。不要将该 POC 公网暴露；如需手机局域网访问，必须设置 `APP_SERVER_BRIDGE_TOKEN`。
 
 ## Demo 脚本
 
@@ -363,7 +386,7 @@ Invoke-RestMethod http://127.0.0.1:8000/tasks/$($task.id)/diff -Headers $headers
 curl -X POST http://127.0.0.1:8000/tasks/1/rerun
 ```
 
-重跑会复制原任务的 `project_id`、`prompt`、`timeout_seconds`，创建一个新的 `PENDING` 任务，并生成新的任务产物路径。
+重跑会复制原任务的 `project_id`、`prompt`、`timeout_seconds`、`task_type`、`assigned_runner_id`、`model`、`reasoning_effort` 和 `sandbox`，创建一个新的 `PENDING` 任务，并生成新的任务产物路径。
 
 ## 取消任务
 

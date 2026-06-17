@@ -554,6 +554,8 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_content_length", "Invalid Content-Length.", step="read_body")
             return None
+        if length <= 0:
+            return {}
         raw_body = self.rfile.read(length)
         try:
             parsed = json.loads(raw_body.decode("utf-8", errors="replace"))

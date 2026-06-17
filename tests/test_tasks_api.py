@@ -127,6 +127,46 @@ def test_rerun_creates_new_pending_task_with_new_artifact_urls() -> None:
         assert body["log_url"] == f"/tasks/{body['id']}/log"
 
 
+def test_rerun_preserves_execution_config() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        runner = RunnerRecord(
+            runner_id="runner-a",
+            pid=1,
+            hostname="host",
+            status="ONLINE",
+            registered_at=utc_now(),
+            last_heartbeat_at=utc_now(),
+        )
+        session.add(runner)
+        session.commit()
+        original = Task(
+            project_id=project.id,
+            prompt="repeat configured task",
+            status=TaskStatus.FAILED,
+            timeout_seconds=120,
+            assigned_runner_id="runner-a",
+            model="gpt-5-codex",
+            reasoning_effort="high",
+            sandbox="read-only",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(original)
+        session.commit()
+        session.refresh(original)
+
+        response = client.post(f"/tasks/{original.id}/rerun")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] != original.id
+        assert body["assigned_runner_id"] == "runner-a"
+        assert body["model"] == "gpt-5-codex"
+        assert body["reasoning_effort"] == "high"
+        assert body["sandbox"] == "read-only"
+
+
 def test_create_task_rejects_timeout_outside_bounds() -> None:
     for client, session in make_client():
         project = add_project(session)
