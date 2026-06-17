@@ -761,10 +761,26 @@ const sheetTitle = document.getElementById("sheetTitle");
 const sheetContent = document.getElementById("sheetContent");
 const APP_WAITING_TEXT = "正在等待 App Server 返回，请不要刷新页面。";
 const APP_TURN_TERMINAL_STATUSES = ["SUCCESS", "FAILED", "CANCELLED"];
+const UI_STATE_KEYS = {
+  activeTab: "mobile.activeTab",
+  taskStatusFilter: "mobile.taskStatusFilter",
+  appThreadStatusFilter: "mobile.appThreadStatusFilter",
+  appIncludeArchived: "mobile.appIncludeArchived",
+  selectedAppThreadId: "mobile.selectedAppThreadId",
+  appSendMode: "mobile.appSendMode",
+};
+const VALID_TABS = ["home", "tasks", "app", "settings"];
+const TASK_ACTIVE_STATUSES = ["PENDING", "RUNNING"];
+const TASK_AUTO_REFRESH_MS = 5000;
+let activeTabName = "home";
 let selectedAppThreadId = null;
 let selectedAppThread = null;
+let selectedAppThreadMissingFromList = false;
 let selectedAppTurnId = null;
 let appTurnPollTimer = null;
+let appTurnPollTargetId = null;
+let taskAutoRefreshTimer = null;
+let taskAutoRefreshWarningShown = false;
 let appThreadsCache = [];
 let appTurnsCache = [];
 let homeAppThreadsCache = [];
@@ -772,6 +788,7 @@ let tasksCache = [];
 let projectsCache = [];
 let runnersCache = [];
 let taskTemplatesCache = [];
+let homeStateCache = null;
 let toastTimer = null;
 tokenInput.value = (localStorage.getItem("apiToken") || "").trim();
 
@@ -790,6 +807,36 @@ function log(text) {
 
 function appLog(text) {
   appOutput.textContent = text;
+}
+
+function readUiState(key, fallback = "") {
+  return localStorage.getItem(key) ?? fallback;
+}
+
+function writeUiState(key, value) {
+  localStorage.setItem(key, String(value ?? ""));
+}
+
+function removeUiState(key) {
+  localStorage.removeItem(key);
+}
+
+function restoreInitialUiState() {
+  const storedTab = readUiState(UI_STATE_KEYS.activeTab, "home");
+  activeTabName = VALID_TABS.includes(storedTab) ? storedTab : "home";
+  document.getElementById("taskStatusFilter").value = readUiState(UI_STATE_KEYS.taskStatusFilter, "");
+  document.getElementById("appThreadStatusFilter").value = readUiState(UI_STATE_KEYS.appThreadStatusFilter, "");
+  document.getElementById("appIncludeArchived").checked = readUiState(UI_STATE_KEYS.appIncludeArchived, "false") === "true";
+  selectedAppThreadId = readStoredNumber(UI_STATE_KEYS.selectedAppThreadId);
+  const sendMode = readUiState(UI_STATE_KEYS.appSendMode, "async");
+  document.getElementById("appSendAsync").checked = sendMode !== "sync";
+  switchTab(activeTabName, false);
+}
+
+function readStoredNumber(key) {
+  const rawValue = readUiState(key, "");
+  const value = Number(rawValue);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function showToast(message, type = "info") {
@@ -882,13 +929,17 @@ async function api(path, options = {}) {
   return response.text();
 }
 
-function switchTab(tabName) {
+function switchTab(tabName, persist = true) {
+  const nextTab = VALID_TABS.includes(tabName) ? tabName : "home";
+  activeTabName = nextTab;
+  if (persist) writeUiState(UI_STATE_KEYS.activeTab, nextTab);
   document.querySelectorAll("[data-tab-page]").forEach(page => {
-    page.classList.toggle("active", page.dataset.tabPage === tabName);
+    page.classList.toggle("active", page.dataset.tabPage === nextTab);
   });
   document.querySelectorAll("[data-tab]").forEach(button => {
-    button.classList.toggle("active", button.dataset.tab === tabName);
+    button.classList.toggle("active", button.dataset.tab === nextTab);
   });
+  updateTaskAutoRefresh();
 }
 
 function openSheet(title, contentHtml) {
@@ -964,6 +1015,11 @@ async function loadAll() {
   tasksCache = tasks;
   renderFilteredTasks();
   renderTaskTypes(templates);
+  homeStateCache = {
+    healthResult,
+    runners,
+    tasks,
+  };
   renderHome({
     healthResult,
     runners,
@@ -980,9 +1036,11 @@ async function loadAll() {
   });
   try {
     await loadAppThreadList();
+    await restoreSelectedAppThreadAfterLoad();
   } catch (err) {
     appLog(String(err));
   }
+  updateTaskAutoRefresh();
 }
 
 async function safeApi(path, options = {}) {
@@ -1069,7 +1127,8 @@ async function loadHomeAppServerStatus(baseState) {
     safeApi("/app-server-bridge/health", {headers: headers()}),
     safeApi("/app-threads?limit=3", {headers: headers()}),
   ]);
-  renderHome({...baseState, bridgeResult, appThreadsResult});
+  homeStateCache = {...baseState, bridgeResult, appThreadsResult};
+  renderHome(homeStateCache);
 }
 
 function renderHomeAlerts({healthResult, bridgeResult, onlineRunners}) {
@@ -1131,6 +1190,7 @@ function renderFilteredTasks() {
   document.getElementById("taskFilterSummary").textContent = statusFilter
     ? `当前筛选：${statusFilter}，显示 ${filteredTasks.length} / ${tasksCache.length} 个任务`
     : `当前筛选：全部，显示 ${tasksCache.length} 个任务`;
+  updateTaskAutoRefresh();
 }
 
 function renderTasks(tasks) {
@@ -1157,6 +1217,68 @@ function renderTasks(tasks) {
         </div>
       </div>`).join("")
     : `<div class="empty-state">还没有任务。点击下方「新建任务」开始第一次 Codex 执行。</div>`;
+}
+
+function hasActiveTasks() {
+  return tasksCache.some(t => TASK_ACTIVE_STATUSES.includes(normalizedStatus(t.status)));
+}
+
+function shouldAutoRefreshTasks() {
+  return document.visibilityState === "visible" && ["home", "tasks"].includes(activeTabName) && hasActiveTasks();
+}
+
+function startTaskAutoRefresh() {
+  if (taskAutoRefreshTimer) return;
+  taskAutoRefreshTimer = setInterval(() => {
+    refreshTasksForAutoRefresh().catch(err => {
+      if (!taskAutoRefreshWarningShown) {
+        taskAutoRefreshWarningShown = true;
+        showToast(`任务自动刷新失败：${String(err)}`, "warning");
+      }
+      appLog(String(err));
+    });
+  }, TASK_AUTO_REFRESH_MS);
+}
+
+function stopTaskAutoRefresh() {
+  if (!taskAutoRefreshTimer) return;
+  clearInterval(taskAutoRefreshTimer);
+  taskAutoRefreshTimer = null;
+}
+
+function updateTaskAutoRefresh() {
+  if (shouldAutoRefreshTasks()) {
+    startTaskAutoRefresh();
+  } else {
+    stopTaskAutoRefresh();
+  }
+}
+
+async function refreshTasksForAutoRefresh() {
+  if (!shouldAutoRefreshTasks()) {
+    updateTaskAutoRefresh();
+    return;
+  }
+  const tasks = await api("/tasks?limit=20", {headers: headers()});
+  tasksCache = tasks;
+  renderFilteredTasks();
+  if (homeStateCache) {
+    homeStateCache = {...homeStateCache, tasks};
+    renderHome(homeStateCache);
+  }
+  taskAutoRefreshWarningShown = false;
+  updateTaskAutoRefresh();
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "hidden") {
+    stopTaskAutoRefresh();
+    return;
+  }
+  loadAll().catch(err => {
+    showToast(String(err), "warning");
+    appLog(String(err));
+  });
 }
 
 async function createTask() {
@@ -1290,6 +1412,11 @@ async function loadAppThreadList() {
   return appThreads;
 }
 
+function persistAppThreadFilters() {
+  writeUiState(UI_STATE_KEYS.appThreadStatusFilter, document.getElementById("appThreadStatusFilter").value);
+  writeUiState(UI_STATE_KEYS.appIncludeArchived, document.getElementById("appIncludeArchived").checked ? "true" : "false");
+}
+
 function updateSelectedAppThreadDisplay() {
   const target = document.getElementById("appThreadCurrent");
   if (!selectedAppThreadId) {
@@ -1312,12 +1439,15 @@ function updateSelectedAppThreadDisplay() {
   }
   const title = selectedAppThread ? selectedAppThread.title : "";
   const status = selectedAppThread ? selectedAppThread.status : "";
+  const missingHint = selectedAppThreadMissingFromList
+    ? `<span class="muted">当前会话不在当前筛选结果中</span>`
+    : `<span class="muted">当前会话</span>`;
   target.innerHTML = `
     <div class="app-session-header">
       <div class="app-session-title-row">
         <div>
           <div class="app-current-title">${escapeHtml(title || "App Thread")}</div>
-          <span class="muted">当前会话</span>
+          ${missingHint}
         </div>
         ${statusBadge(status)}
       </div>
@@ -1370,6 +1500,7 @@ function renderAppThreadSwitcherSheet() {
   document.getElementById("appIncludeArchivedSheet").checked = archivedFilter.checked;
   document.getElementById("appThreadStatusFilterSheet").onchange = () => {
     statusFilter.value = document.getElementById("appThreadStatusFilterSheet").value;
+    persistAppThreadFilters();
     loadAppThreadList().catch(err => {
       showToast(String(err), "error");
       appLog(String(err));
@@ -1377,6 +1508,7 @@ function renderAppThreadSwitcherSheet() {
   };
   document.getElementById("appIncludeArchivedSheet").onchange = () => {
     archivedFilter.checked = document.getElementById("appIncludeArchivedSheet").checked;
+    persistAppThreadFilters();
     loadAppThreadList().catch(err => {
       showToast(String(err), "error");
       appLog(String(err));
@@ -1533,6 +1665,7 @@ function renderAppThreads(appThreads) {
   appThreadsCache = appThreads;
   if (selectedAppThreadId) {
     const listedThread = appThreads.find(t => t.id === selectedAppThreadId);
+    selectedAppThreadMissingFromList = !listedThread;
     if (listedThread) selectedAppThread = listedThread;
   }
   updateSelectedAppThreadDisplay();
@@ -1563,6 +1696,30 @@ function renderAppThreads(appThreads) {
   });
 }
 
+async function restoreSelectedAppThreadAfterLoad() {
+  if (!selectedAppThreadId) return;
+  let listedThread = appThreadsCache.find(t => t.id === selectedAppThreadId);
+  if (!listedThread) {
+    try {
+      listedThread = await api(`/app-threads/${selectedAppThreadId}`, {headers: headers()});
+      selectedAppThreadMissingFromList = true;
+    } catch (err) {
+      selectedAppThreadId = null;
+      selectedAppThread = null;
+      selectedAppThreadMissingFromList = false;
+      removeUiState(UI_STATE_KEYS.selectedAppThreadId);
+      updateSelectedAppThreadDisplay();
+      appLog(`恢复 AppThread 失败：${String(err)}`);
+      return;
+    }
+  } else {
+    selectedAppThreadMissingFromList = false;
+  }
+  selectedAppThread = listedThread;
+  updateSelectedAppThreadDisplay();
+  await loadAppTurns();
+}
+
 async function createAppThread() {
   const projectTarget = document.getElementById("appThreadProject") || document.getElementById("project");
   const titleTarget = document.getElementById("appThreadTitleInput") || document.getElementById("appThreadTitle");
@@ -1576,6 +1733,8 @@ async function createAppThread() {
   const appThread = await api("/app-threads", {method: "POST", headers: headers(true), body: JSON.stringify(payload)});
   selectedAppThreadId = appThread.id;
   selectedAppThread = appThread;
+  selectedAppThreadMissingFromList = false;
+  writeUiState(UI_STATE_KEYS.selectedAppThreadId, appThread.id);
   await loadAll();
   closeSheet();
   showToast(`已创建 App Thread #${appThread.id}`, "success");
@@ -1588,6 +1747,8 @@ function selectAppThread(id) {
     appThreadsCache.find(t => t.id === id) ||
     homeAppThreadsCache.find(t => t.id === id) ||
     selectedAppThread;
+  selectedAppThreadMissingFromList = !appThreadsCache.some(t => t.id === id);
+  writeUiState(UI_STATE_KEYS.selectedAppThreadId, id);
   updateSelectedAppThreadDisplay();
   renderAppThreads(appThreadsCache);
   loadAppTurns().catch(err => {
@@ -1599,6 +1760,10 @@ function selectAppThread(id) {
 function selectedSendMode() {
   const asyncToggle = document.getElementById("appSendAsync");
   return asyncToggle && asyncToggle.checked ? "async" : "sync";
+}
+
+function persistSendMode() {
+  writeUiState(UI_STATE_KEYS.appSendMode, selectedSendMode());
 }
 
 async function sendAppMessage() {
@@ -1666,8 +1831,10 @@ async function sendAsyncAppTurn() {
 }
 
 function startAppTurnPolling(turnId) {
+  if (appTurnPollTimer && appTurnPollTargetId === turnId) return;
   stopAppTurnPolling();
   selectedAppTurnId = turnId;
+  appTurnPollTargetId = turnId;
   appTurnPollTimer = setInterval(() => {
     refreshCurrentAppTurn().catch(err => {
       stopAppTurnPolling();
@@ -1683,6 +1850,7 @@ function stopAppTurnPolling() {
     clearInterval(appTurnPollTimer);
     appTurnPollTimer = null;
   }
+  appTurnPollTargetId = null;
 }
 
 async function refreshCurrentAppTurn() {
@@ -1736,6 +1904,8 @@ async function reopenAppThread() {
     headers: headers(),
   });
   selectedAppThread = reopened;
+  selectedAppThreadMissingFromList = false;
+  writeUiState(UI_STATE_KEYS.selectedAppThreadId, selectedAppThreadId);
   await loadAppThreadList();
   updateSelectedAppThreadDisplay();
   showToast("已重开 App Thread", "success");
@@ -1746,9 +1916,25 @@ async function loadAppTurns() {
   if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
   const turns = await api(`/app-threads/${selectedAppThreadId}/turns?limit=100`, {headers: headers()});
   appTurnsCache = turns;
+  resumeActiveAppTurnPolling();
   document.getElementById("appTurns").innerHTML = turns.length
     ? turns.map(renderAppTurnConversation).join("")
     : `<div class="empty-state">暂无 AppTurn。请在底部输入消息后发送。</div>`;
+}
+
+function resumeActiveAppTurnPolling() {
+  const activeTurns = appTurnsCache.filter(turn => ["PENDING", "RUNNING"].includes(normalizedStatus(turn.status)));
+  if (!activeTurns.length) {
+    if (appTurnPollTimer && selectedAppTurnId && !appTurnsCache.some(turn => turn.id === selectedAppTurnId && ["PENDING", "RUNNING"].includes(normalizedStatus(turn.status)))) {
+      stopAppTurnPolling();
+    }
+    return;
+  }
+  const selectedActiveTurn = activeTurns.find(turn => turn.id === selectedAppTurnId);
+  const activeTurn = selectedActiveTurn || activeTurns[activeTurns.length - 1];
+  selectedAppTurnId = activeTurn.id;
+  startAppTurnPolling(selectedAppTurnId);
+  renderAppTurnStatus(activeTurn);
 }
 
 function selectAppTurn(turnId) {
@@ -1948,7 +2134,9 @@ async function closeAppThread() {
   await api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE", headers: headers()});
   selectedAppThreadId = null;
   selectedAppThread = null;
+  selectedAppThreadMissingFromList = false;
   selectedAppTurnId = null;
+  removeUiState(UI_STATE_KEYS.selectedAppThreadId);
   stopAppTurnPolling();
   document.getElementById("appThreadFinal").textContent = "";
   document.getElementById("appEventsSummary").textContent = "";
@@ -1984,7 +2172,10 @@ document.getElementById("refresh").onclick = () => withButtonLoading("refresh", 
   await loadAll();
   showToast("已刷新", "success");
 });
-document.getElementById("taskStatusFilter").onchange = () => renderFilteredTasks();
+document.getElementById("taskStatusFilter").onchange = () => {
+  writeUiState(UI_STATE_KEYS.taskStatusFilter, document.getElementById("taskStatusFilter").value);
+  renderFilteredTasks();
+};
 document.getElementById("refreshRunners").onclick = () => withButtonLoading("refreshRunners", "处理中...", async () => {
   const runners = await api("/runners", {headers: headers()});
   renderRunners(runners);
@@ -1995,14 +2186,20 @@ document.getElementById("refreshAppThreads").onclick = () => withButtonLoading("
   await loadAppThreadList();
   showToast("App Threads 已刷新", "success");
 });
-document.getElementById("appThreadStatusFilter").onchange = () => loadAppThreadList().catch(err => {
+document.getElementById("appThreadStatusFilter").onchange = () => {
+  persistAppThreadFilters();
+  loadAppThreadList().catch(err => {
   showToast(String(err), "error");
   appLog(String(err));
-});
-document.getElementById("appIncludeArchived").onchange = () => loadAppThreadList().catch(err => {
+  });
+};
+document.getElementById("appIncludeArchived").onchange = () => {
+  persistAppThreadFilters();
+  loadAppThreadList().catch(err => {
   showToast(String(err), "error");
   appLog(String(err));
-});
+  });
+};
 document.getElementById("cleanupClosedThreads").onclick = () => withButtonLoading("cleanupClosedThreads", "处理中...", () => cleanupAppThreads("CLOSED"));
 document.getElementById("cleanupErrorThreads").onclick = () => withButtonLoading("cleanupErrorThreads", "处理中...", () => cleanupAppThreads("ERROR"));
 document.getElementById("recoverStaleTurns").onclick = () => withButtonLoading("recoverStaleTurns", "处理中...", recoverStaleAppTurns);
@@ -2010,6 +2207,7 @@ document.getElementById("createAppThread").onclick = () => withButtonLoading("cr
 document.getElementById("sendAppTurn").onclick = () => withButtonLoading("sendAppTurn", "处理中...", sendAppTurn);
 document.getElementById("sendAsyncAppTurn").onclick = () => withButtonLoading("sendAsyncAppTurn", "处理中...", sendAsyncAppTurn);
 document.getElementById("sendAppMessage").onclick = () => withButtonLoading("sendAppMessage", "处理中...", sendAppMessage);
+document.getElementById("appSendAsync").onchange = persistSendMode;
 document.getElementById("loadAppTurns").onclick = () => withButtonLoading("loadAppTurns", "处理中...", async () => {
   await loadAppTurns();
   showToast("Turns 已刷新", "success");
@@ -2026,6 +2224,8 @@ document.getElementById("loadAppEvents").onclick = () => withButtonLoading("load
 });
 document.getElementById("reopenAppThread").onclick = () => withButtonLoading("reopenAppThread", "处理中...", reopenAppThread);
 document.getElementById("closeAppThread").onclick = () => withButtonLoading("closeAppThread", "处理中...", closeAppThread);
+document.addEventListener("visibilitychange", handleVisibilityChange);
+restoreInitialUiState();
 loadAll().catch(err => {
   showToast(String(err), "error");
   log(String(err));

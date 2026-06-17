@@ -150,6 +150,25 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'id="toast"' in html
         assert "function showToast(message, type = \"info\")" in html
         assert "async function withButtonLoading(button, loadingText, fn)" in html
+        assert 'activeTab: "mobile.activeTab"' in html
+        assert 'taskStatusFilter: "mobile.taskStatusFilter"' in html
+        assert 'appThreadStatusFilter: "mobile.appThreadStatusFilter"' in html
+        assert 'appIncludeArchived: "mobile.appIncludeArchived"' in html
+        assert 'selectedAppThreadId: "mobile.selectedAppThreadId"' in html
+        assert 'appSendMode: "mobile.appSendMode"' in html
+        assert "function restoreInitialUiState()" in html
+        assert "function readStoredNumber(key)" in html
+        assert "function writeUiState(key, value)" in html
+        assert "function removeUiState(key)" in html
+        assert 'switchTab(activeTabName, false)' in html
+        assert "document.visibilityState" in html
+        assert "function startTaskAutoRefresh()" in html
+        assert "function stopTaskAutoRefresh()" in html
+        assert "function updateTaskAutoRefresh()" in html
+        assert "async function refreshTasksForAutoRefresh()" in html
+        assert "clearInterval(taskAutoRefreshTimer)" in html
+        assert "if (taskAutoRefreshTimer) return;" in html
+        assert "document.addEventListener(\"visibilitychange\", handleVisibilityChange)" in html
         assert "function isStaleBridgeThreadError(value)" in html
         assert "function showStaleBridgeThreadSheet(error)" in html
         assert "unknown bridge thread id" in html
@@ -180,7 +199,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "function selectedTaskStatusFilter()" in html
         assert "function filterTasksByStatus(tasks)" in html
         assert "function renderFilteredTasks()" in html
-        assert 'document.getElementById("taskStatusFilter").onchange = () => renderFilteredTasks();' in html
+        assert 'writeUiState(UI_STATE_KEYS.taskStatusFilter, document.getElementById("taskStatusFilter").value)' in html
         assert "renderHome({" in html
         assert "function renderTasks(tasks)" in html
         assert "function showTaskMore(id)" in html
@@ -213,6 +232,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "async function showAppEventsSheet(button = null)" in html
         assert "function showAppDebugSheet()" in html
         assert "function sendAppMessage()" in html
+        assert "function persistSendMode()" in html
         assert 'id="sendAppMessage"' in html
         assert 'id="appSendAsync" type="checkbox" checked' in html
         assert "selectedSendMode()" in html
@@ -221,6 +241,9 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'document.getElementById("sendAppMessage").onclick' in html
         assert "function renderAppTurnConversation(turn)" in html
         assert "function selectAppTurn(turnId)" in html
+        assert "function resumeActiveAppTurnPolling()" in html
+        assert "let appTurnPollTargetId = null" in html
+        assert "if (appTurnPollTimer && appTurnPollTargetId === turnId) return;" in html
         assert "let appTurnsCache = []" in html
         assert ".bubble-row.user" in html
         assert ".bubble-row.assistant" in html
@@ -275,6 +298,8 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'String(t.title || "").startsWith("[archived]")' in html
         assert 'document.getElementById("appThreadsSheet")' in html
         assert "if (listedThread) selectedAppThread = listedThread;" in html
+        assert "当前会话不在当前筛选结果中" in html
+        assert "async function restoreSelectedAppThreadAfterLoad()" in html
         assert 'id="appThreadProject"' in html
         assert 'id="appThreadTitleInput"' in html
         assert "确认将 CLOSED AppThread 标记为 archived？" in html
