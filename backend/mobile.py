@@ -111,6 +111,7 @@ def mobile_head() -> str:
     .top-subtitle { margin-top: 4px; color: #cbd5e1; font-size: 12px; }
     .tab-page { display: none; gap: 12px; }
     .tab-page.active { display: grid; }
+    .app-console { padding-bottom: 154px; }
     .bottom-nav {
       position: fixed;
       left: 0;
@@ -144,6 +145,14 @@ def mobile_head() -> str:
       background: var(--surface-soft);
     }
     .item.selected { border-left: 4px solid var(--primary); padding-left: 8px; }
+    .empty-state {
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 13px;
+    }
     .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .links a { color: var(--primary); text-decoration: none; font-size: 13px; font-weight: 650; }
     .badge {
@@ -162,6 +171,144 @@ def mobile_head() -> str:
     .badge.error, .badge.failed { background: var(--error-bg); color: var(--error-text); }
     .badge.closed, .badge.cancelled { background: var(--closed-bg); color: var(--closed-text); }
     .badge.warning { background: var(--warning-bg); color: var(--warning-text); }
+    .app-current-card {
+      position: sticky;
+      top: 62px;
+      z-index: 1;
+    }
+    .app-current-layout {
+      display: grid;
+      gap: 10px;
+    }
+    .app-current-title {
+      font-size: 17px;
+      font-weight: 750;
+      margin-bottom: 4px;
+    }
+    .app-current-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin: 8px 0;
+    }
+    .final-preview {
+      margin-top: 8px;
+      border-left: 3px solid var(--primary);
+      padding: 8px 10px;
+      background: #eef4ff;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .error-line {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--error-bg);
+      color: var(--error-text);
+      font-size: 13px;
+      word-break: break-word;
+    }
+    .app-toolbar {
+      display: grid;
+      gap: 8px;
+    }
+    .thread-list-details[open] {
+      background: var(--surface);
+    }
+    .thread-list-tools {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .app-main-panel {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-list {
+      display: grid;
+      gap: 12px;
+    }
+    .chat-turn {
+      display: grid;
+      gap: 6px;
+    }
+    .bubble-row {
+      display: flex;
+      width: 100%;
+    }
+    .bubble-row.user { justify-content: flex-end; }
+    .bubble-row.assistant { justify-content: flex-start; }
+    .bubble {
+      max-width: 86%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+    }
+    .bubble.user {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.user .muted { color: #dbeafe; }
+    .bubble.assistant {
+      background: var(--surface);
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    }
+    .bubble.assistant.pending,
+    .bubble.assistant.running {
+      background: var(--info-bg);
+      border-color: #93c5fd;
+    }
+    .bubble.assistant.failed,
+    .bubble.assistant.error {
+      background: var(--error-bg);
+      border-color: #fecaca;
+      color: var(--error-text);
+    }
+    .bubble.assistant.cancelled,
+    .bubble.assistant.closed {
+      background: var(--closed-bg);
+      border-color: #cbd5e1;
+      color: var(--closed-text);
+    }
+    .turn-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .loading-card {
+      margin: 6px 0;
+      border-radius: 8px;
+      padding: 8px;
+      background: rgba(37, 99, 235, 0.1);
+      color: var(--info-text);
+      font-weight: 700;
+    }
+    .app-composer {
+      position: sticky;
+      bottom: 64px;
+      z-index: 2;
+      box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
+    }
+    .app-composer textarea { min-height: 96px; }
+    .summary-grid {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      word-break: break-word;
+    }
     details {
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -281,10 +428,10 @@ def mobile_body() -> str:
     </div>
   </section>
 
-  <section id="tab-app" class="tab-page" data-tab-page="app">
+  <section id="tab-app" class="tab-page app-console" data-tab-page="app">
     <div class="card">
       <h2>App Server 会话</h2>
-      <p class="muted">App Server 会话为 sidecar POC：支持同步/异步 turn、轮询、本地取消、reopen、recover-stale、筛选与 archived 清理；不替代 Runner/codex exec 主链路。</p>
+      <p class="muted">App Server 会话为 sidecar POC；不替代 Runner/codex exec 主链路。</p>
       <div class="row">
         <button id="checkAppBridge" class="secondary">检查 App Server Bridge</button>
         <button id="refreshAppThreads" class="secondary">刷新 App Threads</button>
@@ -292,63 +439,73 @@ def mobile_body() -> str:
       <div id="appBridgeStatus" class="muted"></div>
     </div>
 
-    <div class="card">
-      <h2>当前 AppThread</h2>
+    <div class="card app-current-card">
+      <div class="row">
+        <h2>当前 AppThread</h2>
+        <button id="createAppThread" class="secondary">新建</button>
+      </div>
       <div id="appThreadCurrent" class="item">当前 App Thread: 未选择</div>
       <label>App Thread 标题 <input id="appThreadTitle" placeholder="App Thread 标题"></label>
-      <button id="createAppThread">创建 App Thread</button>
+      <div class="row">
+        <button id="reopenAppThread" class="secondary">重开</button>
+        <button id="closeAppThread" class="danger">关闭</button>
+      </div>
+      <button id="recoverStaleTurns" class="secondary">恢复卡住 turn</button>
     </div>
 
-    <div class="card">
-      <h2>AppThread 列表</h2>
-      <div class="row">
-        <label>Thread 状态筛选
-          <select id="appThreadStatusFilter">
-            <option value="">全部</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="ERROR">ERROR</option>
-            <option value="CLOSED">CLOSED</option>
-          </select>
-        </label>
-        <label class="inline"><input id="appIncludeArchived" type="checkbox"> 显示 archived</label>
+    <details class="thread-list-details">
+      <summary>AppThread 列表</summary>
+      <div class="thread-list-tools">
+        <div class="row">
+          <label>Thread 状态筛选
+            <select id="appThreadStatusFilter">
+              <option value="">全部</option>
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="ERROR">ERROR</option>
+              <option value="CLOSED">CLOSED</option>
+            </select>
+          </label>
+          <label class="inline"><input id="appIncludeArchived" type="checkbox"> 显示 archived</label>
+        </div>
+        <div class="row">
+          <button id="cleanupClosedThreads" class="secondary">清理 CLOSED</button>
+          <button id="cleanupErrorThreads" class="secondary">清理 ERROR</button>
+        </div>
       </div>
-      <div class="row">
-        <button id="cleanupClosedThreads" class="secondary">清理 CLOSED</button>
-        <button id="cleanupErrorThreads" class="secondary">清理 ERROR</button>
-      </div>
-      <button id="recoverStaleTurns" class="secondary">恢复卡住的 App Turn</button>
       <div id="appThreads" class="stack"></div>
-    </div>
+    </details>
 
-    <div class="card">
-      <h2>AppTurn 操作</h2>
-      <label>App Turn Message <textarea id="appMessage" placeholder="发送到当前 App Thread 的消息"></textarea></label>
-      <div id="appWaiting" class="muted"></div>
-      <div class="row">
-        <button id="sendAppTurn">发送 App Turn</button>
-        <button id="sendAsyncAppTurn">异步发送 App Turn</button>
-      </div>
-      <div class="row">
-        <button id="loadAppTurns" class="secondary">查看 Turns</button>
-        <button id="refreshAppTurn" class="secondary">刷新当前 Turn</button>
-      </div>
-      <button id="cancelAppTurn" class="danger">取消当前 Turn</button>
+    <div class="card app-main-panel">
+      <h2>会话</h2>
       <div class="row">
         <button id="loadAppFinal" class="secondary">查看 App Final</button>
-        <button id="loadAppEvents" class="secondary">查看 App Events</button>
+        <button id="loadAppTurns" class="secondary">刷新会话</button>
       </div>
       <div class="row">
-        <button id="reopenAppThread" class="secondary">重开当前 App Thread</button>
-        <button id="closeAppThread" class="danger">关闭当前 App Thread</button>
+        <button id="refreshAppTurn" class="secondary">刷新当前 Turn</button>
+        <button id="cancelAppTurn" class="danger">取消当前 Turn</button>
       </div>
       <div id="appThreadFinal" class="item"></div>
-      <div id="appEventsSummary" class="item"></div>
       <div id="appTurnStatus" class="item"></div>
-      <div id="appTurns" class="stack"></div>
+      <div id="appTurns" class="chat-list"></div>
+      <details>
+        <summary>事件摘要</summary>
+        <button id="loadAppEvents" class="secondary">查看 App Events</button>
+        <div id="appEventsSummary" class="summary-grid"></div>
+      </details>
       <details>
         <summary>调试输出</summary>
         <pre id="appOutput"></pre>
       </details>
+    </div>
+
+    <div class="card app-composer">
+      <label>发送消息 <textarea id="appMessage" placeholder="发送到当前 App Thread 的消息"></textarea></label>
+      <div id="appWaiting" class="muted"></div>
+      <div class="row">
+        <button id="sendAppTurn">同步发送</button>
+        <button id="sendAsyncAppTurn">异步发送</button>
+      </div>
     </div>
   </section>
 
@@ -376,7 +533,7 @@ def mobile_body() -> str:
       <h2>设置</h2>
       <div class="item">
         <strong>当前版本</strong><br>
-        <span class="muted">v1.1.0 mobile layout POC</span>
+        <span class="muted">v1.1.1 mobile app session UX POC</span>
       </div>
       <div class="item">
         <strong>Backend 地址</strong><br>
@@ -420,6 +577,7 @@ let selectedAppThread = null;
 let selectedAppTurnId = null;
 let appTurnPollTimer = null;
 let appThreadsCache = [];
+let appTurnsCache = [];
 let toastTimer = null;
 tokenInput.value = localStorage.getItem("apiToken") || "";
 
@@ -621,20 +779,53 @@ async function loadAppThreadList() {
 function updateSelectedAppThreadDisplay() {
   const target = document.getElementById("appThreadCurrent");
   if (!selectedAppThreadId) {
-    target.textContent = "当前 App Thread: 未选择";
+    target.innerHTML = `<div class="empty-state">当前 App Thread: 未选择。请先新建或从 AppThread 列表选择。</div>`;
     updateAppActionState();
     return;
   }
   const title = selectedAppThread ? selectedAppThread.title : "";
   const status = selectedAppThread ? selectedAppThread.status : "";
+  const turnCount = selectedAppThread ? selectedAppThread.turn_count : "";
+  const latestFinal = selectedAppThread ? selectedAppThread.latest_assistant_final : "";
   const lastError = selectedAppThread ? selectedAppThread.last_error : "";
-  target.innerHTML =
-    `当前 App Thread: #${escapeHtml(selectedAppThreadId)} ${escapeHtml(title)} ${statusBadge(status)} ${lastError ? "last_error=" + escapeHtml(lastError) : ""}`;
+  const updatedAt = selectedAppThread ? selectedAppThread.updated_at : "";
+  target.innerHTML = `
+    <div class="app-current-layout">
+      <div>
+        <div class="app-current-title">${escapeHtml(title || "App Thread")}</div>
+        <div class="app-current-meta">
+          <span class="muted">id=#${escapeHtml(selectedAppThreadId)}</span>
+          ${statusBadge(status)}
+          <span class="muted">turn_count=${escapeHtml(turnCount ?? 0)}</span>
+        </div>
+        <span class="muted">updated=${escapeHtml(updatedAt || "")}</span>
+        <div class="final-preview">
+          <strong>latest final preview</strong><br>
+          ${latestFinal ? escapeHtml(shortText(latestFinal, 260)) : `<span class="muted">暂无 assistant final</span>`}
+        </div>
+        ${lastError ? `<div class="error-line">last_error=${escapeHtml(lastError)}</div>` : ""}
+      </div>
+    </div>`;
   updateAppActionState();
 }
 
+function shortText(value, maxLength = 180) {
+  const text = String(value || "");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function normalizedStatus(status) {
+  return String(status || "").toUpperCase();
+}
+
+function statusClass(status) {
+  const normalized = normalizedStatus(status).toLowerCase();
+  return normalized || "unknown";
+}
+
 function statusBadge(status) {
-  const normalized = String(status || "").toUpperCase();
+  const normalized = normalizedStatus(status);
   const labelMap = {
     ACTIVE: "正常",
     SUCCESS: "成功",
@@ -665,22 +856,43 @@ function statusBadge(status) {
 function updateAppActionState() {
   const sendButton = document.getElementById("sendAppTurn");
   const asyncButton = document.getElementById("sendAsyncAppTurn");
+  const threadButtons = [
+    "loadAppTurns",
+    "refreshAppTurn",
+    "cancelAppTurn",
+    "loadAppFinal",
+    "loadAppEvents",
+    "reopenAppThread",
+    "closeAppThread",
+  ];
   const status = selectedAppThread ? selectedAppThread.status : "";
-  sendButton.disabled = status === "CLOSED";
-  asyncButton.disabled = status === "CLOSED";
+  const hasThread = Boolean(selectedAppThreadId);
+  sendButton.disabled = !hasThread || status === "CLOSED";
+  asyncButton.disabled = !hasThread || status === "CLOSED";
+  threadButtons.forEach(id => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = !hasThread;
+  });
   if (status === "CLOSED") {
     document.getElementById("appWaiting").textContent = "当前 App Thread 已关闭，请先重开。";
-  } else if (document.getElementById("appWaiting").textContent === "当前 App Thread 已关闭，请先重开。") {
+  } else if (["当前 App Thread 已关闭，请先重开。", ""].includes(document.getElementById("appWaiting").textContent)) {
     document.getElementById("appWaiting").textContent = "";
   }
 }
 
 function renderAppTurnStatus(turn) {
   selectedAppTurnId = turn.id;
+  const status = normalizedStatus(turn.status);
+  const isRunning = ["PENDING", "RUNNING"].includes(status);
+  const message = turn.assistant_final || turn.error_message || "";
+  const messageHtml = message
+    ? `<span>${escapeHtml(message)}</span>`
+    : `<span class="muted">等待 assistant_final</span>`;
   document.getElementById("appTurnStatus").innerHTML = `
     <strong>当前 App Turn: #${escapeHtml(turn.id)}</strong> ${statusBadge(turn.status)}<br>
     <span class="muted">duration_seconds=${escapeHtml(turn.duration_seconds ?? "")} bridge_turn=${escapeHtml(turn.bridge_turn_id || "")}</span><br>
-    <span>${escapeHtml(turn.assistant_final || turn.error_message || "")}</span>`;
+    ${isRunning ? `<div class="loading-card">${escapeHtml(APP_WAITING_TEXT)}</div>` : ""}
+    ${messageHtml}`;
 }
 
 function renderAppThreads(appThreads) {
@@ -692,13 +904,17 @@ function renderAppThreads(appThreads) {
     selectedAppThread = appThreads.find(t => t.id === selectedAppThreadId) || selectedAppThread;
   }
   updateSelectedAppThreadDisplay();
+  if (!appThreads.length) {
+    document.getElementById("appThreads").innerHTML = `<div class="empty-state">暂无 AppThread。</div>`;
+    return;
+  }
   document.getElementById("appThreads").innerHTML = appThreads.map(t => `
     <div class="${selectedAppThreadId === t.id ? "item selected" : "item"}">
       <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.title)}<br>
       ${String(t.title || "").startsWith("[archived]") ? `<span class="muted">archived</span><br>` : ""}
       ${statusBadge(t.status)}<br>
       <span class="muted">project=${escapeHtml(t.project_id)} status=${escapeHtml(t.status)} turns=${escapeHtml(t.turn_count)} updated=${escapeHtml(t.updated_at)}</span><br>
-      <span>${escapeHtml(t.latest_assistant_final || "")}</span>
+      <span>${escapeHtml(shortText(t.latest_assistant_final || "", 160))}</span>
       ${t.last_error ? `<br><span class="muted">last_error=${escapeHtml(t.last_error)}</span>` : ""}
       <div class="links">
         <a href="#" onclick="selectAppThread(${escapeHtml(t.id)});return false;">选择</a>
@@ -765,16 +981,25 @@ async function sendAsyncAppTurn() {
   }
   const message = document.getElementById("appMessage").value.trim();
   if (!message) throw new Error("App Turn message 不能为空");
-  const appTurn = await api(`/app-threads/${selectedAppThreadId}/turns/async`, {
-    method: "POST",
-    headers: headers(true),
-    body: JSON.stringify({message}),
-  });
-  document.getElementById("appMessage").value = "";
-  renderAppTurnStatus(appTurn);
-  showToast(`已提交 App Turn #${appTurn.id}`, "info");
-  appLog(`已提交 App Turn #${appTurn.id}，状态 ${appTurn.status}`);
-  startAppTurnPolling(appTurn.id);
+  const waiting = document.getElementById("appWaiting");
+  waiting.textContent = APP_WAITING_TEXT;
+  try {
+    const appTurn = await api(`/app-threads/${selectedAppThreadId}/turns/async`, {
+      method: "POST",
+      headers: headers(true),
+      body: JSON.stringify({message}),
+    });
+    document.getElementById("appMessage").value = "";
+    await loadAppThreadList();
+    await loadAppTurns();
+    renderAppTurnStatus(appTurn);
+    showToast(`已提交 App Turn #${appTurn.id}`, "info");
+    appLog(`已提交 App Turn #${appTurn.id}，状态 ${appTurn.status}`);
+    startAppTurnPolling(appTurn.id);
+  } catch (err) {
+    waiting.textContent = "";
+    throw err;
+  }
 }
 
 function startAppTurnPolling(turnId) {
@@ -783,6 +1008,7 @@ function startAppTurnPolling(turnId) {
   appTurnPollTimer = setInterval(() => {
     refreshCurrentAppTurn().catch(err => {
       stopAppTurnPolling();
+      document.getElementById("appWaiting").textContent = "";
       showToast(String(err), "error");
       appLog(String(err));
     });
@@ -804,6 +1030,7 @@ async function refreshCurrentAppTurn() {
     stopAppTurnPolling();
     await loadAppTurns();
     await loadAppThreadList();
+    document.getElementById("appWaiting").textContent = "";
     if (turn.status === "SUCCESS") {
       await loadAppFinal();
       showToast("App Turn 已完成", "success");
@@ -811,6 +1038,9 @@ async function refreshCurrentAppTurn() {
       showToast(turn.error_message || "App Turn failed", turn.status === "CANCELLED" ? "warning" : "error");
       appLog(turn.error_message || "App Turn failed");
     }
+  } else {
+    document.getElementById("appWaiting").textContent = APP_WAITING_TEXT;
+    await loadAppTurns();
   }
   return turn;
 }
@@ -846,20 +1076,61 @@ async function reopenAppThread() {
 async function loadAppTurns() {
   if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
   const turns = await api(`/app-threads/${selectedAppThreadId}/turns?limit=100`, {headers: headers()});
-  document.getElementById("appTurns").innerHTML = turns.map(t => `
-    <div class="item">
-      <strong>#${escapeHtml(t.id)}</strong> ${statusBadge(t.status)}<br>
-      <span class="muted">created=${escapeHtml(t.created_at)} duration_seconds=${escapeHtml(t.duration_seconds ?? "")} bridge_turn=${escapeHtml(t.bridge_turn_id || "")}</span><br>
-      ${renderEventSummaryInline(t.event_summary)}
-      <span>${escapeHtml(t.assistant_final || t.error_message || "")}</span>
-    </div>`).join("");
+  appTurnsCache = turns;
+  document.getElementById("appTurns").innerHTML = turns.length
+    ? turns.map(renderAppTurnConversation).join("")
+    : `<div class="empty-state">暂无 AppTurn。请在底部输入消息后发送。</div>`;
+}
+
+function selectAppTurn(turnId) {
+  const turn = appTurnsCache.find(item => item.id === turnId);
+  if (!turn) return;
+  renderAppTurnStatus(turn);
+}
+
+function renderAppTurnConversation(turn) {
+  const status = normalizedStatus(turn.status);
+  const pending = ["PENDING", "RUNNING"].includes(status);
+  const failed = ["FAILED", "ERROR"].includes(status);
+  const cancelled = status === "CANCELLED";
+  const assistantText = turn.assistant_final || turn.error_message || "";
+  const assistantFallback = pending
+    ? APP_WAITING_TEXT
+    : cancelled
+      ? "App Turn 已取消。"
+      : failed
+        ? "App Turn 失败，暂无错误详情。"
+        : "暂无 assistant_final";
+  const assistantBody = assistantText || assistantFallback;
+  const eventSummary = renderEventSummaryInline(turn.event_summary);
+  return `
+    <div class="chat-turn" onclick="selectAppTurn(${escapeHtml(turn.id)})">
+      <div class="bubble-row user">
+        <div class="bubble user">
+          <div class="muted">user_message · #${escapeHtml(turn.id)}</div>
+          ${escapeHtml(turn.user_message || "")}
+        </div>
+      </div>
+      <div class="bubble-row assistant">
+        <div class="bubble assistant ${escapeHtml(statusClass(turn.status))}">
+          <div class="turn-meta">
+            ${statusBadge(turn.status)}
+            <span class="muted">created=${escapeHtml(turn.created_at)}</span>
+            <span class="muted">duration_seconds=${escapeHtml(turn.duration_seconds ?? "")}</span>
+          </div>
+          ${pending ? `<div class="loading-card">${escapeHtml(APP_WAITING_TEXT)}</div>` : ""}
+          ${eventSummary}
+          ${escapeHtml(assistantBody)}
+        </div>
+      </div>
+    </div>`;
 }
 
 async function loadAppFinal() {
   if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
   const final = await api(`/app-threads/${selectedAppThreadId}/final`, {headers: headers()});
   document.getElementById("appThreadFinal").innerHTML =
-    `<strong>assistant_final</strong><br>${escapeHtml(final.assistant_final || "")}`;
+    `<strong>assistant_final</strong><br>${final.assistant_final ? escapeHtml(final.assistant_final) : `<span class="muted">暂无 assistant_final</span>`}`;
   return final;
 }
 
@@ -879,19 +1150,18 @@ function renderEventSummaryInline(summary) {
 function renderAppEventsSummary(events) {
   const summary = events ? events.event_summary : null;
   if (!summary) {
-    document.getElementById("appEventsSummary").innerHTML = `<strong>event_summary</strong><br><span class="muted">无事件摘要</span>`;
+    document.getElementById("appEventsSummary").innerHTML = `<span class="muted">无事件摘要</span>`;
     return;
   }
   const eventCounts = summary.event_type_counts || {};
   const errors = Array.isArray(summary.errors) ? summary.errors : [];
   document.getElementById("appEventsSummary").innerHTML = `
-    <strong>event_summary</strong><br>
-    <span class="muted">latest_turn_id=${escapeHtml(events.latest_turn_id ?? "")}</span><br>
-    total_events=${escapeHtml(summary.total_events ?? 0)}<br>
-    has_error=${escapeHtml(summary.has_error ?? false)}<br>
-    event_type_counts=${escapeHtml(JSON.stringify(eventCounts))}<br>
-    assistant_text_preview=${escapeHtml(summary.assistant_text_preview || "")}<br>
-    errors=${escapeHtml(JSON.stringify(errors))}`;
+    <div><strong>total_events</strong><br>${escapeHtml(summary.total_events ?? 0)}</div>
+    <div><strong>has_error</strong><br>${escapeHtml(summary.has_error ?? false)}</div>
+    <div><strong>event_type_counts</strong><br>${escapeHtml(JSON.stringify(eventCounts))}</div>
+    <div><strong>assistant_text_preview</strong><br>${escapeHtml(summary.assistant_text_preview || "")}</div>
+    <div><strong>errors</strong><br>${escapeHtml(JSON.stringify(errors))}</div>
+    <span class="muted">latest_turn_id=${escapeHtml(events.latest_turn_id ?? "")}</span>`;
 }
 
 async function recoverStaleAppTurns() {

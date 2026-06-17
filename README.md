@@ -335,4 +335,4 @@ A: 不建议。当前主要面向本地/可信局域网使用，API Token 不是
 - v0.8：App Server Bridge sidecar 主线集成、主线 smoke、一键启动、AppThread reopen。
 - v0.9：异步 AppTurn、轮询、本地取消、并发保护、stale recovery、event summary、筛选和 archived 清理。
 - v1.0：稳定版收口，README/docs 重构，验收矩阵固化。
-- v1.1：Mobile 控制台 UI/UX 重构，计划见 `docs/mobile-ui-ux-v1.1-plan.md`。
+- v1.1：Mobile 控制台 UI/UX 重构；v1.1.1 已优化 App 会话操作台，计划见 `docs/mobile-ui-ux-v1.1-plan.md`。

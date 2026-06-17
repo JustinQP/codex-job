@@ -133,15 +133,30 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "async function withButtonLoading(button, loadingText, fn)" in html
         assert "<summary>高级参数</summary>" in html
         assert "<summary>调试输出</summary>" in html
+        assert 'class="card app-current-card"' in html
+        assert '<summary>AppThread 列表</summary>' in html
+        assert '<summary>事件摘要</summary>' in html
+        assert 'class="card app-composer"' in html
+        assert 'class="chat-list"' in html
+        assert "function renderAppTurnConversation(turn)" in html
+        assert "function selectAppTurn(turnId)" in html
+        assert "let appTurnsCache = []" in html
+        assert ".bubble-row.user" in html
+        assert ".bubble-row.assistant" in html
+        assert ".bubble.assistant.running" in html
+        assert ".bubble.assistant.failed" in html
+        assert ".app-composer" in html
+        assert "latest final preview" in html
         assert "检查 App Server Bridge" in html
         assert "appOutput" in html
         assert "查看 App Final" in html
         assert "查看 App Events" in html
-        assert "重开当前 App Thread" in html
-        assert "异步发送 App Turn" in html
+        assert ">重开</button>" in html
+        assert ">关闭</button>" in html
+        assert ">异步发送</button>" in html
         assert "刷新当前 Turn" in html
         assert "取消当前 Turn" in html
-        assert "恢复卡住的 App Turn" in html
+        assert "恢复卡住 turn" in html
         assert "Thread 状态筛选" in html
         assert "清理 CLOSED" in html
         assert "清理 ERROR" in html
@@ -189,21 +204,26 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "${escapeHtml(t.title)}" in html
         assert "${escapeHtml(t.status)}" in html
         assert "${escapeHtml(t.turn_count)}" in html
-        assert "${escapeHtml(t.latest_assistant_final || \"\")}" in html
+        assert "${escapeHtml(shortText(t.latest_assistant_final || \"\", 160))}" in html
         assert "last_error=${escapeHtml(t.last_error)}" in html
-        assert "last_error=\" + escapeHtml(lastError)" in html
+        assert "last_error=${escapeHtml(lastError)}" in html
         assert "${escapeHtml(normalized)} ${escapeHtml(label)}" in html
         assert "${escapeHtml(selectedAppThreadId)}" in html
         assert "${escapeHtml(turn.id)}" in html
         assert "statusBadge(turn.status)" in html
         assert "${escapeHtml(turn.duration_seconds ?? \"\")}" in html
-        assert "${escapeHtml(turn.assistant_final || turn.error_message || \"\")}" in html
-        assert "${escapeHtml(final.assistant_final || \"\")}" in html
-        assert "${escapeHtml(t.assistant_final || t.error_message || \"\")}" in html
-        assert "total_events=${escapeHtml(summary.total_events ?? 0)}" in html
-        assert "has_error=${escapeHtml(summary.has_error ?? false)}" in html
-        assert "event_type_counts=${escapeHtml(JSON.stringify(eventCounts))}" in html
-        assert "assistant_text_preview=${escapeHtml(summary.assistant_text_preview || \"\")}" in html
+        assert "turn.assistant_final || turn.error_message || \"\"" in html
+        assert "final.assistant_final ? escapeHtml(final.assistant_final)" in html
+        assert "暂无 assistant_final" in html
+        assert "const assistantText = turn.assistant_final || turn.error_message || \"\"" in html
+        assert "<strong>total_events</strong>" in html
+        assert "${escapeHtml(summary.total_events ?? 0)}" in html
+        assert "<strong>has_error</strong>" in html
+        assert "${escapeHtml(summary.has_error ?? false)}" in html
+        assert "<strong>event_type_counts</strong>" in html
+        assert "${escapeHtml(JSON.stringify(eventCounts))}" in html
+        assert "<strong>assistant_text_preview</strong>" in html
+        assert "${escapeHtml(summary.assistant_text_preview || \"\")}" in html
 
 
 def test_create_task_form_redirects_to_detail() -> None:
