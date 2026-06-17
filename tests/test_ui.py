@@ -165,8 +165,23 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'class="task-form-sheet"' in html
         assert 'class="floating-action"' in html
         assert "普通使用只需要选择项目、Prompt 和任务类型" in html
-        assert "v1.1.2 mobile UI/UX POC" in html
+        assert "v1.2 mobile app UI/UX POC" in html
         assert "<h2>任务</h2>" in html
+        assert 'id="taskStatusFilter"' in html
+        assert "任务状态筛选" in html
+        assert '<option value="">全部</option>' in html
+        assert '<option value="PENDING">PENDING</option>' in html
+        assert '<option value="RUNNING">RUNNING</option>' in html
+        assert '<option value="SUCCESS">SUCCESS</option>' in html
+        assert '<option value="FAILED">FAILED</option>' in html
+        assert '<option value="CANCELLED">CANCELLED</option>' in html
+        assert 'id="taskFilterSummary"' in html
+        assert "let tasksCache = []" in html
+        assert "function selectedTaskStatusFilter()" in html
+        assert "function filterTasksByStatus(tasks)" in html
+        assert "function renderFilteredTasks()" in html
+        assert 'document.getElementById("taskStatusFilter").onchange = () => renderFilteredTasks();' in html
+        assert "renderHome({" in html
         assert "function renderTasks(tasks)" in html
         assert "function showTaskMore(id)" in html
         assert "async function rerunTask(id, button = null)" in html

@@ -620,6 +620,17 @@ def mobile_body() -> str:
         <h2>任务</h2>
         <button id="refresh" class="secondary">刷新任务</button>
       </div>
+      <label>任务状态筛选
+        <select id="taskStatusFilter">
+          <option value="">全部</option>
+          <option value="PENDING">PENDING</option>
+          <option value="RUNNING">RUNNING</option>
+          <option value="SUCCESS">SUCCESS</option>
+          <option value="FAILED">FAILED</option>
+          <option value="CANCELLED">CANCELLED</option>
+        </select>
+      </label>
+      <div id="taskFilterSummary" class="muted"></div>
       <div id="tasks" class="stack"></div>
     </div>
     <button id="openCreateTaskSheet" class="floating-action">新建任务</button>
@@ -699,7 +710,7 @@ def mobile_body() -> str:
       <h2>设置</h2>
       <div class="item">
         <strong>当前版本</strong><br>
-        <span class="muted">v1.1.2 mobile UI/UX POC</span>
+        <span class="muted">v1.2 mobile app UI/UX POC</span>
       </div>
       <div class="item">
         <strong>Backend 地址</strong><br>
@@ -757,6 +768,7 @@ let appTurnPollTimer = null;
 let appThreadsCache = [];
 let appTurnsCache = [];
 let homeAppThreadsCache = [];
+let tasksCache = [];
 let projectsCache = [];
 let runnersCache = [];
 let taskTemplatesCache = [];
@@ -949,7 +961,8 @@ async function loadAll() {
   ]);
   renderProjects(projects);
   renderRunners(runners);
-  renderTasks(tasks);
+  tasksCache = tasks;
+  renderFilteredTasks();
   renderTaskTypes(templates);
   renderHome({
     healthResult,
@@ -1098,6 +1111,26 @@ function renderHomeThreads(appThreads, appThreadsResult) {
         </div>
       </div>`).join("")
     : `<div class="empty-state">还没有 App 会话。进入「会话」后新建一次 App Server 对话。</div>`;
+}
+
+function selectedTaskStatusFilter() {
+  const target = document.getElementById("taskStatusFilter");
+  return target ? normalizedStatus(target.value) : "";
+}
+
+function filterTasksByStatus(tasks) {
+  const statusFilter = selectedTaskStatusFilter();
+  if (!statusFilter) return tasks;
+  return tasks.filter(t => normalizedStatus(t.status) === statusFilter);
+}
+
+function renderFilteredTasks() {
+  const filteredTasks = filterTasksByStatus(tasksCache);
+  renderTasks(filteredTasks);
+  const statusFilter = selectedTaskStatusFilter();
+  document.getElementById("taskFilterSummary").textContent = statusFilter
+    ? `当前筛选：${statusFilter}，显示 ${filteredTasks.length} / ${tasksCache.length} 个任务`
+    : `当前筛选：全部，显示 ${tasksCache.length} 个任务`;
 }
 
 function renderTasks(tasks) {
@@ -1951,6 +1984,7 @@ document.getElementById("refresh").onclick = () => withButtonLoading("refresh", 
   await loadAll();
   showToast("已刷新", "success");
 });
+document.getElementById("taskStatusFilter").onchange = () => renderFilteredTasks();
 document.getElementById("refreshRunners").onclick = () => withButtonLoading("refreshRunners", "处理中...", async () => {
   const runners = await api("/runners", {headers: headers()});
   renderRunners(runners);

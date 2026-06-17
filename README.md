@@ -2,6 +2,8 @@
 
 当前版本：v1.0.0
 
+Mobile UI 当前迭代：v1.2
+
 定位：Codex Remote Runner + App Server Sidecar 本地控制台
 
 ## 1. 项目定位
