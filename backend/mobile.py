@@ -155,6 +155,85 @@ def mobile_head() -> str:
     }
     .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .links a { color: var(--primary); text-decoration: none; font-size: 13px; font-weight: 650; }
+    .task-card {
+      display: grid;
+      gap: 10px;
+    }
+    .task-card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .task-title {
+      font-size: 16px;
+      font-weight: 750;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .meta-cell {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+      min-width: 0;
+    }
+    .meta-label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+    .meta-value {
+      display: block;
+      font-size: 13px;
+      word-break: break-word;
+    }
+    .task-actions {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .task-actions a,
+    .task-actions button {
+      min-height: 36px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 750;
+      padding: 7px 6px;
+    }
+    .task-actions a {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--primary);
+    }
+    .task-actions button {
+      background: var(--danger);
+      color: #fff;
+    }
+    .task-detail-grid {
+      display: grid;
+      gap: 10px;
+    }
+    .detail-section {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: var(--surface-soft);
+    }
+    .detail-section h3 { margin-bottom: 8px; }
+    .preview-block {
+      margin-top: 8px;
+      max-height: 220px;
+      overflow: auto;
+    }
     .badge {
       display: inline-flex;
       align-items: center;
@@ -350,6 +429,7 @@ def mobile_head() -> str:
     @media (min-width: 760px) {
       main { max-width: 920px; margin: 0 auto; }
       .actions { grid-template-columns: repeat(3, 1fr); }
+      .task-actions { grid-template-columns: repeat(5, max-content); }
     }
   </style>
 </head>"""
@@ -369,6 +449,7 @@ def mobile_body() -> str:
       <label>项目 <select id="project"></select></label>
       <label>任务类型 <select id="taskType"></select></label>
       <label>Prompt <textarea id="prompt" placeholder="输入受控目标或 GOAL 任务"></textarea></label>
+      <button id="createTask">提交任务</button>
       <details>
         <summary>高级参数</summary>
         <label>Runner <select id="runner"></select></label>
@@ -402,24 +483,22 @@ def mobile_body() -> str:
           <label>Timeout 秒 <input id="timeoutSeconds" type="number" min="30" max="21600" value="7200"></label>
         </div>
       </details>
-      <button id="createTask">提交任务</button>
-      <p class="muted">主线 Runner/codex exec 任务链路。当前目标模式只提交一次受控任务。</p>
+      <p class="muted">主线 Runner/codex exec 任务链路。普通使用只需要选择项目、任务类型并填写 Prompt。</p>
     </div>
 
     <div class="card">
       <div class="row">
+        <h2>最近任务</h2>
         <button id="refresh" class="secondary">刷新任务</button>
-        <button id="clearOutput" class="ghost">清空输出</button>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>最近任务</h2>
       <div id="tasks" class="stack"></div>
     </div>
 
     <div class="card">
-      <h2>任务详情</h2>
+      <div class="row">
+        <h2>任务详情</h2>
+        <button id="clearOutput" class="ghost">清空预览</button>
+      </div>
       <div id="taskDetail" class="stack"></div>
       <details>
         <summary>调试输出</summary>
@@ -697,18 +776,31 @@ function renderRunners(runners) {
 }
 
 function renderTasks(tasks) {
-  document.getElementById("tasks").innerHTML = tasks.map(t => `
-    <div class="item">
-      <strong>#${escapeHtml(t.id)}</strong> ${statusBadge(t.status)} ${escapeHtml(t.task_type)}<br>
-      <span class="muted">project=${escapeHtml(t.project_id)} runner=${escapeHtml(t.assigned_runner_id || t.runner_id || "")} model=${escapeHtml(t.model || "")}</span>
-      <div class="links">
-        <a href="#" onclick="showTask(${escapeHtml(t.id)});return false;">详情</a>
-        <a href="${escapeHtml(t.log_url)}" target="_blank">log</a>
-        <a href="${escapeHtml(t.result_url)}" target="_blank">result</a>
-        <a href="${escapeHtml(t.diff_url)}" target="_blank">diff</a>
-        <a href="#" onclick="cancelTask(${escapeHtml(t.id)}, this);return false;">取消</a>
-      </div>
-    </div>`).join("");
+  document.getElementById("tasks").innerHTML = tasks.length
+    ? tasks.map(t => `
+      <div class="item task-card">
+        <div class="task-card-header">
+          <div>
+            <div class="task-title">#${escapeHtml(t.id)} ${escapeHtml(t.task_type)}</div>
+            <span class="muted">project=${escapeHtml(t.project_id)}</span>
+          </div>
+          ${statusBadge(t.status)}
+        </div>
+        <div class="meta-grid">
+          <div class="meta-cell"><span class="meta-label">runner</span><span class="meta-value">${escapeHtml(t.assigned_runner_id || t.runner_id || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">model</span><span class="meta-value">${escapeHtml(t.model || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">created_at</span><span class="meta-value">${escapeHtml(t.created_at || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">updated_at</span><span class="meta-value">${escapeHtml(t.updated_at || "")}</span></div>
+        </div>
+        <div class="task-actions">
+          <a href="#" onclick="showTask(${escapeHtml(t.id)});return false;">详情</a>
+          <a href="${escapeHtml(t.log_url)}" target="_blank">log</a>
+          <a href="${escapeHtml(t.result_url)}" target="_blank">result</a>
+          <a href="${escapeHtml(t.diff_url)}" target="_blank">diff</a>
+          <button class="danger" onclick="cancelTask(${escapeHtml(t.id)}, this)">取消</button>
+        </div>
+      </div>`).join("")
+    : `<div class="empty-state">暂无任务。</div>`;
 }
 
 async function createTask() {
@@ -732,24 +824,56 @@ async function createTask() {
 async function showTask(id) {
   const task = await api(`/tasks/${id}`, {headers: headers()});
   document.getElementById("taskDetail").innerHTML = `
-    <div class="item">
-      <strong>#${escapeHtml(task.id)}</strong> ${statusBadge(task.status)}<br>
-      <span class="muted">model=${escapeHtml(task.model || "")} reasoning=${escapeHtml(task.reasoning_effort || "")} sandbox=${escapeHtml(task.sandbox || "")}</span>
-      <div class="links">
-        <a href="${escapeHtml(task.log_url)}" target="_blank">log</a>
-        <a href="${escapeHtml(task.result_url)}" target="_blank">result</a>
-        <a href="${escapeHtml(task.diff_url)}" target="_blank">diff</a>
+    <div class="task-detail-grid">
+      <div class="detail-section">
+        <h3>基本信息</h3>
+        <div class="task-card-header">
+          <div>
+            <div class="task-title">#${escapeHtml(task.id)} ${escapeHtml(task.task_type || "")}</div>
+            <span class="muted">project=${escapeHtml(task.project_id)}</span>
+          </div>
+          ${statusBadge(task.status)}
+        </div>
       </div>
-      <button class="danger" onclick="cancelTask(${escapeHtml(task.id)}, this)">取消任务</button>
+      <div class="detail-section">
+        <h3>参数</h3>
+        <div class="meta-grid">
+          <div class="meta-cell"><span class="meta-label">runner</span><span class="meta-value">${escapeHtml(task.assigned_runner_id || task.runner_id || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">model</span><span class="meta-value">${escapeHtml(task.model || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">reasoning_effort</span><span class="meta-value">${escapeHtml(task.reasoning_effort || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">sandbox</span><span class="meta-value">${escapeHtml(task.sandbox || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">timeout_seconds</span><span class="meta-value">${escapeHtml(task.timeout_seconds || "")}</span></div>
+          <div class="meta-cell"><span class="meta-label">updated_at</span><span class="meta-value">${escapeHtml(task.updated_at || "")}</span></div>
+        </div>
+      </div>
+      <div class="detail-section">
+        <h3>操作链接</h3>
+        <div class="task-actions">
+          <a href="${escapeHtml(task.log_url)}" target="_blank">log</a>
+          <a href="${escapeHtml(task.result_url)}" target="_blank">result</a>
+          <a href="${escapeHtml(task.diff_url)}" target="_blank">diff</a>
+          <button class="danger" onclick="cancelTask(${escapeHtml(task.id)}, this)">取消</button>
+        </div>
+      </div>
+      <div class="detail-section">
+        <h3>log/result 预览</h3>
+        <p class="muted">优先展示 log 预览；result 和 diff 保持链接打开，本版本不做 diff UI。</p>
+        <pre id="taskPreview" class="preview-block"></pre>
+      </div>
     </div>`;
   try {
-    log(await api(task.log_url, {headers: headers()}));
+    const logText = await api(task.log_url, {headers: headers()});
+    document.getElementById("taskPreview").textContent = logText;
+    log(logText);
   } catch (err) {
-    log(String(err));
+    const errorText = String(err);
+    document.getElementById("taskPreview").textContent = errorText;
+    log(errorText);
   }
 }
 
 async function cancelTask(id, button = null) {
+  if (!confirm(`确认取消任务 #${id}？`)) return null;
   return withButtonLoading(button, "处理中...", async () => {
     await api(`/tasks/${id}/cancel`, {method: "POST", headers: headers()});
     await loadAll();

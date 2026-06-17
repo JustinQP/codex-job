@@ -131,6 +131,22 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'id="toast"' in html
         assert "function showToast(message, type = \"info\")" in html
         assert "async function withButtonLoading(button, loadingText, fn)" in html
+        assert "快速创建任务" in html
+        assert "普通使用只需要选择项目、任务类型并填写 Prompt" in html
+        assert "最近任务" in html
+        assert "任务详情" in html
+        assert "function renderTasks(tasks)" in html
+        assert 'class="item task-card"' in html
+        assert 'class="task-card-header"' in html
+        assert 'class="meta-grid"' in html
+        assert 'class="task-actions"' in html
+        assert 'class="task-detail-grid"' in html
+        assert 'class="detail-section"' in html
+        assert '<h3>基本信息</h3>' in html
+        assert '<h3>参数</h3>' in html
+        assert '<h3>操作链接</h3>' in html
+        assert '<h3>log/result 预览</h3>' in html
+        assert 'id="taskPreview"' in html
         assert "<summary>高级参数</summary>" in html
         assert "<summary>调试输出</summary>" in html
         assert 'class="card app-current-card"' in html
@@ -199,8 +215,20 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'api(`/app-threads/${selectedAppThreadId}/reopen`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE"' in html
         assert 'api("/tasks?limit=20"' in html
+        assert 'api("/tasks", {method: "POST"' in html
+        assert 'api(`/tasks/${id}`' in html
+        assert 'api(`/tasks/${id}/cancel`' in html
+        assert 'confirm(`确认取消任务 #${id}？`)' in html
         assert 'api("/runners"' in html
         assert 'api("/task-templates"' in html
+        assert "${escapeHtml(t.task_type)}" in html
+        assert "${escapeHtml(t.assigned_runner_id || t.runner_id || \"\")}" in html
+        assert "${escapeHtml(t.created_at || \"\")}" in html
+        assert "${escapeHtml(t.updated_at || \"\")}" in html
+        assert "${escapeHtml(task.reasoning_effort || \"\")}" in html
+        assert "${escapeHtml(task.sandbox || \"\")}" in html
+        assert "${escapeHtml(task.timeout_seconds || \"\")}" in html
+        assert "document.getElementById(\"taskPreview\").textContent = logText" in html
         assert "${escapeHtml(t.title)}" in html
         assert "${escapeHtml(t.status)}" in html
         assert "${escapeHtml(t.turn_count)}" in html
