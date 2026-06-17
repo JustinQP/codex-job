@@ -102,7 +102,7 @@ def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:
         assert "${escapeHtml(t.status)}" in html
         assert "${escapeHtml(t.task_type)}" in html
         assert "${escapeHtml(t.assigned_runner_id || t.runner_id || \"\")}" in html
-        assert "${escapeHtml(t.model || \"\")}" in html
+        assert "${escapeHtml(task.model || \"\")}" in html
         assert "${escapeHtml(task.reasoning_effort || \"\")}" in html
         assert "${escapeHtml(task.sandbox || \"\")}" in html
         assert 'href="${escapeHtml(task.log_url)}"' in html
@@ -128,11 +128,12 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert ">会话</button>" in html
         assert ">我的</button>" in html
         assert 'id="tab-home"' in html
-        assert 'class="card home-hero"' in html
+        assert 'class="summary-card home-hero"' in html
         assert "Codex 工作台" in html
-        assert "先看状态，再进入任务或会话。" in html
+        assert "今日工作台：先看状态，再进入任务或会话。" in html
         assert 'id="homeCreateTask"' in html
         assert 'id="homeStatus"' in html
+        assert 'id="homeRunning"' in html
         assert 'id="homeAlerts"' in html
         assert 'id="homeTasks"' in html
         assert 'id="homeThreads"' in html
@@ -195,9 +196,19 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "function closeSheet()" in html
         assert "function renderCreateTaskSheet()" in html
         assert 'class="task-form-sheet"' in html
-        assert 'class="floating-action"' in html
+        assert "floating-action" in html
         assert "普通使用只需要选择项目、Prompt 和任务类型" in html
-        assert "v1.2 mobile app UI/UX POC" in html
+        assert "v1.4 mobile design system interaction POC" in html
+        assert "--space-1: 4px" in html
+        assert "--touch-min: 40px" in html
+        assert "summary-card" in html
+        assert "list-card" in html
+        assert "detail-card" in html
+        assert "btn-primary" in html
+        assert "recovery-card" in html
+        assert "page-header" in html
+        assert "page-body" in html
+        assert "page-footer" in html
         assert ".empty-state strong" in html
         assert ".empty-state button" in html
         assert "没有在线 Runner" in html
@@ -207,6 +218,8 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "暂无 AppTurn" in html
         assert "<h2>任务</h2>" in html
         assert 'id="taskStatusFilter"' in html
+        assert 'id="taskStatusSegments"' in html
+        assert 'class="segmented-control"' in html
         assert "任务状态筛选" in html
         assert '<option value="">全部</option>' in html
         assert '<option value="PENDING">PENDING</option>' in html
@@ -217,6 +230,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'id="taskFilterSummary"' in html
         assert "let tasksCache = []" in html
         assert "function selectedTaskStatusFilter()" in html
+        assert "function renderTaskStatusSegments()" in html
         assert "function filterTasksByStatus(tasks)" in html
         assert "function renderFilteredTasks()" in html
         assert 'writeUiState(UI_STATE_KEYS.taskStatusFilter, document.getElementById("taskStatusFilter").value)' in html
@@ -224,24 +238,24 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "function renderTasks(tasks)" in html
         assert "function showTaskMore(id)" in html
         assert "async function rerunTask(id, button = null)" in html
-        assert 'class="item task-card"' in html
+        assert 'class="list-card task-card"' in html
         assert 'class="task-card-header"' in html
         assert 'class="meta-grid"' in html
         assert 'class="task-actions"' in html
         assert 'class="task-detail-grid"' in html
-        assert 'class="detail-section"' in html
-        assert '<h3>基本信息</h3>' in html
-        assert '<h3>参数</h3>' in html
-        assert '<h3>操作链接</h3>' in html
+        assert 'class="detail-card"' in html
+        assert "function taskTitleLine(task)" in html
+        assert "<summary>技术参数</summary>" in html
+        assert "<summary>更多操作</summary>" in html
         assert '<h3>log/result 预览</h3>' in html
         assert 'id="taskPreview"' in html
         assert "<summary>高级参数</summary>" in html
         assert "<summary>调试输出</summary>" in html
-        assert 'class="card app-current-card"' in html
+        assert 'class="page-header card app-current-card"' in html
         assert '<summary>AppThread 列表</summary>' not in html
-        assert '<summary>事件摘要</summary>' not in html
+        assert '<summary>事件摘要</summary>' in html
         assert 'class="app-hidden-state"' in html
-        assert 'class="card app-composer"' in html
+        assert 'class="page-footer card app-composer"' in html
         assert 'id="appMessageHint"' in html
         assert 'id="appMessageCount"' in html
         assert ".composer-meta" in html
@@ -249,8 +263,12 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'document.getElementById("appMessage").oninput = updateAppComposerState' in html
         assert 'updateAppComposerState();' in html
         assert "输入消息后即可发送" in html
-        assert "请先选择或新建会话" in html
-        assert "异步发送，不要刷新页面" in html
+        assert "请先新建或选择会话" in html
+        assert "快速发送，后台等待回复" in html
+        assert "等待回复，完成后返回" in html
+        assert "快速发送" in html
+        assert "等待回复" in html
+        assert "正在等待回复，可以继续编辑，但暂时不能发送" in html
         assert 'class="chat-list"' in html
         assert "切换会话" in html
         assert "会话更多" in html
@@ -270,6 +288,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'document.getElementById("sendAppMessage").onclick' in html
         assert "function renderAppTurnConversation(turn)" in html
         assert "function selectAppTurn(turnId)" in html
+        assert "function copyTurnMessageToComposer(turnId)" in html
         assert "function resumeActiveAppTurnPolling()" in html
         assert "let appTurnPollTargetId = null" in html
         assert "if (appTurnPollTimer && appTurnPollTargetId === turnId) return;" in html
@@ -280,6 +299,10 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert ".bubble.assistant.failed" in html
         assert ".bubble-detail-hint" in html
         assert "点击查看详情" in html
+        assert "这次回复失败" in html
+        assert "复制重试" in html
+        assert "失败恢复" in html
+        assert "重开会话" in html
         assert ".app-composer" in html
         assert "检查 App Server Bridge" in html
         assert "appOutput" in html
@@ -351,13 +374,13 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'api("/task-templates"' in html
         assert "${escapeHtml(t.task_type)}" in html
         assert "${escapeHtml(t.assigned_runner_id || t.runner_id || \"\")}" in html
-        assert "${escapeHtml(t.created_at || \"\")}" in html
         assert "${escapeHtml(t.updated_at || \"\")}" in html
         assert "${escapeHtml(task.reasoning_effort || \"\")}" in html
         assert "${escapeHtml(task.sandbox || \"\")}" in html
         assert "${escapeHtml(task.timeout_seconds || \"\")}" in html
         assert "document.getElementById(\"taskPreview\").textContent = logText" in html
-        assert 'onclick="showTaskMore(${escapeHtml(t.id)});return false;">更多</a>' in html
+        assert "async function showTaskMore(id)" in html
+        assert "<summary>更多操作</summary>" in html
         assert "重跑" in html
         assert "${escapeHtml(t.title)}" in html
         assert "${escapeHtml(t.status)}" in html

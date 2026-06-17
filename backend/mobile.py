@@ -11,11 +11,16 @@ def mobile_console() -> str:
 
 
 def mobile_head() -> str:
-    return """<head>
+    return f"""<head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Codex Mobile Console</title>
-  <style>
+  {mobile_styles()}
+</head>"""
+
+
+def mobile_styles() -> str:
+    return """<style>
     :root {
       --bg: #f3f5f8;
       --surface: #ffffff;
@@ -39,6 +44,26 @@ def mobile_head() -> str:
       --closed-bg: #e5e7eb;
       --closed-text: #374151;
       --shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --font-xs: 11px;
+      --font-sm: 12px;
+      --font-md: 14px;
+      --font-lg: 16px;
+      --touch-min: 40px;
+      --bottom-nav-height: 56px;
+      --composer-height: 132px;
+      --z-header: 2;
+      --z-floating: 2;
+      --z-nav: 3;
+      --z-toast: 4;
+      --z-sheet: 5;
     }
     * { box-sizing: border-box; }
     body {
@@ -61,7 +86,7 @@ def mobile_head() -> str:
     h2 { font-size: 16px; margin: 0 0 10px; letter-spacing: 0; }
     h3 { font-size: 14px; margin: 0 0 8px; letter-spacing: 0; }
     p { margin: 0 0 10px; }
-    main { padding: 14px 14px 88px; }
+    main { padding: var(--space-3) var(--space-3) calc(var(--bottom-nav-height) + 32px); }
     label { display: grid; gap: 5px; margin: 8px 0; font-size: 13px; color: var(--text); }
     input, select, textarea, button {
       font: inherit;
@@ -69,7 +94,7 @@ def mobile_head() -> str:
       width: 100%;
     }
     input, select, textarea {
-      min-height: 42px;
+      min-height: var(--touch-min);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 10px;
@@ -91,6 +116,30 @@ def mobile_head() -> str:
     button.secondary { background: var(--secondary); }
     button.danger { background: var(--danger); }
     button.danger:hover { background: var(--danger-strong); }
+    .btn-primary,
+    .btn-secondary,
+    .btn-danger,
+    .btn-text,
+    .btn-icon {
+      min-height: var(--touch-min);
+      border-radius: var(--radius-md);
+      font-weight: 750;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-secondary { background: var(--secondary); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-text,
+    .btn-icon {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid transparent;
+      box-shadow: none;
+    }
+    .btn-icon {
+      width: var(--touch-min);
+      min-width: var(--touch-min);
+      padding: 0;
+    }
     button.ghost {
       background: var(--surface-soft);
       color: var(--text);
@@ -109,8 +158,13 @@ def mobile_head() -> str:
       background: #eef4ff;
     }
     .top-subtitle { margin-top: 4px; color: #cbd5e1; font-size: 12px; }
-    .tab-page { display: none; gap: 12px; }
+    .tab-page,
+    .page { display: none; gap: var(--space-3); }
     .tab-page.active { display: grid; }
+    .page.active { display: grid; }
+    .page-header,
+    .page-body,
+    .page-footer { display: grid; gap: var(--space-3); }
     .app-console { padding-bottom: 154px; }
     .tasks-page { padding-bottom: 86px; }
     .home-hero {
@@ -129,7 +183,7 @@ def mobile_head() -> str:
     }
     .status-card {
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius-md);
       padding: 10px;
       background: var(--surface);
       min-width: 0;
@@ -176,6 +230,25 @@ def mobile_head() -> str:
       padding: 14px;
       box-shadow: var(--shadow);
     }
+    .summary-card,
+    .list-card,
+    .detail-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      box-shadow: var(--shadow);
+    }
+    .list-card {
+      display: grid;
+      gap: var(--space-2);
+      background: var(--surface-soft);
+      box-shadow: none;
+    }
+    .detail-card {
+      background: var(--surface-soft);
+      box-shadow: none;
+    }
     .card.soft { background: var(--surface-soft); box-shadow: none; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .stack { display: grid; gap: 8px; }
@@ -207,6 +280,21 @@ def mobile_head() -> str:
     .empty-state button {
       width: auto;
       justify-self: start;
+    }
+    .error-card,
+    .recovery-card {
+      border: 1px solid #fecaca;
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      background: var(--error-bg);
+      color: var(--error-text);
+      display: grid;
+      gap: var(--space-2);
+    }
+    .recovery-card {
+      border-color: #fed7aa;
+      background: var(--warning-bg);
+      color: var(--warning-text);
     }
     .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .links a { color: var(--primary); text-decoration: none; font-size: 13px; font-weight: 650; }
@@ -252,6 +340,11 @@ def mobile_head() -> str:
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 6px;
     }
+    .action-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
     .task-actions a,
     .task-actions button {
       min-height: 36px;
@@ -277,6 +370,40 @@ def mobile_head() -> str:
       display: grid;
       gap: 10px;
     }
+    .segmented-control {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: var(--space-1);
+      padding: var(--space-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-soft);
+    }
+    .segmented-control button {
+      min-height: 34px;
+      padding: 6px 4px;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--muted);
+      font-size: var(--font-sm);
+      font-weight: 750;
+    }
+    .segmented-control button.active {
+      background: var(--primary);
+      color: #fff;
+    }
+    .inline-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      border-radius: var(--radius-md);
+      padding: var(--space-2) var(--space-3);
+      background: var(--info-bg);
+      color: var(--info-text);
+      font-size: var(--font-sm);
+      font-weight: 750;
+    }
     .detail-section {
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -294,7 +421,7 @@ def mobile_head() -> str:
       left: 14px;
       right: 14px;
       bottom: 64px;
-      z-index: 2;
+      z-index: var(--z-header);
       box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
     }
     .sheet-backdrop {
@@ -532,10 +659,10 @@ def mobile_head() -> str:
       align-items: center;
       gap: 8px;
       margin: 0;
-      min-height: 42px;
+      min-height: var(--touch-min);
       padding: 0 10px;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius-md);
       background: var(--surface-soft);
       color: var(--text);
       white-space: nowrap;
@@ -595,51 +722,69 @@ def mobile_head() -> str:
       .task-actions { grid-template-columns: repeat(3, max-content); }
       .floating-action { left: calc(50% - 446px); right: calc(50% - 446px); }
     }
-  </style>
-</head>"""
+  </style>"""
 
 
 def mobile_body() -> str:
-    return """<body>
+    return f"""<body>
 <header>
   <h1>Codex Mobile Console</h1>
   <div class="top-subtitle">Codex Remote Runner + App Server Sidecar</div>
 </header>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <main>
-  <section id="tab-home" class="tab-page active" data-tab-page="home">
-    <div class="card home-hero">
+{mobile_home_tab()}
+{mobile_tasks_tab()}
+{mobile_app_tab()}
+{mobile_settings_tab()}
+</main>
+{mobile_sheet()}
+{mobile_nav()}"""
+
+
+def mobile_home_tab() -> str:
+    return """  <section id="tab-home" class="tab-page page active" data-tab-page="home">
+    <div class="page-header">
+      <div class="summary-card home-hero">
       <h2>Codex 工作台</h2>
-      <p class="muted">先看状态，再进入任务或会话。</p>
-      <button id="homeCreateTask">新建任务</button>
+        <p class="muted">今日工作台：先看状态，再进入任务或会话。</p>
+        <button id="homeCreateTask" class="btn-primary">新建任务</button>
+      </div>
+      <div id="homeAlerts" class="stack"></div>
     </div>
 
-    <div id="homeAlerts" class="stack"></div>
-
-    <div class="card">
+    <div class="page-body">
+      <div class="summary-card">
       <h2>系统状态</h2>
       <div id="homeStatus" class="status-grid"></div>
     </div>
 
-    <div class="card">
+      <div class="summary-card">
+        <h2>运行中</h2>
+        <div id="homeRunning" class="stack"></div>
+      </div>
+
+      <div class="summary-card">
       <h2>最近任务</h2>
       <div id="homeTasks" class="stack"></div>
     </div>
 
-    <div class="card">
+      <div class="summary-card">
       <h2>最近会话</h2>
       <div id="homeThreads" class="stack"></div>
+      </div>
     </div>
-  </section>
+  </section>"""
 
-  <section id="tab-tasks" class="tab-page tasks-page" data-tab-page="tasks">
-    <div class="card">
+
+def mobile_tasks_tab() -> str:
+    return """  <section id="tab-tasks" class="tab-page page tasks-page" data-tab-page="tasks">
+    <div class="page-header summary-card">
       <div class="row">
         <h2>任务</h2>
-        <button id="refresh" class="secondary">刷新任务</button>
+        <button id="refresh" class="btn-text">刷新</button>
       </div>
-      <label>任务状态筛选
-        <select id="taskStatusFilter">
+      <select id="taskStatusFilter" class="app-hidden-state" aria-label="任务状态筛选">
           <option value="">全部</option>
           <option value="PENDING">PENDING</option>
           <option value="RUNNING">RUNNING</option>
@@ -647,24 +792,28 @@ def mobile_body() -> str:
           <option value="FAILED">FAILED</option>
           <option value="CANCELLED">CANCELLED</option>
         </select>
-      </label>
+      <div id="taskStatusSegments" class="segmented-control" aria-label="任务状态筛选"></div>
       <div id="taskFilterSummary" class="muted"></div>
+    </div>
+    <div class="page-body">
       <div id="tasks" class="stack"></div>
     </div>
-    <button id="openCreateTaskSheet" class="floating-action">新建任务</button>
-  </section>
+    <button id="openCreateTaskSheet" class="floating-action btn-primary">新建任务</button>
+  </section>"""
 
-  <section id="tab-app" class="tab-page app-console" data-tab-page="app">
-    <div class="card app-current-card">
-      <div id="appThreadCurrent" class="item">当前 App Thread: 未选择</div>
+
+def mobile_app_tab() -> str:
+    return """  <section id="tab-app" class="tab-page page app-console" data-tab-page="app">
+    <div class="page-header card app-current-card">
+      <div id="appThreadCurrent" class="detail-card">当前 App Thread: 未选择</div>
     </div>
 
-    <div class="card app-main-panel">
-      <div id="appTurnStatus" class="item app-hidden-state"></div>
+    <div class="page-body card app-main-panel">
+      <div id="appTurnStatus" class="detail-card app-hidden-state"></div>
       <div id="appTurns" class="chat-list"></div>
     </div>
 
-    <div class="card app-composer">
+    <div class="page-footer card app-composer">
       <label>发送消息 <textarea id="appMessage" placeholder="发送到当前 App Thread 的消息"></textarea></label>
       <div class="composer-meta">
         <span id="appMessageHint">请选择会话后发送消息</span>
@@ -672,8 +821,8 @@ def mobile_body() -> str:
       </div>
       <div id="appWaiting" class="muted"></div>
       <div class="send-mode-row">
-        <label class="send-mode-toggle"><input id="appSendAsync" type="checkbox" checked> 异步</label>
-        <button id="sendAppMessage">发送</button>
+        <label class="send-mode-toggle"><input id="appSendAsync" type="checkbox" checked> <span id="appSendModeLabel" class="send-mode-label">快速发送</span></label>
+        <button id="sendAppMessage" class="btn-primary">发送</button>
       </div>
     </div>
 
@@ -687,7 +836,7 @@ def mobile_body() -> str:
       </select>
       <label class="inline"><input id="appIncludeArchived" type="checkbox"> 显示 archived</label>
       <div id="appThreads" class="stack"></div>
-      <div id="appThreadFinal" class="item"></div>
+      <div id="appThreadFinal" class="detail-card"></div>
       <div id="appEventsSummary" class="summary-grid"></div>
       <pre id="appOutput"></pre>
       <button id="checkAppBridge" class="secondary">检查 App Server Bridge</button>
@@ -707,32 +856,49 @@ def mobile_body() -> str:
       <button id="sendAsyncAppTurn">异步发送</button>
       <div id="appBridgeStatus" class="muted"></div>
     </div>
-  </section>
+  </section>"""
 
-  <section id="tab-settings" class="tab-page" data-tab-page="settings">
-    <div class="card">
-      <h2>API Token</h2>
-      <label>Token <input id="token" type="password" placeholder="X-API-Token"></label>
-      <button id="saveToken" class="secondary">保存 Token</button>
-      <p class="muted">Token 保存在当前浏览器 localStorage。</p>
+
+def mobile_settings_tab() -> str:
+    return """  <section id="tab-settings" class="tab-page page" data-tab-page="settings">
+    <div class="page-header summary-card">
+      <h2>我的</h2>
+      <p class="muted">访问配置与运行诊断中心。</p>
     </div>
 
-    <div class="card">
+    <div class="page-body">
+      <div class="detail-card">
+        <h2>账户与访问</h2>
+        <label>Token <input id="token" type="password" placeholder="X-API-Token"></label>
+        <button id="saveToken" class="btn-primary">保存 Token</button>
+        <p class="muted">Token 保存在当前浏览器 localStorage。</p>
+      </div>
+
+      <div class="detail-card">
       <div class="row">
         <div>
           <h2>运行诊断</h2>
           <p class="muted">查看 Runner 在线状态、hostname、pid 和 supported_models。</p>
         </div>
-        <button id="refreshRunners" class="secondary">刷新 Runner</button>
+          <button id="refreshRunners" class="btn-secondary">刷新 Runner</button>
       </div>
       <div id="runners" class="stack"></div>
     </div>
 
-    <div class="card">
-      <h2>设置</h2>
-      <div class="item">
+      <details class="detail-card">
+        <summary>维护操作</summary>
+        <div class="stack">
+          <button class="btn-secondary" onclick="withButtonLoading(this, '处理中...', recoverStaleAppTurns)">恢复卡住 Turn</button>
+          <button class="btn-danger" onclick="withButtonLoading(this, '处理中...', () => cleanupAppThreads('CLOSED'))">清理 CLOSED 会话</button>
+          <button class="btn-danger" onclick="withButtonLoading(this, '处理中...', () => cleanupAppThreads('ERROR'))">清理 ERROR 会话</button>
+        </div>
+      </details>
+
+      <div class="detail-card">
+        <h2>关于</h2>
+        <div class="item">
         <strong>当前版本</strong><br>
-        <span class="muted">v1.2 mobile app UI/UX POC</span>
+          <span class="muted">v1.4 mobile design system interaction POC</span>
       </div>
       <div class="item">
         <strong>Backend 地址</strong><br>
@@ -743,19 +909,23 @@ def mobile_body() -> str:
         <span class="muted">App Server Bridge 独立运行，不替代 Runner/codex exec 主链路。</span>
       </div>
     </div>
-    <div class="card">
-      <h2>Smoke 命令</h2>
-      <pre>$env:API_TOKEN="dev-token"
+
+      <details class="detail-card">
+        <summary>Smoke 命令</summary>
+        <pre>$env:API_TOKEN="dev-token"
 python .\\scripts\\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\\JustinKing\\codex-job --async-turn</pre>
-    </div>
-    <div class="card">
+      </details>
+
+      <div class="detail-card">
       <h2>当前限制</h2>
       <p class="muted">不支持 SSE、审批 UI、diff UI；App Server 仍是 experimental sidecar POC。</p>
+      </div>
     </div>
-  </section>
-</main>
+  </section>"""
 
-<div id="sheetBackdrop" class="sheet-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+
+def mobile_sheet() -> str:
+    return """<div id="sheetBackdrop" class="sheet-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
   <div class="sheet">
     <div class="sheet-header">
       <h2 id="sheetTitle">面板</h2>
@@ -763,8 +933,11 @@ python .\\scripts\\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --p
     </div>
     <div id="sheetContent"></div>
   </div>
-</div>
+</div>"""
 
+
+def mobile_nav() -> str:
+    return """
 <nav class="bottom-nav" aria-label="Mobile tabs">
   <button class="tab-button active" data-tab="home">首页</button>
   <button class="tab-button" data-tab="tasks">任务</button>
@@ -774,8 +947,22 @@ python .\\scripts\\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --p
 
 
 def mobile_script() -> str:
-    return """<script>
-const tokenInput = document.getElementById("token");
+    return f"""<script>
+{mobile_script_state()}
+{mobile_script_core()}
+{mobile_script_errors()}
+{mobile_script_ui_core()}
+{mobile_script_home()}
+{mobile_script_tasks()}
+{mobile_script_app()}
+{mobile_script_events()}
+{mobile_script_bootstrap()}
+</script>
+</body>"""
+
+
+def mobile_script_state() -> str:
+    return """const tokenInput = document.getElementById("token");
 const appOutput = document.getElementById("appOutput");
 const toast = document.getElementById("toast");
 const sheetBackdrop = document.getElementById("sheetBackdrop");
@@ -794,6 +981,13 @@ const UI_STATE_KEYS = {
 const VALID_TABS = ["home", "tasks", "app", "settings"];
 const TASK_ACTIVE_STATUSES = ["PENDING", "RUNNING"];
 const TASK_AUTO_REFRESH_MS = 5000;
+const TASK_FILTER_SEGMENTS = [
+  {value: "", label: "全部"},
+  {value: "RUNNING", label: "运行中"},
+  {value: "PENDING", label: "待处理"},
+  {value: "SUCCESS", label: "已完成"},
+  {value: "FAILED", label: "失败"},
+];
 let activeTabName = "home";
 let selectedAppThreadId = null;
 let selectedAppThread = null;
@@ -813,8 +1007,11 @@ let taskTemplatesCache = [];
 let homeStateCache = null;
 let toastTimer = null;
 tokenInput.value = (localStorage.getItem("apiToken") || "").trim();
+"""
 
-function headers(json = false) {
+
+def mobile_script_core() -> str:
+    return """function headers(json = false) {
   const h = {};
   const token = (localStorage.getItem("apiToken") || "").trim();
   if (token) h["X-API-Token"] = token;
@@ -847,6 +1044,7 @@ function restoreInitialUiState() {
   const storedTab = readUiState(UI_STATE_KEYS.activeTab, "home");
   activeTabName = VALID_TABS.includes(storedTab) ? storedTab : "home";
   document.getElementById("taskStatusFilter").value = readUiState(UI_STATE_KEYS.taskStatusFilter, "");
+  renderTaskStatusSegments();
   document.getElementById("appThreadStatusFilter").value = readUiState(UI_STATE_KEYS.appThreadStatusFilter, "");
   document.getElementById("appIncludeArchived").checked = readUiState(UI_STATE_KEYS.appIncludeArchived, "false") === "true";
   selectedAppThreadId = readStoredNumber(UI_STATE_KEYS.selectedAppThreadId);
@@ -869,8 +1067,11 @@ function showToast(message, type = "info") {
     toast.className = "toast";
   }, 2600);
 }
+"""
 
-function errorText(value) {
+
+def mobile_script_errors() -> str:
+    return """function errorText(value) {
   return String(value && value.message ? value.message : value || "");
 }
 
@@ -1014,8 +1215,11 @@ python .\\poc\\app_server\\app_server_bridge.py --host 127.0.0.1 --port 8766</pr
       <p class="muted">仅限可信局域网试用，不要公网暴露。</p>
     </div>`);
 }
+"""
 
-async function withButtonLoading(button, loadingText, fn) {
+
+def mobile_script_ui_core() -> str:
+    return """async function withButtonLoading(button, loadingText, fn) {
   const target = typeof button === "string" ? document.getElementById(button) : button;
   const originalText = target ? target.textContent : "";
   if (target) {
@@ -1265,8 +1469,11 @@ function loadFormOptions() {
   renderRunners(runnersCache);
   renderTaskTypes(taskTemplatesCache);
 }
+"""
 
-function renderHome({healthResult, runners, tasks, bridgeResult, appThreadsResult}) {
+
+def mobile_script_home() -> str:
+    return """function renderHome({healthResult, runners, tasks, bridgeResult, appThreadsResult}) {
   const onlineRunners = runners.filter(r => String(r.status || "").toUpperCase() === "ONLINE").length;
   const offlineRunners = Math.max(runners.length - onlineRunners, 0);
   const runningTasks = tasks.filter(t => ["PENDING", "RUNNING"].includes(normalizedStatus(t.status))).length;
@@ -1293,6 +1500,7 @@ function renderHome({healthResult, runners, tasks, bridgeResult, appThreadsResul
       <span class="status-value">任务 ${escapeHtml(runningTasks)} / 会话 ${escapeHtml(activeThreads)}</span>
     </div>`;
   renderHomeAlerts({healthResult, bridgeResult: bridgeState, onlineRunners});
+  renderHomeRunning(tasks, appThreads);
   renderHomeTasks(tasks.slice(0, 3));
   renderHomeThreads(appThreads.slice(0, 3), appThreadsState);
 }
@@ -1308,12 +1516,44 @@ async function loadHomeAppServerStatus(baseState) {
 
 function renderHomeAlerts({healthResult, bridgeResult, onlineRunners}) {
   const alerts = [];
-  if (!healthResult.ok) alerts.push(`Backend 异常：${healthResult.error}`);
-  if (!onlineRunners) alerts.push("没有在线 Runner，请先启动 runner/runner.py 或 scripts/start.bat runner。");
-  if (bridgeResult && !bridgeResult.pending && !bridgeResult.ok) alerts.push(`Bridge 异常：${bridgeResult.error}`);
+  if (!healthResult.ok) alerts.push({title: "Backend 异常", message: healthResult.error, action: "刷新状态", onclick: "loadAll()"});
+  if (!onlineRunners) alerts.push({title: "没有在线 Runner", message: "请先启动 runner/runner.py 或 scripts/start.bat runner。", action: "去诊断", onclick: "switchTab('settings')"});
+  if (bridgeResult && !bridgeResult.pending && !bridgeResult.ok) alerts.push({title: "Bridge 异常", message: bridgeResult.error, action: "启动提示", onclick: "showBridgeHelpSheet()"});
   document.getElementById("homeAlerts").innerHTML = alerts
-    .map(message => `<div class="status-card error">${escapeHtml(message)}</div>`)
+    .map(alert => `
+      <div class="recovery-card">
+        <strong>${escapeHtml(alert.title)}</strong>
+        <span>${escapeHtml(alert.message)}</span>
+        <button class="btn-secondary" onclick="${alert.onclick}">${escapeHtml(alert.action)}</button>
+      </div>`)
     .join("");
+}
+
+function renderHomeRunning(tasks, appThreads) {
+  const runningTasks = tasks.filter(t => TASK_ACTIVE_STATUSES.includes(normalizedStatus(t.status))).slice(0, 3);
+  const runningThreads = appThreads.filter(t => ["ACTIVE", "RUNNING"].includes(normalizedStatus(t.status)) && Number(t.turn_count || 0) > 0).slice(0, 2);
+  const blocks = [];
+  runningTasks.forEach(t => {
+    blocks.push(`
+      <div class="list-card">
+        <strong>#${escapeHtml(t.id)} ${escapeHtml(t.task_type || "任务")}</strong>
+        ${statusBadge(t.status)}
+        <span class="muted">${escapeHtml(shortText(t.prompt || "", 96))}</span>
+        <a href="#" onclick="showTask(${escapeHtml(t.id)}); return false;">打开任务</a>
+      </div>`);
+  });
+  runningThreads.forEach(t => {
+    blocks.push(`
+      <div class="list-card">
+        <strong>${escapeHtml(t.title || "App 会话")}</strong>
+        ${statusBadge(t.status)}
+        <span class="muted">turns=${escapeHtml(t.turn_count)} updated=${escapeHtml(t.updated_at || "")}</span>
+        <a href="#" onclick="switchTab('app'); selectAppThread(${escapeHtml(t.id)}); return false;">打开会话</a>
+      </div>`);
+  });
+  document.getElementById("homeRunning").innerHTML = blocks.length
+    ? blocks.join("")
+    : `<div class="empty-state"><strong>当前空闲</strong><span>没有运行中的任务或会话。</span><button class="btn-secondary" onclick="switchTab('tasks'); renderCreateTaskSheet();">新建任务</button></div>`;
 }
 
 function renderHomeTasks(tasks) {
@@ -1354,10 +1594,29 @@ function renderHomeThreads(appThreads, appThreadsResult) {
         <button class="secondary" onclick="switchTab('app'); showAppThreadSwitcher();">新建会话</button>
       </div>`;
 }
+"""
 
-function selectedTaskStatusFilter() {
+
+def mobile_script_tasks() -> str:
+    return """function selectedTaskStatusFilter() {
   const target = document.getElementById("taskStatusFilter");
   return target ? normalizedStatus(target.value) : "";
+}
+
+function renderTaskStatusSegments() {
+  const target = document.getElementById("taskStatusSegments");
+  if (!target) return;
+  const selected = selectedTaskStatusFilter();
+  target.innerHTML = TASK_FILTER_SEGMENTS.map(segment => `
+    <button class="${selected === segment.value ? "active" : ""}" data-task-filter="${escapeHtml(segment.value)}">${escapeHtml(segment.label)}</button>
+  `).join("");
+  target.querySelectorAll("[data-task-filter]").forEach(button => {
+    button.onclick = () => {
+      document.getElementById("taskStatusFilter").value = button.dataset.taskFilter || "";
+      writeUiState(UI_STATE_KEYS.taskStatusFilter, document.getElementById("taskStatusFilter").value);
+      renderFilteredTasks();
+    };
+  });
 }
 
 function filterTasksByStatus(tasks) {
@@ -1368,6 +1627,7 @@ function filterTasksByStatus(tasks) {
 
 function renderFilteredTasks() {
   const filteredTasks = filterTasksByStatus(tasksCache);
+  renderTaskStatusSegments();
   renderTasks(filteredTasks);
   const statusFilter = selectedTaskStatusFilter();
   document.getElementById("taskFilterSummary").textContent = statusFilter
@@ -1383,24 +1643,18 @@ function renderTasks(tasks) {
     : "还没有任务。点击下方按钮开始第一次 Codex 执行。";
   document.getElementById("tasks").innerHTML = tasks.length
     ? tasks.map(t => `
-      <div class="item task-card">
+      <div class="list-card task-card">
         <div class="task-card-header">
           <div>
-            <div class="task-title">#${escapeHtml(t.id)} ${escapeHtml(t.task_type)}</div>
-            <span class="muted">project=${escapeHtml(t.project_id)}</span>
+            <div class="task-title">${escapeHtml(t.task_type || "任务")}</div>
+            <span>${escapeHtml(taskTitleLine(t))}</span>
           </div>
           ${statusBadge(t.status)}
         </div>
-        <div class="meta-grid">
-          <div class="meta-cell"><span class="meta-label">runner</span><span class="meta-value">${escapeHtml(t.assigned_runner_id || t.runner_id || "")}</span></div>
-          <div class="meta-cell"><span class="meta-label">model</span><span class="meta-value">${escapeHtml(t.model || "")}</span></div>
-          <div class="meta-cell"><span class="meta-label">created_at</span><span class="meta-value">${escapeHtml(t.created_at || "")}</span></div>
-          <div class="meta-cell"><span class="meta-label">updated_at</span><span class="meta-value">${escapeHtml(t.updated_at || "")}</span></div>
-        </div>
-        <div class="task-actions">
-          <a href="#" onclick="showTask(${escapeHtml(t.id)});return false;">详情</a>
-          <a href="${escapeHtml(t.result_url)}" target="_blank">result</a>
-          <a href="#" onclick="showTaskMore(${escapeHtml(t.id)});return false;">更多</a>
+        <span class="muted">project=${escapeHtml(t.project_id)} runner=${escapeHtml(t.assigned_runner_id || t.runner_id || "自动")} model=${escapeHtml(t.model || "默认")}</span>
+        <span class="muted">updated=${escapeHtml(t.updated_at || "")}</span>
+        <div class="links">
+          <a href="#" onclick="showTask(${escapeHtml(t.id)});return false;">打开任务</a>
         </div>
       </div>`).join("")
     : `<div class="empty-state">
@@ -1495,42 +1749,47 @@ async function showTask(id) {
   const task = await api(`/tasks/${id}`, {headers: headers()});
   openSheet(`任务 #${task.id}`, `
     <div class="task-detail-grid">
-      <div class="detail-section">
-        <h3>基本信息</h3>
+      <div class="detail-card">
         <div class="task-card-header">
           <div>
-            <div class="task-title">#${escapeHtml(task.id)} ${escapeHtml(task.task_type || "")}</div>
-            <span class="muted">project=${escapeHtml(task.project_id)}</span>
+            <div class="task-title">${escapeHtml(task.task_type || "任务")}</div>
+            <span class="muted">#${escapeHtml(task.id)} updated=${escapeHtml(task.updated_at || "")}</span>
           </div>
           ${statusBadge(task.status)}
         </div>
+        <p>${escapeHtml(task.prompt || "")}</p>
       </div>
-      <div class="detail-section">
-        <h3>参数</h3>
+      <div class="detail-card">
+        <h3>log/result 预览</h3>
+        <p class="muted">优先展示 log 预览；result 和 diff 保持链接打开，本版本不做 diff UI。</p>
+        <pre id="taskPreview" class="preview-block"></pre>
+      </div>
+      <div class="detail-card">
+        <h3>操作</h3>
+        <div class="task-actions">
+          <a href="${escapeHtml(task.result_url)}" target="_blank">查看结果</a>
+          <a href="${escapeHtml(task.log_url)}" target="_blank">查看日志</a>
+          <button class="secondary" onclick="rerunTask(${escapeHtml(task.id)}, this)">重跑</button>
+        </div>
+        <details>
+          <summary>更多操作</summary>
+          <div class="task-actions">
+            <a href="${escapeHtml(task.diff_url)}" target="_blank">查看 diff</a>
+            <button class="danger" onclick="cancelTask(${escapeHtml(task.id)}, this)">取消任务</button>
+          </div>
+        </details>
+      </div>
+      <details class="detail-card">
+        <summary>技术参数</summary>
         <div class="meta-grid">
+          <div class="meta-cell"><span class="meta-label">project</span><span class="meta-value">${escapeHtml(task.project_id)}</span></div>
           <div class="meta-cell"><span class="meta-label">runner</span><span class="meta-value">${escapeHtml(task.assigned_runner_id || task.runner_id || "")}</span></div>
           <div class="meta-cell"><span class="meta-label">model</span><span class="meta-value">${escapeHtml(task.model || "")}</span></div>
           <div class="meta-cell"><span class="meta-label">reasoning_effort</span><span class="meta-value">${escapeHtml(task.reasoning_effort || "")}</span></div>
           <div class="meta-cell"><span class="meta-label">sandbox</span><span class="meta-value">${escapeHtml(task.sandbox || "")}</span></div>
           <div class="meta-cell"><span class="meta-label">timeout_seconds</span><span class="meta-value">${escapeHtml(task.timeout_seconds || "")}</span></div>
-          <div class="meta-cell"><span class="meta-label">updated_at</span><span class="meta-value">${escapeHtml(task.updated_at || "")}</span></div>
         </div>
-      </div>
-      <div class="detail-section">
-        <h3>操作链接</h3>
-        <div class="task-actions">
-          <a href="${escapeHtml(task.log_url)}" target="_blank">log</a>
-          <a href="${escapeHtml(task.result_url)}" target="_blank">result</a>
-          <a href="${escapeHtml(task.diff_url)}" target="_blank">diff</a>
-          <button class="secondary" onclick="rerunTask(${escapeHtml(task.id)}, this)">重跑</button>
-          <button class="danger" onclick="cancelTask(${escapeHtml(task.id)}, this)">取消</button>
-        </div>
-      </div>
-      <div class="detail-section">
-        <h3>log/result 预览</h3>
-        <p class="muted">优先展示 log 预览；result 和 diff 保持链接打开，本版本不做 diff UI。</p>
-        <pre id="taskPreview" class="preview-block"></pre>
-      </div>
+      </details>
       <details>
         <summary>调试输出</summary>
         <pre id="output"></pre>
@@ -1584,8 +1843,11 @@ async function rerunTask(id, button = null) {
     showToast(`已重跑任务 #${task.id}`, "success");
   });
 }
+"""
 
-async function checkAppServerBridge() {
+
+def mobile_script_app() -> str:
+    return """async function checkAppServerBridge() {
   const health = await api("/app-server-bridge/health", {headers: headers()});
   document.getElementById("appBridgeStatus").innerHTML =
     `status=${escapeHtml(health.status || "")} mode=${escapeHtml(health.mode || "")} sandbox=${escapeHtml(health.sandbox || "")} threads=${escapeHtml(health.threads ?? "")}`;
@@ -1615,14 +1877,14 @@ function updateSelectedAppThreadDisplay() {
       <div class="app-session-header">
         <div class="app-session-title-row">
           <div>
-            <div class="app-current-title">App Server 会话</div>
-            <span class="muted">未选择当前会话</span>
+            <div class="app-current-title">还没有会话</div>
+            <span class="muted">创建一个 App Server 会话，开始连续对话。</span>
           </div>
           ${statusBadge("WARNING")}
         </div>
         <div class="app-session-actions">
-          <button class="secondary" onclick="showAppThreadSwitcher()">切换会话</button>
-          <button class="secondary" onclick="showAppThreadSwitcher()">新建会话</button>
+          <button class="btn-primary" onclick="showAppThreadSwitcher()">新建会话</button>
+          <button class="btn-secondary" onclick="showAppThreadSwitcher()">切换已有会话</button>
           <button class="ghost" onclick="showAppSessionMore()" disabled>更多</button>
         </div>
       </div>`;
@@ -1644,7 +1906,7 @@ function updateSelectedAppThreadDisplay() {
         ${statusBadge(status)}
       </div>
       <div class="app-session-actions">
-        <button class="secondary" onclick="showAppThreadSwitcher()">切换会话</button>
+        <button class="btn-secondary" onclick="showAppThreadSwitcher()">切换会话</button>
         <button class="ghost" onclick="showAppSessionMore()">更多</button>
       </div>
     </div>`;
@@ -1723,43 +1985,48 @@ function showAppSessionMore() {
   const title = selectedAppThread ? selectedAppThread.title : "App Thread";
   openSheet("会话更多", `
     <div class="task-detail-sheet">
-      <div class="detail-section">
+      <div class="detail-card">
         <h3>${escapeHtml(title || "App Thread")}</h3>
         <div id="appSessionMoreStatus">
           ${selectedAppThread ? statusBadge(selectedAppThread.status) : `<span class="muted">未选择会话</span>`}
         </div>
       </div>
-      <div class="detail-section">
-        <h3>常用操作</h3>
+      <div class="detail-card">
+        <h3>会话操作</h3>
         <div class="task-actions">
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', async () => { await loadAppTurns(); showToast('Turns 已刷新', 'success'); })">刷新会话</button>
-          <button class="secondary" onclick="showAppFinalSheet(this)">查看 App Final</button>
+          <button class="secondary" onclick="showAppFinalSheet(this)">查看最终回复</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', refreshCurrentAppTurn)">刷新当前 Turn</button>
-          <button class="danger" onclick="withButtonLoading(this, '处理中...', cancelCurrentAppTurn)">取消当前 Turn</button>
         </div>
       </div>
-      <div class="detail-section">
+      <div class="detail-card">
         <h3>会话管理</h3>
         <div class="task-actions">
           <button class="secondary" onclick="showAppThreadSwitcher()">切换会话</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', reopenAppThread)">重开</button>
-          <button class="danger" onclick="withButtonLoading(this, '处理中...', closeAppThread)">关闭</button>
         </div>
       </div>
-      <div class="detail-section">
-        <h3>事件与调试</h3>
+      <details class="detail-card">
+        <summary>调试详情</summary>
         <div class="task-actions">
           <button class="secondary" onclick="showAppEventsSheet(this)">查看事件摘要</button>
           <button class="secondary" onclick="showAppDebugSheet()">调试输出</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', recoverStaleAppTurns)">恢复卡住 turn</button>
         </div>
-      </div>
-      <div class="detail-section">
-        <h3>Bridge 与清理</h3>
+      </details>
+      <details class="detail-card">
+        <summary>Bridge 与清理</summary>
         <div class="task-actions">
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', checkAppServerBridge)">检查 App Server Bridge</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', () => cleanupAppThreads('CLOSED'))">清理 CLOSED</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', () => cleanupAppThreads('ERROR'))">清理 ERROR</button>
+        </div>
+      </details>
+      <div class="detail-card">
+        <h3>危险操作</h3>
+        <div class="task-actions">
+          <button class="danger" onclick="withButtonLoading(this, '处理中...', cancelCurrentAppTurn)">取消当前 Turn</button>
+          <button class="danger" onclick="withButtonLoading(this, '处理中...', closeAppThread)">关闭会话</button>
         </div>
       </div>
     </div>`);
@@ -1769,6 +2036,11 @@ function shortText(value, maxLength = 180) {
   const text = String(value || "");
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength)}...`;
+}
+
+function taskTitleLine(task) {
+  const prompt = shortText(task.prompt || "", 96);
+  return prompt || `${task.task_type || "任务"} #${task.id}`;
 }
 
 function normalizedStatus(status) {
@@ -1842,23 +2114,29 @@ function updateAppComposerState() {
   const hint = document.getElementById("appMessageHint");
   const count = document.getElementById("appMessageCount");
   const unifiedSendButton = document.getElementById("sendAppMessage");
+  const modeLabel = document.getElementById("appSendModeLabel");
   const rawMessage = input ? input.value : "";
   const message = rawMessage.trim();
   const status = selectedAppThread ? selectedAppThread.status : "";
   const hasThread = Boolean(selectedAppThreadId);
+  const hasRunningTurn = appTurnsCache.some(turn => ["PENDING", "RUNNING"].includes(normalizedStatus(turn.status)));
+  const modeText = selectedSendMode() === "async" ? "快速发送" : "等待回复";
+  if (modeLabel) modeLabel.textContent = modeText;
   if (count) count.textContent = `${rawMessage.length} 字`;
   if (hint) {
     if (!hasThread) {
-      hint.textContent = "请先选择或新建会话";
+      hint.textContent = "请先新建或选择会话";
     } else if (status === "CLOSED") {
       hint.textContent = "当前会话已关闭，请先重开";
+    } else if (hasRunningTurn) {
+      hint.textContent = "正在等待回复，可以继续编辑，但暂时不能发送";
     } else if (!message) {
       hint.textContent = "输入消息后即可发送";
     } else {
-      hint.textContent = selectedSendMode() === "async" ? "异步发送，不要刷新页面" : "同步发送，等待完成后返回";
+      hint.textContent = selectedSendMode() === "async" ? "快速发送，后台等待回复" : "等待回复，完成后返回";
     }
   }
-  if (unifiedSendButton) unifiedSendButton.disabled = !hasThread || status === "CLOSED" || !message;
+  if (unifiedSendButton) unifiedSendButton.disabled = !hasThread || status === "CLOSED" || !message || hasRunningTurn;
 }
 
 function renderAppTurnStatus(turn) {
@@ -1870,10 +2148,13 @@ function renderAppTurnStatus(turn) {
     ? `<span>${escapeHtml(message)}</span>`
     : `<span class="muted">等待 assistant_final</span>`;
   document.getElementById("appTurnStatus").innerHTML = `
-    <strong>当前 App Turn: #${escapeHtml(turn.id)}</strong> ${statusBadge(turn.status)}<br>
+    <div class="${isRunning ? "inline-status-bar" : ""}">
+      <span>当前回复 #${escapeHtml(turn.id)} ${statusBadge(turn.status)}</span>
+      ${isRunning ? `<button class="btn-text" onclick="withButtonLoading(this, '处理中...', cancelCurrentAppTurn)">取消当前 Turn</button>` : ""}
+    </div>
     <span class="muted">duration_seconds=${escapeHtml(turn.duration_seconds ?? "")} bridge_turn=${escapeHtml(turn.bridge_turn_id || "")}</span><br>
-    ${isRunning ? `<div class="loading-card">${escapeHtml(APP_WAITING_TEXT)}</div>` : ""}
     ${messageHtml}`;
+  updateAppComposerState();
 }
 
 function renderAppThreads(appThreads) {
@@ -2170,6 +2451,16 @@ function selectAppTurn(turnId) {
   showAppTurnDetailSheet(turn);
 }
 
+function copyTurnMessageToComposer(turnId) {
+  const turn = appTurnsCache.find(item => item.id === turnId);
+  if (!turn) return;
+  const input = document.getElementById("appMessage");
+  input.value = turn.user_message || "";
+  input.focus();
+  updateAppComposerState();
+  showToast("已复制上一条消息到输入框", "success");
+}
+
 function renderAppTurnConversation(turn) {
   const status = normalizedStatus(turn.status);
   const pending = ["PENDING", "RUNNING"].includes(status);
@@ -2200,6 +2491,16 @@ function renderAppTurnConversation(turn) {
           </div>
           ${pending ? `<div class="loading-card">${escapeHtml(APP_WAITING_TEXT)}</div>` : ""}
           ${escapeHtml(assistantBody)}
+          ${failed ? `
+            <div class="recovery-card">
+              <strong>这次回复失败</strong>
+              <span>可以查看错误、复制上一条消息后重新发送，或重开会话。</span>
+              <div class="task-actions">
+                <button class="btn-secondary" onclick="event.stopPropagation(); selectAppTurn(${escapeHtml(turn.id)})">查看错误</button>
+                <button class="btn-secondary" onclick="event.stopPropagation(); copyTurnMessageToComposer(${escapeHtml(turn.id)})">复制重试</button>
+                <button class="btn-danger" onclick="event.stopPropagation(); withButtonLoading(this, '处理中...', reopenAppThread)">重开会话</button>
+              </div>
+            </div>` : ""}
           <span class="bubble-detail-hint">点击查看详情</span>
         </div>
       </div>
@@ -2208,30 +2509,42 @@ function renderAppTurnConversation(turn) {
 
 function showAppTurnDetailSheet(turn) {
   selectedAppTurnId = turn.id;
-  openSheet(`App Turn #${turn.id}`, `
+  openSheet(`回复 #${turn.id}`, `
     <div class="task-detail-sheet">
-      <div class="detail-section">
-        <h3>状态</h3>
-        ${statusBadge(turn.status)}
+      <div class="detail-card">
+        <div class="task-card-header">
+          <h3>回复结果</h3>
+          ${statusBadge(turn.status)}
+        </div>
+        <p><strong>User</strong></p>
+        <p>${escapeHtml(turn.user_message || "")}</p>
+        <p><strong>Assistant</strong></p>
+        <p>${escapeHtml(turn.assistant_final || turn.error_message || "暂无 assistant_final")}</p>
+      </div>
+      ${["FAILED", "ERROR"].includes(normalizedStatus(turn.status)) ? `
+        <div class="recovery-card">
+          <strong>失败恢复</strong>
+          <span>可以复制上一条消息后重新发送，或重开当前会话。</span>
+          <div class="task-actions">
+            <button class="btn-secondary" onclick="copyTurnMessageToComposer(${escapeHtml(turn.id)}); closeSheet();">复制重试</button>
+            <button class="btn-danger" onclick="withButtonLoading(this, '处理中...', reopenAppThread)">重开会话</button>
+          </div>
+        </div>` : ""}
+      <details class="detail-card">
+        <summary>技术信息</summary>
         <div class="meta-grid">
           <div class="meta-cell"><span class="meta-label">created_at</span><span class="meta-value">${escapeHtml(turn.created_at || "")}</span></div>
           <div class="meta-cell"><span class="meta-label">updated_at</span><span class="meta-value">${escapeHtml(turn.updated_at || "")}</span></div>
           <div class="meta-cell"><span class="meta-label">duration_seconds</span><span class="meta-value">${escapeHtml(turn.duration_seconds ?? "")}</span></div>
           <div class="meta-cell"><span class="meta-label">bridge_turn_id</span><span class="meta-value">${escapeHtml(turn.bridge_turn_id || "")}</span></div>
         </div>
-      </div>
-      <div class="detail-section">
-        <h3>消息</h3>
-        <p><strong>User</strong></p>
-        <p>${escapeHtml(turn.user_message || "")}</p>
-        <p><strong>Assistant</strong></p>
-        <p>${escapeHtml(turn.assistant_final || turn.error_message || "")}</p>
-      </div>
-      <div class="detail-section">
+      </details>
+      <details class="detail-card">
+        <summary>事件摘要</summary>
         <h3>事件摘要</h3>
         ${renderEventSummaryBlock(turn.event_summary)}
-      </div>
-      <details>
+      </details>
+      <details class="detail-card">
         <summary>raw summary</summary>
         <pre>${escapeHtml(JSON.stringify(turn.event_summary || {}, null, 2))}</pre>
       </details>
@@ -2259,8 +2572,10 @@ async function showAppFinalSheet(button = null) {
     showToast("Final 已刷新", "success");
   });
 }
+"""
 
-async function loadAppEvents() {
+def mobile_script_events() -> str:
+    return """async function loadAppEvents() {
   if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
   const events = await api(`/app-threads/${selectedAppThreadId}/events`, {headers: headers()});
   renderAppEventsSummary(events);
@@ -2372,8 +2687,11 @@ async function closeAppThread() {
   appLog("已关闭 App Thread");
   await loadAll();
 }
+"""
 
-document.querySelectorAll("[data-tab]").forEach(button => {
+
+def mobile_script_bootstrap() -> str:
+    return """document.querySelectorAll("[data-tab]").forEach(button => {
   button.onclick = () => switchTab(button.dataset.tab);
 });
 document.getElementById("homeCreateTask").onclick = () => {
@@ -2461,5 +2779,4 @@ loadAll().catch(err => {
   showToast(String(err), "error");
   log(String(err));
 });
-</script>
-</body>"""
+"""
