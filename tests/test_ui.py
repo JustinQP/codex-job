@@ -118,25 +118,58 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert response.status_code == 200
         html = response.text
         assert "App Server 会话" in html
-        assert "App Server 会话为 sidecar POC" in html
         assert 'class="bottom-nav"' in html
+        assert 'data-tab="home"' in html
         assert 'data-tab="tasks"' in html
         assert 'data-tab="app"' in html
-        assert 'data-tab="runner"' in html
         assert 'data-tab="settings"' in html
+        assert ">首页</button>" in html
         assert ">任务</button>" in html
-        assert ">App 会话</button>" in html
-        assert ">Runner</button>" in html
-        assert ">设置</button>" in html
+        assert ">会话</button>" in html
+        assert ">我的</button>" in html
+        assert 'id="tab-home"' in html
+        assert 'class="card home-hero"' in html
+        assert "Codex 工作台" in html
+        assert "先看状态，再进入任务或会话。" in html
+        assert 'id="homeCreateTask"' in html
+        assert 'id="homeStatus"' in html
+        assert 'id="homeAlerts"' in html
+        assert 'id="homeTasks"' in html
+        assert 'id="homeThreads"' in html
+        assert "function renderHome({" in html
+        assert "function renderHomeAlerts({" in html
+        assert "function renderHomeTasks(tasks)" in html
+        assert "function renderHomeThreads(appThreads, appThreadsResult)" in html
+        assert "async function loadHomeAppServerStatus(baseState)" in html
+        assert "bridgeState.pending ? \"检查中\"" in html
+        assert 'safeApi("/health")' in html
+        assert 'safeApi("/app-server-bridge/health", {headers: headers()})' in html
+        assert 'safeApi("/app-threads?limit=3", {headers: headers()})' in html
+        assert "Runner 不再作为独立一级 Tab" not in html
+        assert "运行诊断" in html
         assert 'id="toast"' in html
         assert "function showToast(message, type = \"info\")" in html
         assert "async function withButtonLoading(button, loadingText, fn)" in html
-        assert "快速创建任务" in html
-        assert "普通使用只需要选择项目、任务类型并填写 Prompt" in html
+        assert "function isStaleBridgeThreadError(value)" in html
+        assert "function showStaleBridgeThreadSheet(error)" in html
+        assert "unknown bridge thread id" in html
+        assert "会话需要重开" in html
+        assert "Bridge 会话已失效" in html
+        assert "重开当前会话" in html
+        assert "历史 turns 会保留，但 App Server 上下文会从新的 thread 重新开始。" in html
+        assert 'id="openCreateTaskSheet"' in html
+        assert 'id="sheetBackdrop"' in html
+        assert "function openSheet(title, contentHtml)" in html
+        assert "function closeSheet()" in html
+        assert "function renderCreateTaskSheet()" in html
+        assert 'class="task-form-sheet"' in html
+        assert 'class="floating-action"' in html
+        assert "普通使用只需要选择项目、Prompt 和任务类型" in html
         assert "v1.1.2 mobile UI/UX POC" in html
-        assert "最近任务" in html
-        assert "任务详情" in html
+        assert "<h2>任务</h2>" in html
         assert "function renderTasks(tasks)" in html
+        assert "function showTaskMore(id)" in html
+        assert "async function rerunTask(id, button = null)" in html
         assert 'class="item task-card"' in html
         assert 'class="task-card-header"' in html
         assert 'class="meta-grid"' in html
@@ -151,10 +184,26 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "<summary>高级参数</summary>" in html
         assert "<summary>调试输出</summary>" in html
         assert 'class="card app-current-card"' in html
-        assert '<summary>AppThread 列表</summary>' in html
-        assert '<summary>事件摘要</summary>' in html
+        assert '<summary>AppThread 列表</summary>' not in html
+        assert '<summary>事件摘要</summary>' not in html
+        assert 'class="app-hidden-state"' in html
         assert 'class="card app-composer"' in html
         assert 'class="chat-list"' in html
+        assert "切换会话" in html
+        assert "会话更多" in html
+        assert "function renderAppThreadSwitcherSheet()" in html
+        assert "async function showAppThreadSwitcher()" in html
+        assert "function showAppSessionMore()" in html
+        assert "function showAppTurnDetailSheet(turn)" in html
+        assert "async function showAppEventsSheet(button = null)" in html
+        assert "function showAppDebugSheet()" in html
+        assert "function sendAppMessage()" in html
+        assert 'id="sendAppMessage"' in html
+        assert 'id="appSendAsync" type="checkbox" checked' in html
+        assert "selectedSendMode()" in html
+        assert "sendAsyncAppTurn()" in html
+        assert "sendAppTurn()" in html
+        assert 'document.getElementById("sendAppMessage").onclick' in html
         assert "function renderAppTurnConversation(turn)" in html
         assert "function selectAppTurn(turnId)" in html
         assert "let appTurnsCache = []" in html
@@ -162,15 +211,16 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert ".bubble-row.assistant" in html
         assert ".bubble.assistant.running" in html
         assert ".bubble.assistant.failed" in html
+        assert ".bubble-detail-hint" in html
+        assert "点击查看详情" in html
         assert ".app-composer" in html
-        assert "latest final preview" in html
         assert "检查 App Server Bridge" in html
         assert "appOutput" in html
         assert "查看 App Final" in html
-        assert "查看 App Events" in html
+        assert "查看事件摘要" in html
         assert ">重开</button>" in html
         assert ">关闭</button>" in html
-        assert ">异步发送</button>" in html
+        assert ">发送</button>" in html
         assert "刷新当前 Turn" in html
         assert "取消当前 Turn" in html
         assert "恢复卡住 turn" in html
@@ -208,6 +258,10 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'document.getElementById("appWaiting").textContent = "";' in html
         assert "const listedThread = appThreads.find(t => t.id === selectedAppThreadId);" in html
         assert 'String(t.title || "").startsWith("[archived]")' in html
+        assert 'document.getElementById("appThreadsSheet")' in html
+        assert "if (listedThread) selectedAppThread = listedThread;" in html
+        assert 'id="appThreadProject"' in html
+        assert 'id="appThreadTitleInput"' in html
         assert "确认将 CLOSED AppThread 标记为 archived？" in html
         assert "确认将 ERROR AppThread 标记为 archived？" in html
         assert 'api(`/app-threads/${selectedAppThreadId}/turns`' in html
@@ -222,6 +276,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'api("/tasks", {method: "POST"' in html
         assert 'api(`/tasks/${id}`' in html
         assert 'api(`/tasks/${id}/cancel`' in html
+        assert 'api(`/tasks/${id}/rerun`' in html
         assert 'confirm(`确认取消任务 #${id}？`)' in html
         assert 'api("/runners"' in html
         assert 'api("/task-templates"' in html
@@ -233,17 +288,19 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "${escapeHtml(task.sandbox || \"\")}" in html
         assert "${escapeHtml(task.timeout_seconds || \"\")}" in html
         assert "document.getElementById(\"taskPreview\").textContent = logText" in html
+        assert 'onclick="showTaskMore(${escapeHtml(t.id)});return false;">更多</a>' in html
+        assert "重跑" in html
         assert "${escapeHtml(t.title)}" in html
         assert "${escapeHtml(t.status)}" in html
         assert "${escapeHtml(t.turn_count)}" in html
         assert "${escapeHtml(shortText(t.latest_assistant_final || \"\", 160))}" in html
         assert "last_error=${escapeHtml(t.last_error)}" in html
-        assert "last_error=${escapeHtml(lastError)}" in html
         assert "${escapeHtml(normalized)} ${escapeHtml(label)}" in html
-        assert "${escapeHtml(selectedAppThreadId)}" in html
         assert "${escapeHtml(turn.id)}" in html
         assert "statusBadge(turn.status)" in html
         assert "${escapeHtml(turn.duration_seconds ?? \"\")}" in html
+        assert "${escapeHtml(turn.bridge_turn_id || \"\")}" in html
+        assert "${escapeHtml(turn.created_at || \"\")}" in html
         assert "turn.assistant_final || turn.error_message || \"\"" in html
         assert "final.assistant_final ? escapeHtml(final.assistant_final)" in html
         assert "暂无 assistant_final" in html
