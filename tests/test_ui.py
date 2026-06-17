@@ -118,6 +118,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert response.status_code == 200
         html = response.text
         assert "App Server 会话" in html
+        assert "App Server 会话为 sidecar POC" in html
         assert "检查 App Server Bridge" in html
         assert "appOutput" in html
         assert "查看 App Final" in html
@@ -131,6 +132,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "清理 CLOSED" in html
         assert "清理 ERROR" in html
         assert "显示 archived" in html
+        assert "archived" in html
         assert "appTurnStatus" in html
         assert "appEventsSummary" in html
         assert "CANCELLED" in html
@@ -146,6 +148,12 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'api("/app-threads", {method: "POST"' in html
         assert 'api("/app-turns/recover-stale"' in html
         assert 'api("/app-threads/cleanup"' in html
+        assert 'confirm(`确认将 CLOSED AppThread 标记为 archived？`)' in html
+        assert 'confirm(`确认将 ERROR AppThread 标记为 archived？`)' in html
+        assert 'confirm("确认将所有 PENDING/RUNNING AppTurn 标记为 FAILED？")' in html
+        assert 'String(t.title || "").startsWith("[archived]")' in html
+        assert "确认将 CLOSED AppThread 标记为 archived？" in html
+        assert "确认将 ERROR AppThread 标记为 archived？" in html
         assert 'api(`/app-threads/${selectedAppThreadId}/turns`' in html
         assert 'api(`/app-threads/${selectedAppThreadId}/turns/async`' in html
         assert 'api(`/app-turns/${selectedAppTurnId}`' in html

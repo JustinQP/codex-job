@@ -112,6 +112,7 @@ def mobile_console() -> str:
 
   <section>
     <h2>App Server 会话</h2>
+    <p class="muted">App Server 会话为 sidecar POC：支持同步/异步 turn、轮询、本地取消、reopen、recover-stale、筛选与 archived 清理；不替代 Runner/codex exec 主链路。</p>
     <div class="row">
       <button id="checkAppBridge" class="secondary">检查 App Server Bridge</button>
       <button id="refreshAppThreads" class="secondary">刷新 App Threads</button>
@@ -380,6 +381,7 @@ function renderAppThreads(appThreads) {
   document.getElementById("appThreads").innerHTML = appThreads.map(t => `
     <div class="${selectedAppThreadId === t.id ? "item selected" : "item"}">
       <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.title)}<br>
+      ${String(t.title || "").startsWith("[archived]") ? `<span class="muted">archived</span><br>` : ""}
       ${statusBadge(t.status)}<br>
       <span class="muted">project=${escapeHtml(t.project_id)} status=${escapeHtml(t.status)} turns=${escapeHtml(t.turn_count)} updated=${escapeHtml(t.updated_at)}</span><br>
       <span>${escapeHtml(t.latest_assistant_final || "")}</span>
@@ -571,6 +573,7 @@ function renderAppEventsSummary(events) {
 }
 
 async function recoverStaleAppTurns() {
+  if (!confirm("确认将所有 PENDING/RUNNING AppTurn 标记为 FAILED？")) return null;
   const result = await api("/app-turns/recover-stale", {method: "POST", headers: headers()});
   appLog(JSON.stringify(result, null, 2));
   await loadAppThreadList();
@@ -581,6 +584,8 @@ async function recoverStaleAppTurns() {
 }
 
 async function cleanupAppThreads(status) {
+  if (status === "CLOSED" && !confirm(`确认将 CLOSED AppThread 标记为 archived？`)) return null;
+  if (status === "ERROR" && !confirm(`确认将 ERROR AppThread 标记为 archived？`)) return null;
   const result = await api("/app-threads/cleanup", {
     method: "POST",
     headers: headers(true),
