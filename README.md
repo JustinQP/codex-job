@@ -401,6 +401,36 @@ A: 手机访问时要使用电脑局域网 IP，不是 `127.0.0.1`。
 Q5: 不要公网暴露  
 A: 当前仍是本地可信局域网工具，API Token 保存在 localStorage。
 
+## v0.9.0 App Turn 异步执行
+
+v0.9.0 新增异步 App Turn 链路，保留原有同步接口不变。
+
+### 1. 异步 API
+
+```text
+POST /app-threads/{id}/turns/async
+GET  /app-turns/{turn_id}
+```
+
+`POST /app-threads/{id}/turns/async` 会立即创建 `PENDING` AppTurn 并提交到单进程后台线程池。手机端可以通过 `GET /app-turns/{turn_id}` 轮询 `PENDING` / `RUNNING` / `SUCCESS` / `FAILED` 状态。
+
+### 2. 异步 smoke
+
+```powershell
+$env:API_TOKEN="dev-token"
+python .\scripts\smoke_app_server_flow.py --base-url http://127.0.0.1:8000 --project-path F:\JustinKing\codex-job --async-turn
+```
+
+### 3. 当前限制
+
+- 当前异步执行是单进程线程池。
+- 服务重启后 `RUNNING` / `PENDING` AppTurn 不会自动恢复。
+- 不支持取消。
+- 不支持 SSE。
+- 不支持审批 UI。
+- 不支持 diff UI。
+- 不替换 Runner/codex exec 主链路。
+
 ## Demo 脚本
 
 在后端启动后运行：

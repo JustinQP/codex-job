@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -120,16 +121,28 @@ def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
         )
         created_app_thread_id = int(app_thread["id"])
 
-        turn = request_json(
-            base_url,
-            "POST",
-            f"/app-threads/{created_app_thread_id}/turns",
-            {"message": args.message},
-            token=token,
-            timeout=args.turn_timeout_seconds,
-            step="send_app_turn",
-        )
-        turn_id = turn.get("id")
+        if args.async_turn:
+            turn, poll_count = _run_async_turn(base_url, token, created_app_thread_id, args)
+            turn_id = turn.get("id")
+            final_turn_status = turn.get("status")
+            if final_turn_status == "FAILED":
+                raise SmokeFlowError(
+                    "poll_app_turn",
+                    str(turn.get("error_message") or "async app turn failed"),
+                )
+        else:
+            turn = request_json(
+                base_url,
+                "POST",
+                f"/app-threads/{created_app_thread_id}/turns",
+                {"message": args.message},
+                token=token,
+                timeout=args.turn_timeout_seconds,
+                step="send_app_turn",
+            )
+            turn_id = turn.get("id")
+            poll_count = 0
+            final_turn_status = turn.get("status")
 
         final = request_json(
             base_url,
@@ -181,8 +194,49 @@ def run_smoke_flow(args: argparse.Namespace) -> dict[str, Any]:
         "closed_status": closed.get("status") if isinstance(closed, dict) else None,
         "cleanup_status": cleanup_status,
         "cleanup_error": cleanup_error,
+        "async_turn": bool(args.async_turn),
+        "poll_count": poll_count,
+        "final_turn_status": final_turn_status,
         "pass": passed,
     }
+
+
+def _run_async_turn(
+    base_url: str,
+    token: str | None,
+    app_thread_id: int,
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], int]:
+    turn = request_json(
+        base_url,
+        "POST",
+        f"/app-threads/{app_thread_id}/turns/async",
+        {"message": args.message},
+        token=token,
+        step="create_async_app_turn",
+    )
+    turn_id = turn.get("id")
+    if not isinstance(turn_id, int):
+        raise SmokeFlowError("create_async_app_turn", "async turn response missing id")
+
+    poll_count = 0
+    deadline = time.monotonic() + args.poll_timeout_seconds
+    while True:
+        if time.monotonic() > deadline:
+            raise SmokeFlowError("poll_app_turn", "async app turn polling timed out")
+        if poll_count > 0 or turn.get("status") not in {"SUCCESS", "FAILED"}:
+            if poll_count > 0:
+                time.sleep(args.poll_interval_seconds)
+            turn = request_json(
+                base_url,
+                "GET",
+                f"/app-turns/{turn_id}",
+                token=token,
+                step="poll_app_turn",
+            )
+        poll_count += 1
+        if turn.get("status") in {"SUCCESS", "FAILED"}:
+            return turn, poll_count
 
 
 def cleanup_app_thread(base_url: str, token: str | None, app_thread_id: int | None) -> tuple[str, str | None]:
@@ -219,6 +273,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--title", default="Smoke App Thread")
     parser.add_argument("--message", default="请只回复 app-thread-smoke-ok，不要修改文件。")
     parser.add_argument("--turn-timeout-seconds", type=int, default=300)
+    parser.add_argument("--async-turn", action="store_true")
+    parser.add_argument("--poll-interval-seconds", type=float, default=2)
+    parser.add_argument("--poll-timeout-seconds", type=float, default=300)
     return parser.parse_args(argv)
 
 

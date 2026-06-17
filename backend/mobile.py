@@ -123,7 +123,11 @@ def mobile_console() -> str:
     <div id="appWaiting" class="muted"></div>
     <div class="row">
       <button id="sendAppTurn">发送 App Turn</button>
+      <button id="sendAsyncAppTurn">异步发送 App Turn</button>
+    </div>
+    <div class="row">
       <button id="loadAppTurns" class="secondary">查看 Turns</button>
+      <button id="refreshAppTurn" class="secondary">刷新当前 Turn</button>
     </div>
     <div class="row">
       <button id="loadAppFinal" class="secondary">查看 App Final</button>
@@ -132,6 +136,7 @@ def mobile_console() -> str:
     <button id="reopenAppThread" class="secondary">重开当前 App Thread</button>
     <button id="closeAppThread" class="danger">关闭当前 App Thread</button>
     <div id="appThreadFinal" class="item"></div>
+    <div id="appTurnStatus" class="item"></div>
     <div id="appTurns" class="stack"></div>
     <pre id="appOutput"></pre>
   </section>
@@ -144,6 +149,8 @@ const appOutput = document.getElementById("appOutput");
 const APP_WAITING_TEXT = "正在等待 App Server 返回，请不要刷新页面。";
 let selectedAppThreadId = null;
 let selectedAppThread = null;
+let selectedAppTurnId = null;
+let appTurnPollTimer = null;
 let appThreadsCache = [];
 tokenInput.value = localStorage.getItem("apiToken") || "";
 
@@ -317,13 +324,23 @@ function statusBadge(status) {
 
 function updateAppActionState() {
   const sendButton = document.getElementById("sendAppTurn");
+  const asyncButton = document.getElementById("sendAsyncAppTurn");
   const status = selectedAppThread ? selectedAppThread.status : "";
   sendButton.disabled = status === "CLOSED";
+  asyncButton.disabled = status === "CLOSED";
   if (status === "CLOSED") {
     document.getElementById("appWaiting").textContent = "当前 App Thread 已关闭，请先重开。";
   } else if (document.getElementById("appWaiting").textContent === "当前 App Thread 已关闭，请先重开。") {
     document.getElementById("appWaiting").textContent = "";
   }
+}
+
+function renderAppTurnStatus(turn) {
+  selectedAppTurnId = turn.id;
+  document.getElementById("appTurnStatus").innerHTML = `
+    <strong>当前 App Turn: #${escapeHtml(turn.id)}</strong> ${escapeHtml(turn.status)}<br>
+    <span class="muted">duration_seconds=${escapeHtml(turn.duration_seconds ?? "")} bridge_turn=${escapeHtml(turn.bridge_turn_id || "")}</span><br>
+    <span>${escapeHtml(turn.assistant_final || turn.error_message || "")}</span>`;
 }
 
 function renderAppThreads(appThreads) {
@@ -390,11 +407,65 @@ async function sendAppTurn() {
     await loadAppThreadList();
     await loadAppTurns();
     await loadAppFinal();
+    renderAppTurnStatus(appTurn);
     appLog(`App Turn #${appTurn.id} ${appTurn.status}`);
   } finally {
     sendButton.disabled = false;
     waiting.textContent = "";
   }
+}
+
+async function sendAsyncAppTurn() {
+  if (!selectedAppThreadId) throw new Error("请先选择 App Thread");
+  if (selectedAppThread && selectedAppThread.status === "CLOSED") {
+    throw new Error("当前 App Thread 已关闭，请先重开。");
+  }
+  const message = document.getElementById("appMessage").value.trim();
+  if (!message) throw new Error("App Turn message 不能为空");
+  const appTurn = await api(`/app-threads/${selectedAppThreadId}/turns/async`, {
+    method: "POST",
+    headers: headers(true),
+    body: JSON.stringify({message}),
+  });
+  document.getElementById("appMessage").value = "";
+  renderAppTurnStatus(appTurn);
+  appLog(`已提交 App Turn #${appTurn.id}，状态 ${appTurn.status}`);
+  startAppTurnPolling(appTurn.id);
+}
+
+function startAppTurnPolling(turnId) {
+  stopAppTurnPolling();
+  selectedAppTurnId = turnId;
+  appTurnPollTimer = setInterval(() => {
+    refreshCurrentAppTurn().catch(err => {
+      stopAppTurnPolling();
+      appLog(String(err));
+    });
+  }, 2000);
+}
+
+function stopAppTurnPolling() {
+  if (appTurnPollTimer) {
+    clearInterval(appTurnPollTimer);
+    appTurnPollTimer = null;
+  }
+}
+
+async function refreshCurrentAppTurn() {
+  if (!selectedAppTurnId) throw new Error("请先提交或选择 App Turn");
+  const turn = await api(`/app-turns/${selectedAppTurnId}`, {headers: headers()});
+  renderAppTurnStatus(turn);
+  if (turn.status === "SUCCESS" || turn.status === "FAILED") {
+    stopAppTurnPolling();
+    await loadAppTurns();
+    await loadAppThreadList();
+    if (turn.status === "SUCCESS") {
+      await loadAppFinal();
+    } else {
+      appLog(turn.error_message || "App Turn failed");
+    }
+  }
+  return turn;
 }
 
 async function reopenAppThread() {
@@ -415,7 +486,7 @@ async function loadAppTurns() {
   document.getElementById("appTurns").innerHTML = turns.map(t => `
     <div class="item">
       <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.status)}<br>
-      <span class="muted">created=${escapeHtml(t.created_at)} bridge_turn=${escapeHtml(t.bridge_turn_id || "")}</span><br>
+      <span class="muted">created=${escapeHtml(t.created_at)} duration_seconds=${escapeHtml(t.duration_seconds ?? "")} bridge_turn=${escapeHtml(t.bridge_turn_id || "")}</span><br>
       <span>${escapeHtml(t.assistant_final || t.error_message || "")}</span>
     </div>`).join("");
 }
@@ -441,7 +512,10 @@ async function closeAppThread() {
   await api(`/app-threads/${selectedAppThreadId}`, {method: "DELETE", headers: headers()});
   selectedAppThreadId = null;
   selectedAppThread = null;
+  selectedAppTurnId = null;
+  stopAppTurnPolling();
   document.getElementById("appThreadFinal").textContent = "";
+  document.getElementById("appTurnStatus").textContent = "";
   document.getElementById("appTurns").innerHTML = "";
   appLog("已关闭 App Thread");
   await loadAll();
@@ -458,7 +532,9 @@ document.getElementById("checkAppBridge").onclick = () => checkAppServerBridge()
 document.getElementById("refreshAppThreads").onclick = () => loadAppThreadList().catch(err => appLog(String(err)));
 document.getElementById("createAppThread").onclick = () => createAppThread().catch(err => appLog(String(err)));
 document.getElementById("sendAppTurn").onclick = () => sendAppTurn().catch(err => appLog(String(err)));
+document.getElementById("sendAsyncAppTurn").onclick = () => sendAsyncAppTurn().catch(err => appLog(String(err)));
 document.getElementById("loadAppTurns").onclick = () => loadAppTurns().catch(err => appLog(String(err)));
+document.getElementById("refreshAppTurn").onclick = () => refreshCurrentAppTurn().catch(err => appLog(String(err)));
 document.getElementById("loadAppFinal").onclick = () => loadAppFinal().catch(err => appLog(String(err)));
 document.getElementById("loadAppEvents").onclick = () => loadAppEvents().catch(err => appLog(String(err)));
 document.getElementById("reopenAppThread").onclick = () => reopenAppThread().catch(err => appLog(String(err)));

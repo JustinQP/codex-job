@@ -206,6 +206,7 @@ class AppTurnRead(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    duration_seconds: Optional[float] = None
 
 
 class AppThreadFinalRead(BaseModel):

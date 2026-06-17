@@ -174,6 +174,7 @@ def test_app_threads_crud_turns_final_and_events(monkeypatch) -> None:
 
 def test_app_threads_api_token_protection(monkeypatch) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
     for client, session, _fake in make_client(monkeypatch):
         project = add_project(session)
 
@@ -191,6 +192,21 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
             f"/app-threads/{created['id']}/reopen",
             headers={"X-API-Token": "secret"},
         )
+        protected_async = client.post(
+            f"/app-threads/{created['id']}/turns/async",
+            json={"message": "hello"},
+        )
+        authorized_async = client.post(
+            f"/app-threads/{created['id']}/turns/async",
+            headers={"X-API-Token": "secret"},
+            json={"message": "hello"},
+        )
+        turn_id = authorized_async.json()["id"]
+        protected_get_turn = client.get(f"/app-turns/{turn_id}")
+        authorized_get_turn = client.get(
+            f"/app-turns/{turn_id}",
+            headers={"X-API-Token": "secret"},
+        )
 
         assert client.get("/health").status_code == 200
         assert protected_get.status_code == 401
@@ -199,6 +215,46 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
         assert authorized_post.status_code == 200
         assert protected_reopen.status_code == 401
         assert authorized_reopen.status_code == 200
+        assert protected_async.status_code == 401
+        assert authorized_async.status_code == 200
+        assert protected_get_turn.status_code == 401
+        assert authorized_get_turn.status_code == 200
+
+
+def test_async_app_turn_api_creates_pending_turn_and_gets_turn(monkeypatch) -> None:
+    submitted: list[int] = []
+    monkeypatch.setattr(
+        "backend.services.app_turn_executor.submit_app_turn",
+        lambda app_turn_id: submitted.append(app_turn_id),
+    )
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        created = create_app_thread(client, project.id)
+
+        response = client.post(f"/app-threads/{created['id']}/turns/async", json={"message": "hello"})
+        body = response.json()
+        fetched = client.get(f"/app-turns/{body['id']}")
+
+        assert response.status_code == 200
+        assert body["status"] == "PENDING"
+        assert body["assistant_final"] is None
+        assert body["duration_seconds"] is None
+        assert submitted == [body["id"]]
+        assert fetched.status_code == 200
+        assert fetched.json()["id"] == body["id"]
+
+
+def test_async_app_turn_rejects_closed_thread(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        created = create_app_thread(client, project.id)
+        closed = client.delete(f"/app-threads/{created['id']}")
+
+        response = client.post(f"/app-threads/{created['id']}/turns/async", json={"message": "hello"})
+
+        assert closed.status_code == 200
+        assert response.status_code == 400
 
 
 def test_reopen_app_thread_api_returns_read_with_stats(monkeypatch) -> None:

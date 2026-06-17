@@ -385,3 +385,84 @@ def test_reopen_app_thread_rejects_missing_bridge_thread_id() -> None:
 
         assert exc.value.status_code == 502
         assert exc.value.detail["code"] == "invalid_bridge_response"
+
+
+def test_create_async_app_turn_creates_pending_turn(monkeypatch) -> None:
+    submitted: list[int] = []
+    monkeypatch.setattr(
+        "backend.services.app_turn_executor.submit_app_turn",
+        lambda app_turn_id: submitted.append(app_turn_id),
+    )
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+
+        app_turn = app_thread_service.create_async_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+        )
+
+        assert app_turn.status == "PENDING"
+        assert app_turn.started_at is None
+        assert app_turn.completed_at is None
+        assert submitted == [app_turn.id]
+
+
+def test_create_async_app_turn_rejects_closed_thread(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        app_thread.status = "CLOSED"
+        session.add(app_thread)
+        session.commit()
+
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.create_async_app_turn(
+                session,
+                app_thread.id,
+                AppTurnCreate(message="hello"),
+            )
+
+        assert exc.value.status_code == 400
+
+
+def test_get_app_turn_or_404_not_found() -> None:
+    for session in make_session():
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.get_app_turn_or_404(session, 404)
+
+        assert exc.value.status_code == 404
+
+
+def test_to_app_turn_read_returns_duration_seconds() -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        app_turn = app_thread_service.send_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+            fake,
+        )
+
+        app_turn_read = app_thread_service.to_app_turn_read(app_turn)
+
+        assert app_turn_read.duration_seconds is not None
+        assert app_turn_read.duration_seconds >= 0

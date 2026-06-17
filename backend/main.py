@@ -196,6 +196,27 @@ def send_app_turn(
     return app_thread_service.to_app_turn_read(app_turn)
 
 
+@app.post("/app-threads/{app_thread_id}/turns/async", response_model=AppTurnRead)
+def create_async_app_turn(
+    app_thread_id: int,
+    payload: AppTurnCreate,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_turn = app_thread_service.create_async_app_turn(session, app_thread_id, payload)
+    return app_thread_service.to_app_turn_read(app_turn)
+
+
+@app.get("/app-turns/{app_turn_id}", response_model=AppTurnRead)
+def get_app_turn(
+    app_turn_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_turn = app_thread_service.get_app_turn_or_404(session, app_turn_id)
+    return app_thread_service.to_app_turn_read(app_turn)
+
+
 @app.get("/app-threads/{app_thread_id}/turns", response_model=list[AppTurnRead])
 def list_app_turns(
     app_thread_id: int,

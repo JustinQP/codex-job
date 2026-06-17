@@ -29,6 +29,7 @@ APP_THREAD_ACTIVE = "ACTIVE"
 APP_THREAD_ERROR = "ERROR"
 APP_THREAD_CLOSED = "CLOSED"
 
+APP_TURN_PENDING = "PENDING"
 APP_TURN_RUNNING = "RUNNING"
 APP_TURN_SUCCESS = "SUCCESS"
 APP_TURN_FAILED = "FAILED"
@@ -228,6 +229,39 @@ def send_app_turn(
     return app_turn
 
 
+def create_async_app_turn(
+    session: Session,
+    app_thread_id: int,
+    payload: AppTurnCreate,
+) -> AppTurn:
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="message cannot be empty")
+
+    app_thread = get_app_thread_or_404(session, app_thread_id)
+    if app_thread.status == APP_THREAD_CLOSED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread is closed")
+    if not app_thread.bridge_thread_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread has no bridge thread id")
+
+    app_turn = AppTurn(
+        app_thread_id=app_thread.id,
+        user_message=message,
+        status=APP_TURN_PENDING,
+        created_at=utc_now(),
+    )
+    session.add(app_turn)
+    session.commit()
+    session.refresh(app_turn)
+
+    if app_turn.id is None:
+        raise ValueError("app turn id is required")
+    from backend.services.app_turn_executor import submit_app_turn
+
+    submit_app_turn(app_turn.id)
+    return app_turn
+
+
 def list_app_turns(session: Session, app_thread_id: int) -> list[AppTurn]:
     get_app_thread_or_404(session, app_thread_id)
     return list(
@@ -237,6 +271,13 @@ def list_app_turns(session: Session, app_thread_id: int) -> list[AppTurn]:
             .order_by(AppTurn.id)
         ).all()
     )
+
+
+def get_app_turn_or_404(session: Session, app_turn_id: int) -> AppTurn:
+    app_turn = session.get(AppTurn, app_turn_id)
+    if app_turn is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="app turn not found")
+    return app_turn
 
 
 def get_app_thread_final(session: Session, app_thread_id: int) -> AppThreadFinalRead:
@@ -295,6 +336,9 @@ def to_app_thread_read(session: Session, app_thread: AppThread) -> AppThreadRead
 def to_app_turn_read(app_turn: AppTurn) -> AppTurnRead:
     if app_turn.id is None:
         raise ValueError("app turn id is required")
+    duration_seconds = None
+    if app_turn.started_at and app_turn.completed_at:
+        duration_seconds = (app_turn.completed_at - app_turn.started_at).total_seconds()
     return AppTurnRead(
         id=app_turn.id,
         app_thread_id=app_turn.app_thread_id,
@@ -306,6 +350,7 @@ def to_app_turn_read(app_turn: AppTurn) -> AppTurnRead:
         created_at=app_turn.created_at,
         started_at=app_turn.started_at,
         completed_at=app_turn.completed_at,
+        duration_seconds=duration_seconds,
     )
 
 

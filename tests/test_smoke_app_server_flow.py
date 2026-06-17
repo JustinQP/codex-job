@@ -159,6 +159,140 @@ def test_run_smoke_flow_cleans_up_after_send_turn_failure(monkeypatch) -> None:
     assert ("DELETE", "/app-threads/20") in calls
 
 
+def test_run_smoke_flow_async_success(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del base_url, payload, kwargs
+        calls.append((method, path))
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/app-server-bridge/health":
+            return {"status": "ok"}
+        if path == "/projects":
+            return {"id": 10}
+        if path == "/app-threads":
+            return {"id": 20}
+        if path == "/app-threads/20/turns/async" and method == "POST":
+            return {"id": 30, "status": "PENDING"}
+        if path == "/app-turns/30":
+            return {"id": 30, "status": "SUCCESS"}
+        if path == "/app-threads/20/final":
+            return {"assistant_final": "app-thread-smoke-ok"}
+        if path == "/app-threads/20/turns" and method == "GET":
+            return [{"id": 30}]
+        if path == "/app-threads/20/events":
+            return {"event_summary": {"total_events": 2}}
+        if path == "/app-threads/20" and method == "DELETE":
+            return {"status": "CLOSED"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(smoke_app_server_flow, "request_json", fake_request_json)
+    args = smoke_app_server_flow.parse_args(["--async-turn", "--poll-interval-seconds", "0"])
+
+    summary = smoke_app_server_flow.run_smoke_flow(args)
+
+    assert summary["pass"] is True
+    assert summary["async_turn"] is True
+    assert summary["poll_count"] == 1
+    assert summary["final_turn_status"] == "SUCCESS"
+    assert ("DELETE", "/app-threads/20") in calls
+
+
+def test_run_smoke_flow_async_failed_turn_cleans_up(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del base_url, payload, kwargs
+        calls.append((method, path))
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/app-server-bridge/health":
+            return {"status": "ok"}
+        if path == "/projects":
+            return {"id": 10}
+        if path == "/app-threads":
+            return {"id": 20}
+        if path == "/app-threads/20/turns/async":
+            return {"id": 30, "status": "PENDING"}
+        if path == "/app-turns/30":
+            return {"id": 30, "status": "FAILED", "error_message": "timeout"}
+        if path == "/app-threads/20" and method == "DELETE":
+            return {"status": "CLOSED"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(smoke_app_server_flow, "request_json", fake_request_json)
+    args = smoke_app_server_flow.parse_args(["--async-turn", "--poll-interval-seconds", "0"])
+
+    try:
+        smoke_app_server_flow.run_smoke_flow(args)
+    except smoke_app_server_flow.SmokeFlowError as exc:
+        assert exc.step == "poll_app_turn"
+        assert "timeout" in str(exc)
+        assert exc.cleanup_status == "CLOSED"
+    else:
+        raise AssertionError("expected SmokeFlowError")
+
+    assert ("DELETE", "/app-threads/20") in calls
+
+
+def test_run_smoke_flow_async_poll_timeout_cleans_up(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del base_url, payload, kwargs
+        calls.append((method, path))
+        if path == "/health":
+            return {"status": "ok"}
+        if path == "/app-server-bridge/health":
+            return {"status": "ok"}
+        if path == "/projects":
+            return {"id": 10}
+        if path == "/app-threads":
+            return {"id": 20}
+        if path == "/app-threads/20/turns/async":
+            return {"id": 30, "status": "PENDING"}
+        if path == "/app-turns/30":
+            return {"id": 30, "status": "RUNNING"}
+        if path == "/app-threads/20" and method == "DELETE":
+            return {"status": "CLOSED"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(smoke_app_server_flow, "request_json", fake_request_json)
+    args = smoke_app_server_flow.parse_args(
+        ["--async-turn", "--poll-interval-seconds", "0", "--poll-timeout-seconds", "0"]
+    )
+
+    try:
+        smoke_app_server_flow.run_smoke_flow(args)
+    except smoke_app_server_flow.SmokeFlowError as exc:
+        assert exc.step == "poll_app_turn"
+        assert "timed out" in str(exc)
+        assert exc.cleanup_status == "CLOSED"
+    else:
+        raise AssertionError("expected SmokeFlowError")
+
+    assert ("DELETE", "/app-threads/20") in calls
+
+
 def test_run_smoke_flow_preserves_original_error_when_cleanup_fails(monkeypatch) -> None:
     def fake_request_json(
         base_url: str,
