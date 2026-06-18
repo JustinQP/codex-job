@@ -118,7 +118,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert response.status_code == 200
         html = response.text
         assert "开始一次 Codex 会话" in html
-        assert "选择或新建会话后，就可以连续发送消息。" in html
+        assert "选择或新建会话后即可发送消息" in html
         assert 'class="bottom-nav"' in html
         assert 'data-tab="home"' in html
         assert 'data-tab="tasks"' in html
@@ -252,6 +252,11 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'id="taskPreview"' in html
         assert "<summary>高级参数</summary>" in html
         assert "<summary>调试输出</summary>" in html
+        assert 'id="tab-app" class="tab-page page app-console"' in html
+        assert "#tab-app.app-console" in html
+        assert "flex-direction: column" in html
+        assert "overflow: hidden" in html
+        assert "#tab-app.app-console.active { display: flex; }" in html
         assert 'class="page-header card app-current-card session-header"' in html
         assert 'class="page-body card app-main-panel message-list"' in html
         assert '<summary>AppThread 列表</summary>' not in html
@@ -261,12 +266,29 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "session-header" in html
         assert "message-list" in html
         assert "session-composer" in html
+        assert ".session-title-area" in html
+        assert ".session-subtitle" in html
+        assert "min-height: 54px" in html
+        assert "max-width: 64px" in html
+        assert "box-shadow: none" in html
+        assert "overflow-y: auto" in html
         assert 'id="appMessageHint"' in html
         assert 'id="appMessageCount"' in html
+        assert 'id="sendModeToggle"' in html
         assert ".composer-meta" in html
+        assert ".composer-status-row" in html
+        assert ".composer-input-row" in html
+        assert ".send-mode-inline" in html
+        assert ".send-mode-toggle-hidden" in html
+        assert ".send-button" in html
+        assert "max-height: 120px" in html
+        assert "min-height: 44px" in html
         assert "function updateAppComposerState()" in html
-        assert 'document.getElementById("appMessage").oninput = updateAppComposerState' in html
+        assert 'document.getElementById("appMessage").oninput = () =>' in html
         assert 'updateAppComposerState();' in html
+        assert "function autoResizeComposer()" in html
+        assert "function toggleAppSendMode()" in html
+        assert "document.getElementById(\"sendModeToggle\").onclick = toggleAppSendMode" in html
         assert "输入消息后即可发送" in html
         assert "请先新建或选择会话" in html
         assert "快速发送，后台等待回复" in html
@@ -301,6 +323,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "function toggleTurnExpanded(turnId)" in html
         assert "function recoveryAdviceForTurn(turn)" in html
         assert "function scrollAppMessagesToBottom(force = false)" in html
+        assert "scrollTarget.scrollTop = scrollTarget.scrollHeight" in html
         assert "function resumeActiveAppTurnPolling()" in html
         assert "let appTurnPollTargetId = null" in html
         assert "if (appTurnPollTimer && appTurnPollTargetId === turnId) return;" in html

@@ -58,7 +58,7 @@ def mobile_styles() -> str:
       --font-lg: 16px;
       --touch-min: 40px;
       --bottom-nav-height: 56px;
-      --composer-height: 132px;
+      --composer-height: 88px;
       --z-header: 2;
       --z-floating: 2;
       --z-nav: 3;
@@ -165,7 +165,17 @@ def mobile_styles() -> str:
     .page-header,
     .page-body,
     .page-footer { display: grid; gap: var(--space-3); }
-    .app-console { padding-bottom: 154px; }
+    #tab-app.app-console {
+      height: calc(100vh - 62px - var(--bottom-nav-height));
+      display: none;
+      flex-direction: column;
+      gap: 0;
+      overflow: hidden;
+      padding-bottom: 0;
+      margin: calc(-1 * var(--space-3));
+      background: var(--bg);
+    }
+    #tab-app.app-console.active { display: flex; }
     .tasks-page { padding-bottom: 86px; }
     .home-hero {
       display: grid;
@@ -482,28 +492,64 @@ def mobile_styles() -> str:
     .badge.warning { background: var(--warning-bg); color: var(--warning-text); }
     .app-current-card,
     .session-header {
-      position: sticky;
-      top: 62px;
+      position: relative;
+      top: auto;
       z-index: 1;
+      flex: 0 0 auto;
+      min-height: 54px;
+      padding: 7px 10px;
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--surface);
+      box-shadow: none;
+    }
+    #tab-app .session-header.card {
+      border-radius: 0;
+      box-shadow: none;
+    }
+    #appThreadCurrent {
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
     }
     .app-current-layout {
       display: grid;
       gap: 10px;
     }
     .app-session-header {
-      display: grid;
-      gap: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
     }
     .app-session-title-row {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
     }
     .app-current-title {
-      font-size: 17px;
+      font-size: 15px;
       font-weight: 750;
-      margin-bottom: 4px;
+      margin-bottom: 1px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .session-title-area {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .session-subtitle {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -516,12 +562,19 @@ def mobile_styles() -> str:
       margin: 8px 0;
     }
     .app-session-actions {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 6px;
     }
     .app-session-actions button {
-      min-width: 92px;
+      width: auto;
+      min-width: 0;
+      max-width: 64px;
+      min-height: 34px;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
     }
     .final-preview {
       margin-top: 8px;
@@ -556,12 +609,22 @@ def mobile_styles() -> str:
       margin-top: 10px;
     }
     .app-main-panel {
-      display: grid;
-      gap: 10px;
-      min-height: 220px;
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+      overflow-y: auto;
+      padding: var(--space-3);
+      border: 0;
+      border-radius: 0;
+      background: var(--bg);
+      box-shadow: none;
     }
     .message-list {
       align-content: start;
+      min-height: 0;
+      overflow-y: auto;
     }
     .inline-turn-status:empty {
       display: none;
@@ -578,10 +641,11 @@ def mobile_styles() -> str:
     }
     .chat-list {
       display: grid;
-      gap: 12px;
+      gap: 10px;
     }
     .message-flow {
-      scroll-margin-bottom: 180px;
+      padding-bottom: 12px;
+      scroll-margin-bottom: 0;
     }
     .chat-turn {
       display: grid;
@@ -597,7 +661,7 @@ def mobile_styles() -> str:
       max-width: 86%;
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 10px;
+      padding: 9px 10px;
       line-height: 1.45;
       white-space: pre-wrap;
       word-break: break-word;
@@ -605,6 +669,7 @@ def mobile_styles() -> str:
       cursor: pointer;
     }
     .bubble.user {
+      max-width: 78%;
       background: var(--primary);
       color: #fff;
       border-color: var(--primary);
@@ -612,6 +677,7 @@ def mobile_styles() -> str:
     }
     .bubble.user .muted { color: #dbeafe; }
     .bubble.assistant {
+      max-width: 92%;
       background: var(--surface);
       border-bottom-left-radius: 4px;
       box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
@@ -642,9 +708,9 @@ def mobile_styles() -> str:
     }
     .bubble-detail-hint {
       display: block;
-      margin-top: 6px;
+      margin-top: 5px;
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
     }
     .assistant-message {
       display: block;
@@ -675,23 +741,52 @@ def mobile_styles() -> str:
     }
     .loading-card strong { font-weight: 750; }
     .app-composer {
-      position: sticky;
-      bottom: 64px;
+      position: relative;
+      bottom: auto;
       z-index: 2;
-      box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
+      flex: 0 0 auto;
+      border: 0;
+      border-top: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--surface);
+      box-shadow: none;
     }
-    .app-composer textarea { min-height: 96px; }
+    .app-composer textarea { min-height: 44px; }
     .session-composer {
       display: grid;
-      gap: 8px;
+      gap: 6px;
+      padding: 8px 10px 10px;
     }
+    .composer-status-row,
     .composer-meta {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 8px;
       color: var(--muted);
-      font-size: 12px;
-      min-height: 18px;
+      font-size: 11px;
+      min-height: 16px;
+    }
+    .composer-input-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 8px;
+    }
+    .composer-input-row textarea {
+      min-height: 44px;
+      max-height: 120px;
+      resize: none;
+      border-radius: 18px;
+      padding: 10px 12px;
+      line-height: 1.35;
+    }
+    .send-button {
+      width: auto;
+      min-width: 58px;
+      min-height: 44px;
+      border-radius: 18px;
+      padding: 8px 12px;
     }
     .send-mode-row {
       display: grid;
@@ -716,6 +811,24 @@ def mobile_styles() -> str:
       width: auto;
       min-height: auto;
       margin: 0;
+    }
+    .send-mode-inline {
+      width: auto;
+      min-width: 0;
+      min-height: 28px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--primary);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .send-mode-toggle-hidden {
+      display: none;
+    }
+    .message-count {
+      white-space: nowrap;
     }
     .summary-grid {
       display: grid;
@@ -880,15 +993,18 @@ def mobile_app_tab() -> str:
     </div>
 
     <div class="page-footer card app-composer session-composer">
-      <label>发送消息 <textarea id="appMessage" placeholder="输入消息，发送到当前会话"></textarea></label>
-      <div class="composer-meta">
+      <div class="composer-status-row">
         <span id="appMessageHint">请选择会话后发送消息</span>
-        <span id="appMessageCount">0 字</span>
+        <button id="sendModeToggle" class="send-mode-inline" type="button">快速发送</button>
       </div>
       <div id="appWaiting" class="muted"></div>
-      <div class="send-mode-row">
-        <label class="send-mode-toggle"><input id="appSendAsync" type="checkbox" checked> <span id="appSendModeLabel" class="send-mode-label">快速发送</span></label>
-        <button id="sendAppMessage" class="btn-primary">发送</button>
+      <div class="composer-input-row">
+        <textarea id="appMessage" placeholder="输入消息"></textarea>
+        <button id="sendAppMessage" class="btn-primary send-button">发送</button>
+      </div>
+      <div class="composer-meta">
+        <label class="send-mode-toggle send-mode-toggle-hidden"><input id="appSendAsync" type="checkbox" checked> <span id="appSendModeLabel" class="send-mode-label">快速发送</span></label>
+        <span id="appMessageCount" class="message-count">0 字</span>
       </div>
     </div>
 
@@ -1943,16 +2059,14 @@ function updateSelectedAppThreadDisplay() {
     target.innerHTML = `
       <div class="app-session-header">
         <div class="app-session-title-row">
-          <div>
+          <div class="session-title-area">
             <div class="app-current-title">开始一次 Codex 会话</div>
-            <span class="muted">选择或新建会话后，就可以连续发送消息。</span>
+            <span class="session-subtitle">选择或新建会话后即可发送消息</span>
           </div>
-          ${statusBadge("WARNING")}
         </div>
         <div class="app-session-actions">
-          <button class="btn-primary" onclick="showAppThreadSwitcher()">新建会话</button>
-          <button class="btn-secondary" onclick="showAppThreadSwitcher()">选择已有</button>
-          <button class="ghost" onclick="showAppSessionMore()" disabled>更多</button>
+          <button class="btn-text" title="新建会话" onclick="showAppThreadSwitcher()">新建</button>
+          <button class="btn-text" title="选择已有会话" onclick="showAppThreadSwitcher()">选择</button>
         </div>
       </div>`;
     updateAppActionState();
@@ -1966,15 +2080,15 @@ function updateSelectedAppThreadDisplay() {
   target.innerHTML = `
     <div class="app-session-header">
       <div class="app-session-title-row">
-        <div>
+        <div class="session-title-area">
           <div class="app-current-title" title="${escapeHtml(title)}">${escapeHtml(title || "当前会话")}</div>
           ${missingHint}
         </div>
         ${statusBadge(status)}
       </div>
       <div class="app-session-actions">
-        <button class="btn-secondary" onclick="showAppThreadSwitcher()">切换会话</button>
-        <button class="ghost" onclick="showAppSessionMore()">更多</button>
+        <button class="btn-text" title="切换会话" onclick="showAppThreadSwitcher()">切换</button>
+        <button class="btn-text" title="更多" onclick="showAppSessionMore()">更多</button>
       </div>
     </div>`;
   updateAppActionState();
@@ -2151,11 +2265,22 @@ function recoveryAdviceForTurn(turn) {
 
 function scrollAppMessagesToBottom(force = false) {
   const target = document.getElementById("appTurns");
+  const scroller = document.querySelector("#tab-app .message-list");
   if (!target) return;
-  const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 96;
+  const scrollTarget = scroller || target;
+  const nearBottom = scrollTarget.scrollHeight - scrollTarget.scrollTop - scrollTarget.clientHeight < 96;
   if (force || nearBottom) {
-    requestAnimationFrame(() => target.scrollIntoView({block: "end"}));
+    requestAnimationFrame(() => {
+      scrollTarget.scrollTop = scrollTarget.scrollHeight;
+    });
   }
+}
+
+function autoResizeComposer() {
+  const input = document.getElementById("appMessage");
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
 }
 
 function taskTitleLine(task) {
@@ -2235,6 +2360,7 @@ function updateAppComposerState() {
   const count = document.getElementById("appMessageCount");
   const unifiedSendButton = document.getElementById("sendAppMessage");
   const modeLabel = document.getElementById("appSendModeLabel");
+  const modeToggle = document.getElementById("sendModeToggle");
   const rawMessage = input ? input.value : "";
   const message = rawMessage.trim();
   const status = selectedAppThread ? selectedAppThread.status : "";
@@ -2243,6 +2369,7 @@ function updateAppComposerState() {
   const modeText = selectedSendMode() === "async" ? "快速发送" : "等待回复";
   const modeHint = selectedSendMode() === "async" ? "快速发送，后台等待回复" : "等待回复，完成后返回";
   if (modeLabel) modeLabel.textContent = modeText;
+  if (modeToggle) modeToggle.textContent = modeText;
   if (count) count.textContent = `${rawMessage.length} 字`;
   if (hint) {
     if (!hasThread) {
@@ -2258,6 +2385,7 @@ function updateAppComposerState() {
     }
   }
   if (unifiedSendButton) unifiedSendButton.disabled = !hasThread || status === "CLOSED" || !message || hasRunningTurn;
+  autoResizeComposer();
 }
 
 function renderAppTurnStatus(turn) {
@@ -2391,6 +2519,14 @@ function selectedSendMode() {
 
 function persistSendMode() {
   writeUiState(UI_STATE_KEYS.appSendMode, selectedSendMode());
+}
+
+function toggleAppSendMode() {
+  const asyncToggle = document.getElementById("appSendAsync");
+  if (!asyncToggle) return;
+  asyncToggle.checked = !asyncToggle.checked;
+  persistSendMode();
+  updateAppComposerState();
 }
 
 async function sendAppMessage() {
@@ -2921,7 +3057,11 @@ document.getElementById("createAppThread").onclick = () => withButtonLoading("cr
 document.getElementById("sendAppTurn").onclick = () => withButtonLoading("sendAppTurn", "处理中...", sendAppTurn);
 document.getElementById("sendAsyncAppTurn").onclick = () => withButtonLoading("sendAsyncAppTurn", "处理中...", sendAsyncAppTurn);
 document.getElementById("sendAppMessage").onclick = () => withButtonLoading("sendAppMessage", "处理中...", sendAppMessage);
-document.getElementById("appMessage").oninput = updateAppComposerState;
+document.getElementById("appMessage").oninput = () => {
+  updateAppComposerState();
+  autoResizeComposer();
+};
+document.getElementById("sendModeToggle").onclick = toggleAppSendMode;
 document.getElementById("appSendAsync").onchange = () => {
   persistSendMode();
   updateAppComposerState();
