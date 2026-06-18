@@ -5,7 +5,7 @@
 Mobile UI 当前迭代：v1.2
 
 
-Mobile Frontend current iteration: v1.7.0. Added `frontend/` Vite + React + TypeScript skeleton; `/mobile` serves `frontend/dist/index.html` first.
+Mobile Frontend current iteration: v1.7.x. The mobile console has moved to `frontend/` with Vite + React + TypeScript; `/mobile` serves `frontend/dist/index.html` first.
 定位：Codex Remote Runner + App Server Sidecar 本地控制台
 
 ## 1. 项目定位
@@ -121,7 +121,21 @@ npm install
 npm run dev
 ```
 
-v1.7.0 only wires the frontend build and FastAPI hosting path. Full task and App Server session pages will be migrated in later v1.7.x steps.
+Frontend structure:
+```text
+frontend/src/api        API client and endpoint modules
+frontend/src/components React pages and shared UI components
+frontend/src/hooks      polling, toast, and localStorage hooks
+frontend/src/styles     tokens, base, component, task, session, and app styles
+frontend/src/utils      date, error, and text helpers
+```
+
+FastAPI hosts the production build:
+- `/mobile` returns `frontend/dist/index.html` when present.
+- `/assets/*` serves `frontend/dist/assets/*`.
+- If the build is missing, `/mobile` returns a clear build instruction page.
+
+v1.7.x migrated the main mobile console shell, tasks page, App Server session page, and settings page into React. It still does not add SSE, approval UI, or diff UI.
 
 ## 4. 主线 Runner/codex exec 任务链路
 

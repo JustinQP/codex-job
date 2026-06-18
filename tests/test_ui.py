@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -229,6 +230,27 @@ def test_frontend_v17_pages_are_migrated_to_react() -> None:
     assert "listRunners()" in settings
     assert "recoverStaleAppTurns()" in settings
     assert "cleanupAppThreads(status)" in settings
+
+
+def test_frontend_v17_docs_and_scripts_are_documented() -> None:
+    package_json = json.loads(Path("frontend/package.json").read_text(encoding="utf-8"))
+    assert package_json["scripts"]["build"] == "tsc --noEmit && vite build"
+    assert package_json["scripts"]["typecheck"] == "tsc --noEmit"
+    assert package_json["scripts"]["dev"] == "vite"
+
+    readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
+    assert "Mobile Frontend current iteration: v1.7.x" in readme
+    assert "frontend/src/api" in readme
+    assert "/mobile" in readme
+    assert "/assets/*" in readme
+
+    plan = Path("docs/mobile-v1.7-frontend-split-plan.md").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert "v1.7.5" in plan
+    assert "python -m compileall backend runner scripts poc/app_server" in plan
+    assert "npm run build" in plan
 
 
 def test_legacy_mobile_module_is_frontend_hosting_helper() -> None:

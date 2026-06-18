@@ -902,3 +902,28 @@ frontend/ 负责完整移动端 UI 应用
 前端组件治理
 更好的测试体系
 ```
+
+---
+
+## 14. 执行状态
+
+截至 v1.7.5，已完成：
+
+```text
+v1.7.0：新增 frontend/ Vite + React + TypeScript 工程骨架，FastAPI 托管 frontend/dist。
+v1.7.1：迁移设计 tokens、基础样式、通用组件和四 Tab 壳。
+v1.7.2：新增 API client、类型、localStorage 兼容 key 和 hooks。
+v1.7.3：迁移首页、任务页、会话页、设置页主路径。
+v1.7.4：清理 backend/mobile.py 旧大段 HTML/CSS/JS。
+v1.7.5：测试和文档收口。
+```
+
+当前验证命令：
+
+```powershell
+python -m compileall backend runner scripts poc/app_server
+pytest -q
+cd frontend
+npm install
+npm run build
+```
