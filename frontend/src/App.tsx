@@ -1,30 +1,33 @@
-function App() {
-  return (
-    <main className="mobile-shell">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">v1.7 frontend split POC</p>
-          <h1>Codex Mobile Console</h1>
-          <p className="summary">
-            Frontend build is being served by FastAPI. Full task and App Server
-            session pages will be migrated in later v1.7 steps.
-          </p>
-        </div>
-        <div className="status-card" aria-label="Frontend hosting status">
-          <span className="status-dot" />
-          <span>React + TypeScript + Vite</span>
-        </div>
-      </section>
+import { useState } from "react";
 
-      <section className="panel">
-        <h2>Current Scope</h2>
-        <ul>
-          <li>Frontend project skeleton is available under frontend/.</li>
-          <li>npm run build outputs static files to frontend/dist.</li>
-          <li>FastAPI serves this built page from /mobile.</li>
-        </ul>
-      </section>
-    </main>
+import { HomePage } from "./components/home/HomePage";
+import { BottomNav, type TabName } from "./components/layout/BottomNav";
+import { Toast, type ToastState } from "./components/layout/Toast";
+import { SessionPage } from "./components/session/SessionPage";
+import { SettingsPage } from "./components/settings/SettingsPage";
+import { TasksPage } from "./components/tasks/TasksPage";
+
+function App() {
+  const [activeTab, setActiveTab] = useState<TabName>("home");
+  const [toast] = useState<ToastState>(null);
+
+  return (
+    <div className="app-shell">
+      <header className="top-bar">
+        <h1>Codex Mobile Console</h1>
+        <div className="top-subtitle">Codex Remote Runner + App Server Sidecar</div>
+      </header>
+
+      <main>
+        {activeTab === "home" ? <HomePage /> : null}
+        {activeTab === "tasks" ? <TasksPage /> : null}
+        {activeTab === "app" ? <SessionPage /> : null}
+        {activeTab === "settings" ? <SettingsPage /> : null}
+      </main>
+
+      <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+      <Toast toast={toast} />
+    </div>
   );
 }
 

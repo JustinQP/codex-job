@@ -1,0 +1,193 @@
+#tab-app.page.active {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  height: calc(100vh - var(--bottom-nav-height) - 64px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.session-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.session-header {
+  flex: 0 0 auto;
+  min-height: 48px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.session-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.session-title-area {
+  min-width: 0;
+}
+
+.session-title {
+  margin: 0 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.session-subtitle {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.session-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.session-actions button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.message-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.message-flow {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.chat-turn {
+  display: grid;
+  gap: 6px;
+}
+
+.bubble-row {
+  display: flex;
+}
+
+.bubble-row.user {
+  justify-content: flex-end;
+}
+
+.bubble-row.assistant {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: 86%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble.user {
+  max-width: 76%;
+  border-color: var(--primary);
+  border-bottom-right-radius: 4px;
+  background: var(--primary);
+  color: #fff;
+}
+
+.bubble.assistant {
+  max-width: 94%;
+  border-bottom-left-radius: 4px;
+  background: var(--surface);
+}
+
+.bubble.assistant.failed,
+.bubble.assistant.error {
+  border-color: #fecaca;
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.assistant-message.collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+}
+
+.bubble-detail-hint {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.session-composer {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.composer-status-row,
+.composer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 16px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.composer-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.composer-input-row textarea {
+  min-height: 44px;
+  max-height: 120px;
+  border-radius: 18px;
+  resize: none;
+}
+
+.send-button {
+  min-width: 58px;
+  min-height: 44px;
+  border-radius: 18px;
+}
+
+.message-count.empty {
+  display: none;
+}
+
+.thread-card.selected {
+  border-color: var(--primary);
+  background: #eff6ff;
+}
+
+.thread-card.closed,
+.thread-card.error {
+  opacity: 0.78;
+}

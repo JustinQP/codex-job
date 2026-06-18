@@ -122,6 +122,41 @@ def test_mobile_console_assets_mount_is_configured() -> None:
     assert backend_main.FRONTEND_ASSETS_DIR == backend_main.FRONTEND_DIST_DIR / "assets"
 
 
+def test_frontend_v17_design_system_and_shell_exist() -> None:
+    root = Path("frontend/src")
+    assert (root / "styles/tokens.css").exists()
+    assert (root / "styles/base.css").exists()
+    assert (root / "styles/components.css").exists()
+    assert (root / "styles/session.css").exists()
+    assert (root / "styles/tasks.css").exists()
+    assert (root / "styles/app.css").exists()
+
+    tokens = (root / "styles/tokens.css").read_text(encoding="utf-8")
+    assert "--space-1" in tokens
+    assert "--space-2" in tokens
+    assert "--radius-sm" in tokens
+    assert "--radius-md" in tokens
+    assert "--touch-min" in tokens
+    assert "--bottom-nav-height" in tokens
+    assert "--composer-height" in tokens
+
+    app = (root / "App.tsx").read_text(encoding="utf-8")
+    assert "Codex Mobile Console" in app
+    assert "activeTab === \"home\"" in app
+    assert "activeTab === \"tasks\"" in app
+    assert "activeTab === \"app\"" in app
+    assert "activeTab === \"settings\"" in app
+
+    assert (root / "components/layout/BottomNav.tsx").exists()
+    assert (root / "components/layout/Sheet.tsx").exists()
+    assert (root / "components/layout/Toast.tsx").exists()
+    assert (root / "components/common/Badge.tsx").exists()
+    assert (root / "components/common/Button.tsx").exists()
+    assert (root / "components/common/EmptyState.tsx").exists()
+    assert (root / "components/common/ErrorSheet.tsx").exists()
+    assert (root / "components/common/RecoveryCard.tsx").exists()
+
+
 def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:
     for client, session in make_client():
         del client, session

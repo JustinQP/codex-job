@@ -1,0 +1,52 @@
+.task-card {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.task-card-header,
+.thread-card-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.task-title,
+.thread-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.task-actions button {
+  width: auto;
+  min-height: 34px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.task-form-sheet {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.task-form-sheet label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.task-detail-grid {
+  display: grid;
+  gap: var(--space-2);
+}
