@@ -193,6 +193,44 @@ def test_frontend_v17_api_client_and_state_exist() -> None:
     assert (root / "hooks/usePolling.ts").exists()
 
 
+def test_frontend_v17_pages_are_migrated_to_react() -> None:
+    root = Path("frontend/src")
+    home = (root / "components/home/HomePage.tsx").read_text(encoding="utf-8")
+    assert 'safeApi<Health>("/health")' in home
+    assert 'safeApi<Runner[]>("/runners")' in home
+    assert 'safeApi<Task[]>("/tasks?limit=20")' in home
+    assert 'safeApi<BridgeHealth>("/app-server-bridge/health")' in home
+    assert 'safeApi<AppThread[]>("/app-threads?limit=3")' in home
+
+    tasks = (root / "components/tasks/TasksPage.tsx").read_text(encoding="utf-8")
+    assert "listTasks(20)" in tasks
+    assert "createTask(payload)" in tasks
+    assert "cancelTask(task.id)" in tasks
+    assert "rerunTask(task.id)" in tasks
+    assert "UI_STATE_KEYS.taskStatusFilter" in tasks
+    assert "usePolling(loadTasks" in tasks
+
+    session = (root / "components/session/SessionPage.tsx").read_text(encoding="utf-8")
+    assert "listAppThreads({ limit: 20 })" in session
+    assert "createAppThread(projectId, title)" in session
+    assert "listAppTurns(selectedThreadId)" in session
+    assert "sendAsyncAppTurn" in session
+    assert "sendAppTurn" in session
+    assert "cancelAppTurn(runningTurn.id)" in session
+    assert "reopenAppThread(selectedThreadId)" in session
+    assert "getAppThreadFinal(selectedThreadId)" in session
+    assert "getAppThreadEvents(selectedThreadId)" in session
+    assert "recoverStaleAppTurns()" in session
+    assert "cleanupAppThreads(status)" in session
+
+    settings = (root / "components/settings/SettingsPage.tsx").read_text(encoding="utf-8")
+    assert "API_TOKEN_KEY" in settings
+    assert "getBridgeHealth()" in settings
+    assert "listRunners()" in settings
+    assert "recoverStaleAppTurns()" in settings
+    assert "cleanupAppThreads(status)" in settings
+
+
 def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:
     for client, session in make_client():
         del client, session

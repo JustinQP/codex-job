@@ -10,7 +10,7 @@ import { UI_STATE_KEYS } from "./state/storage";
 
 function App() {
   const [activeTab, setActiveTab] = useLocalStorage(UI_STATE_KEYS.activeTab, "home");
-  const { toast } = useToast();
+  const { toast, showToast } = useToast();
   const currentTab = ["home", "tasks", "app", "settings"].includes(activeTab)
     ? (activeTab as TabName)
     : "home";
@@ -23,10 +23,10 @@ function App() {
       </header>
 
       <main>
-        {currentTab === "home" ? <HomePage /> : null}
-        {currentTab === "tasks" ? <TasksPage /> : null}
-        {currentTab === "app" ? <SessionPage /> : null}
-        {currentTab === "settings" ? <SettingsPage /> : null}
+        {currentTab === "home" ? <HomePage showToast={showToast} /> : null}
+        {currentTab === "tasks" ? <TasksPage showToast={showToast} /> : null}
+        {currentTab === "app" ? <SessionPage showToast={showToast} /> : null}
+        {currentTab === "settings" ? <SettingsPage showToast={showToast} /> : null}
       </main>
 
       <BottomNav activeTab={currentTab} onChange={setActiveTab} />
