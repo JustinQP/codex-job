@@ -142,10 +142,10 @@ def test_frontend_v17_design_system_and_shell_exist() -> None:
 
     app = (root / "App.tsx").read_text(encoding="utf-8")
     assert "Codex Mobile Console" in app
-    assert "activeTab === \"home\"" in app
-    assert "activeTab === \"tasks\"" in app
-    assert "activeTab === \"app\"" in app
-    assert "activeTab === \"settings\"" in app
+    assert "currentTab === \"home\"" in app
+    assert "currentTab === \"tasks\"" in app
+    assert "currentTab === \"app\"" in app
+    assert "currentTab === \"settings\"" in app
 
     assert (root / "components/layout/BottomNav.tsx").exists()
     assert (root / "components/layout/Sheet.tsx").exists()
@@ -155,6 +155,42 @@ def test_frontend_v17_design_system_and_shell_exist() -> None:
     assert (root / "components/common/EmptyState.tsx").exists()
     assert (root / "components/common/ErrorSheet.tsx").exists()
     assert (root / "components/common/RecoveryCard.tsx").exists()
+
+
+def test_frontend_v17_api_client_and_state_exist() -> None:
+    root = Path("frontend/src")
+    types = (root / "api/types.ts").read_text(encoding="utf-8")
+    assert "export type Project" in types
+    assert "export type Runner" in types
+    assert "export type Task" in types
+    assert "export type TaskTemplate" in types
+    assert "export type AppThread" in types
+    assert "export type AppTurn" in types
+    assert "export type BridgeHealth" in types
+
+    client = (root / "api/client.ts").read_text(encoding="utf-8")
+    assert '"X-API-Token"' in client
+    assert '"Content-Type"' in client
+    assert "application/json" in client
+    assert "fetch(path" in client
+
+    assert (root / "api/tasks.ts").exists()
+    assert (root / "api/appThreads.ts").exists()
+    assert (root / "api/runners.ts").exists()
+    assert (root / "api/projects.ts").exists()
+
+    storage = (root / "state/storage.ts").read_text(encoding="utf-8")
+    assert 'API_TOKEN_KEY = "apiToken"' in storage
+    assert 'activeTab: "mobile.activeTab"' in storage
+    assert 'taskStatusFilter: "mobile.taskStatusFilter"' in storage
+    assert 'appThreadStatusFilter: "mobile.appThreadStatusFilter"' in storage
+    assert 'appIncludeArchived: "mobile.appIncludeArchived"' in storage
+    assert 'selectedAppThreadId: "mobile.selectedAppThreadId"' in storage
+    assert 'appSendMode: "mobile.appSendMode"' in storage
+
+    assert (root / "hooks/useLocalStorage.ts").exists()
+    assert (root / "hooks/useToast.ts").exists()
+    assert (root / "hooks/usePolling.ts").exists()
 
 
 def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:

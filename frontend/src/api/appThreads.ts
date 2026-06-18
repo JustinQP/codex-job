@@ -1,0 +1,98 @@
+import { apiRequest } from "./client";
+import type {
+  AppThread,
+  AppThreadCleanup,
+  AppThreadEvents,
+  AppThreadFinal,
+  AppTurn,
+  AppTurnRecovery,
+  BridgeHealth
+} from "./types";
+
+export type ListAppThreadsOptions = {
+  limit?: number;
+  status?: string;
+  includeArchived?: boolean;
+};
+
+export function getBridgeHealth() {
+  return apiRequest<BridgeHealth>("/app-server-bridge/health");
+}
+
+export function listAppThreads(options: ListAppThreadsOptions = {}) {
+  const params = new URLSearchParams({ limit: String(options.limit ?? 20) });
+  if (options.status) params.set("status", options.status);
+  if (options.includeArchived) params.set("include_archived", "true");
+  return apiRequest<AppThread[]>(`/app-threads?${params.toString()}`);
+}
+
+export function createAppThread(projectId: number, title?: string) {
+  return apiRequest<AppThread>("/app-threads", {
+    method: "POST",
+    json: { project_id: projectId, title: title || undefined }
+  });
+}
+
+export function getAppThread(threadId: number) {
+  return apiRequest<AppThread>(`/app-threads/${threadId}`);
+}
+
+export function updateAppThreadTitle(threadId: number, title: string) {
+  return apiRequest<AppThread>(`/app-threads/${threadId}`, {
+    method: "PATCH",
+    json: { title }
+  });
+}
+
+export function closeAppThread(threadId: number) {
+  return apiRequest<AppThread>(`/app-threads/${threadId}`, { method: "DELETE" });
+}
+
+export function reopenAppThread(threadId: number) {
+  return apiRequest<AppThread>(`/app-threads/${threadId}/reopen`, { method: "POST" });
+}
+
+export function listAppTurns(threadId: number) {
+  return apiRequest<AppTurn[]>(`/app-threads/${threadId}/turns`);
+}
+
+export function sendAppTurn(threadId: number, message: string) {
+  return apiRequest<AppTurn>(`/app-threads/${threadId}/turns`, {
+    method: "POST",
+    json: { message }
+  });
+}
+
+export function sendAsyncAppTurn(threadId: number, message: string) {
+  return apiRequest<AppTurn>(`/app-threads/${threadId}/turns/async`, {
+    method: "POST",
+    json: { message }
+  });
+}
+
+export function getAppTurn(turnId: number) {
+  return apiRequest<AppTurn>(`/app-turns/${turnId}`);
+}
+
+export function cancelAppTurn(turnId: number) {
+  return apiRequest<AppTurn>(`/app-turns/${turnId}/cancel`, { method: "POST" });
+}
+
+export function getAppThreadFinal(threadId: number) {
+  return apiRequest<AppThreadFinal>(`/app-threads/${threadId}/final`);
+}
+
+export function getAppThreadEvents(threadId: number) {
+  return apiRequest<AppThreadEvents>(`/app-threads/${threadId}/events`);
+}
+
+export function recoverStaleAppTurns() {
+  return apiRequest<AppTurnRecovery>("/app-turns/recover-stale", { method: "POST" });
+}
+
+export function cleanupAppThreads(status: string, limit = 50) {
+  return apiRequest<AppThreadCleanup>("/app-threads/cleanup", {
+    method: "POST",
+    json: { status, limit }
+  });
+}
