@@ -9,6 +9,9 @@ data/*
 
 .env
 
+frontend/node_modules/
+frontend/dist/
+
 app-server-schema/
 
 poc/app_server/schema/*

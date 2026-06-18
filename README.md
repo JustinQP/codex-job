@@ -4,6 +4,8 @@
 
 Mobile UI 当前迭代：v1.2
 
+
+Mobile Frontend current iteration: v1.7.0. Added `frontend/` Vite + React + TypeScript skeleton; `/mobile` serves `frontend/dist/index.html` first.
 定位：Codex Remote Runner + App Server Sidecar 本地控制台
 
 ## 1. 项目定位
@@ -104,6 +106,22 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```text
 http://127.0.0.1:8000/mobile
 ```
+
+If `/mobile` is opened before the frontend is built, the backend returns a clear build-missing page. Build with:
+```powershell
+cd frontend
+npm install
+npm run build
+```
+
+For frontend development, run the Vite dev server separately:
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+v1.7.0 only wires the frontend build and FastAPI hosting path. Full task and App Server session pages will be migrated in later v1.7.x steps.
 
 ## 4. 主线 Runner/codex exec 任务链路
 

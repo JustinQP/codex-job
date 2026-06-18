@@ -8,7 +8,8 @@ from urllib.parse import parse_qs
 from typing import Iterable
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 
 from backend.db import JOBS_DIR, engine, get_session, init_db
@@ -42,7 +43,13 @@ from backend.schemas import (
 )
 from backend.services import app_thread_service, project_service, runner_service, task_service
 from backend.services.app_server_bridge_client import AppServerBridgeError, get_default_client
-from backend import mobile, ui
+from backend import ui
+
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
+FRONTEND_INDEX_HTML = FRONTEND_DIST_DIR / "index.html"
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 
 
 @asynccontextmanager
@@ -61,6 +68,11 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.mount(
+    "/assets",
+    StaticFiles(directory=FRONTEND_ASSETS_DIR, check_dir=False),
+    name="frontend_assets",
+)
 
 
 def require_api_token(x_api_token: str | None = Header(default=None)) -> None:
@@ -72,6 +84,54 @@ def require_api_token(x_api_token: str | None = Header(default=None)) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid API token",
         )
+
+
+def frontend_build_missing_page() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frontend build not found</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f3f5f8;
+      color: #172033;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(92vw, 680px);
+      padding: 24px;
+      border: 1px solid #d8dee8;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 10px 28px rgb(15 23 42 / 8%);
+    }
+    h1 { margin-top: 0; font-size: 24px; }
+    p { color: #526070; line-height: 1.55; }
+    pre {
+      overflow-x: auto;
+      padding: 12px;
+      border-radius: 10px;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Frontend build not found.</h1>
+    <p>The /mobile page is now served from frontend/dist. Build the frontend first:</p>
+    <pre>cd frontend
+npm install
+npm run build</pre>
+  </main>
+</body>
+</html>"""
 
 
 @app.get("/", include_in_schema=False)
@@ -122,8 +182,10 @@ def app_server_bridge_health(_: None = Depends(require_api_token)):
 
 
 @app.get("/mobile", include_in_schema=False)
-def mobile_console() -> HTMLResponse:
-    return HTMLResponse(mobile.mobile_console())
+def mobile_console():
+    if FRONTEND_INDEX_HTML.exists():
+        return FileResponse(FRONTEND_INDEX_HTML)
+    return HTMLResponse(frontend_build_missing_page())
 
 
 @app.get("/app-threads", response_model=list[AppThreadRead])

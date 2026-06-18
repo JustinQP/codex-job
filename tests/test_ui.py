@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
-from backend import ui
+from backend import main as backend_main
+from backend import mobile, ui
 from backend.db import get_session
 from backend.main import app
 from backend.models import Project, Task, TaskStatus, utc_now
@@ -75,23 +77,56 @@ def test_dashboard_renders_projects_and_tasks() -> None:
         assert f"/ui/tasks/{task.id}" in response.text
 
 
-def test_mobile_console_is_public_static_page() -> None:
+def test_mobile_console_returns_build_missing_page_when_dist_absent(monkeypatch) -> None:
+    monkeypatch.setattr(
+        backend_main,
+        "FRONTEND_INDEX_HTML",
+        Path("missing-frontend-dist-index.html"),
+    )
+    for client, session in make_client():
+        del session
+        response = client.get("/mobile")
+
+        assert response.status_code == 200
+        assert "Frontend build not found." in response.text
+        assert "cd frontend" in response.text
+        assert "npm install" in response.text
+        assert "npm run build" in response.text
+
+
+def test_mobile_console_returns_frontend_dist_index_when_present(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    index_html = tmp_path / "frontend" / "dist" / "index.html"
+    index_html.parent.mkdir(parents=True)
+    index_html.write_text(
+        '<!doctype html><html><body><div id="root">Codex Mobile Console</div></body></html>',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(backend_main, "FRONTEND_INDEX_HTML", index_html)
+
     for client, session in make_client():
         del session
         response = client.get("/mobile")
 
         assert response.status_code == 200
         assert "Codex Mobile Console" in response.text
-        assert "localStorage" in response.text
+        assert "Frontend build not found." not in response.text
+
+
+def test_mobile_console_assets_mount_is_configured() -> None:
+    routes = {getattr(route, "path", ""): route for route in backend_main.app.routes}
+
+    assert "/assets" in routes
+    assert backend_main.FRONTEND_ASSETS_DIR == backend_main.FRONTEND_DIST_DIR / "assets"
 
 
 def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:
     for client, session in make_client():
-        del session
-        response = client.get("/mobile")
+        del client, session
+        html = mobile.mobile_console()
 
-        assert response.status_code == 200
-        html = response.text
         assert "function escapeHtml(value)" in html
         assert 'replaceAll("<", "&lt;")' in html
         assert "${escapeHtml(p.name)}" in html
@@ -112,11 +147,8 @@ def test_mobile_console_escapes_inner_html_dynamic_fields() -> None:
 
 def test_mobile_console_contains_app_server_session_block() -> None:
     for client, session in make_client():
-        del session
-        response = client.get("/mobile")
-
-        assert response.status_code == 200
-        html = response.text
+        del client, session
+        html = mobile.mobile_console()
         assert "开始一次 Codex 会话" in html
         assert "选择或新建会话后即可发送消息" in html
         assert 'class="bottom-nav"' in html
