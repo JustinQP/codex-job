@@ -117,7 +117,8 @@ def test_mobile_console_contains_app_server_session_block() -> None:
 
         assert response.status_code == 200
         html = response.text
-        assert "App Server 会话" in html
+        assert "开始一次 Codex 会话" in html
+        assert "选择或新建会话后，就可以连续发送消息。" in html
         assert 'class="bottom-nav"' in html
         assert 'data-tab="home"' in html
         assert 'data-tab="tasks"' in html
@@ -215,7 +216,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "没有匹配任务" in html
         assert "还没有 App 会话" in html
         assert "暂无 AppThread" in html
-        assert "暂无 AppTurn" in html
+        assert "还没有消息" in html
         assert "<h2>任务</h2>" in html
         assert 'id="taskStatusFilter"' in html
         assert 'id="taskStatusSegments"' in html
@@ -251,11 +252,15 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'id="taskPreview"' in html
         assert "<summary>高级参数</summary>" in html
         assert "<summary>调试输出</summary>" in html
-        assert 'class="page-header card app-current-card"' in html
+        assert 'class="page-header card app-current-card session-header"' in html
+        assert 'class="page-body card app-main-panel message-list"' in html
         assert '<summary>AppThread 列表</summary>' not in html
         assert '<summary>事件摘要</summary>' in html
         assert 'class="app-hidden-state"' in html
-        assert 'class="page-footer card app-composer"' in html
+        assert 'class="page-footer card app-composer session-composer"' in html
+        assert "session-header" in html
+        assert "message-list" in html
+        assert "session-composer" in html
         assert 'id="appMessageHint"' in html
         assert 'id="appMessageCount"' in html
         assert ".composer-meta" in html
@@ -269,8 +274,11 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "快速发送" in html
         assert "等待回复" in html
         assert "正在等待回复，可以继续编辑，但暂时不能发送" in html
-        assert 'class="chat-list"' in html
+        assert 'class="chat-list message-flow"' in html
         assert "切换会话" in html
+        assert "选择已有" in html
+        assert "快速新建" in html
+        assert "最近会话" in html
         assert "会话更多" in html
         assert "function renderAppThreadSwitcherSheet()" in html
         assert "async function showAppThreadSwitcher()" in html
@@ -289,32 +297,45 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "function renderAppTurnConversation(turn)" in html
         assert "function selectAppTurn(turnId)" in html
         assert "function copyTurnMessageToComposer(turnId)" in html
+        assert "function showTurnErrorSheet(turnId)" in html
+        assert "function toggleTurnExpanded(turnId)" in html
+        assert "function recoveryAdviceForTurn(turn)" in html
+        assert "function scrollAppMessagesToBottom(force = false)" in html
         assert "function resumeActiveAppTurnPolling()" in html
         assert "let appTurnPollTargetId = null" in html
         assert "if (appTurnPollTimer && appTurnPollTargetId === turnId) return;" in html
         assert "let appTurnsCache = []" in html
+        assert "let expandedAppTurnIds = new Set()" in html
         assert ".bubble-row.user" in html
         assert ".bubble-row.assistant" in html
         assert ".bubble.assistant.running" in html
         assert ".bubble.assistant.failed" in html
+        assert ".assistant-message.collapsed" in html
         assert ".bubble-detail-hint" in html
         assert "点击查看详情" in html
         assert "这次回复失败" in html
         assert "复制重试" in html
+        assert "查看错误" in html
+        assert "展开全文" in html
+        assert "收起" in html
         assert "失败恢复" in html
         assert "重开会话" in html
         assert ".app-composer" in html
         assert "检查 App Server Bridge" in html
         assert "appOutput" in html
-        assert "查看 App Final" in html
+        assert "查看最终回复" in html
         assert "查看事件摘要" in html
         assert ">重开</button>" in html
-        assert ">关闭</button>" in html
+        assert ">关闭会话</button>" in html
         assert ">发送</button>" in html
-        assert "刷新当前 Turn" in html
+        assert "刷新当前回复" in html
         assert "取消当前 Turn" in html
         assert "恢复卡住 turn" in html
-        assert "Thread 状态筛选" in html
+        assert "状态筛选" in html
+        assert "常用" in html
+        assert "会话管理" in html
+        assert "调试与维护" in html
+        assert "清理归档" in html
         assert "清理 CLOSED" in html
         assert "清理 ERROR" in html
         assert "显示 archived" in html
@@ -323,8 +344,8 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "appEventsSummary" in html
         assert "CANCELLED" in html
         assert "正在等待 App Server 返回" in html
-        assert "当前 App Thread 已关闭" in html
-        assert "item selected" in html
+        assert "当前会话已关闭，请重开后继续" in html
+        assert "item list-card thread-card selected" in html
         assert ".badge.active" in html
         assert ".badge.success" in html
         assert ".badge.pending" in html

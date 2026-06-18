@@ -480,7 +480,8 @@ def mobile_styles() -> str:
     .badge.error, .badge.failed { background: var(--error-bg); color: var(--error-text); }
     .badge.closed, .badge.cancelled { background: var(--closed-bg); color: var(--closed-text); }
     .badge.warning { background: var(--warning-bg); color: var(--warning-text); }
-    .app-current-card {
+    .app-current-card,
+    .session-header {
       position: sticky;
       top: 62px;
       z-index: 1;
@@ -503,6 +504,9 @@ def mobile_styles() -> str:
       font-size: 17px;
       font-weight: 750;
       margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .app-current-meta {
       display: flex;
@@ -554,6 +558,20 @@ def mobile_styles() -> str:
     .app-main-panel {
       display: grid;
       gap: 10px;
+      min-height: 220px;
+    }
+    .message-list {
+      align-content: start;
+    }
+    .inline-turn-status:empty {
+      display: none;
+    }
+    .inline-turn-status {
+      padding: 8px 10px;
+      border-radius: var(--radius-md);
+      background: var(--info-bg);
+      color: var(--info-text);
+      font-size: 13px;
     }
     .app-hidden-state {
       display: none;
@@ -561,6 +579,9 @@ def mobile_styles() -> str:
     .chat-list {
       display: grid;
       gap: 12px;
+    }
+    .message-flow {
+      scroll-margin-bottom: 180px;
     }
     .chat-turn {
       display: grid;
@@ -625,14 +646,34 @@ def mobile_styles() -> str:
       color: var(--muted);
       font-size: 11px;
     }
+    .assistant-message {
+      display: block;
+    }
+    .assistant-message.collapsed {
+      max-height: 19.5em;
+      overflow: hidden;
+    }
+    .bubble-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .bubble-action-row button {
+      width: auto;
+      min-height: 34px;
+      padding: 6px 10px;
+    }
     .loading-card {
+      display: grid;
+      gap: 4px;
       margin: 6px 0;
       border-radius: 8px;
       padding: 8px;
       background: rgba(37, 99, 235, 0.1);
       color: var(--info-text);
-      font-weight: 700;
     }
+    .loading-card strong { font-weight: 750; }
     .app-composer {
       position: sticky;
       bottom: 64px;
@@ -640,6 +681,10 @@ def mobile_styles() -> str:
       box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
     }
     .app-composer textarea { min-height: 96px; }
+    .session-composer {
+      display: grid;
+      gap: 8px;
+    }
     .composer-meta {
       display: flex;
       justify-content: space-between;
@@ -677,6 +722,27 @@ def mobile_styles() -> str:
       gap: 6px;
       font-size: 13px;
       word-break: break-word;
+    }
+    .session-switch-sheet,
+    .session-more-sheet {
+      display: grid;
+      gap: 10px;
+    }
+    .thread-card {
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .thread-card.selected {
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+    .thread-card.closed,
+    .thread-card.error {
+      opacity: 0.78;
+    }
+    .thread-card-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     details {
       border: 1px solid var(--border);
@@ -804,17 +870,17 @@ def mobile_tasks_tab() -> str:
 
 def mobile_app_tab() -> str:
     return """  <section id="tab-app" class="tab-page page app-console" data-tab-page="app">
-    <div class="page-header card app-current-card">
+    <div class="page-header card app-current-card session-header">
       <div id="appThreadCurrent" class="detail-card">当前 App Thread: 未选择</div>
     </div>
 
-    <div class="page-body card app-main-panel">
-      <div id="appTurnStatus" class="detail-card app-hidden-state"></div>
-      <div id="appTurns" class="chat-list"></div>
+    <div class="page-body card app-main-panel message-list">
+      <div id="appTurnStatus" class="inline-turn-status"></div>
+      <div id="appTurns" class="chat-list message-flow"></div>
     </div>
 
-    <div class="page-footer card app-composer">
-      <label>发送消息 <textarea id="appMessage" placeholder="发送到当前 App Thread 的消息"></textarea></label>
+    <div class="page-footer card app-composer session-composer">
+      <label>发送消息 <textarea id="appMessage" placeholder="输入消息，发送到当前会话"></textarea></label>
       <div class="composer-meta">
         <span id="appMessageHint">请选择会话后发送消息</span>
         <span id="appMessageCount">0 字</span>
@@ -999,6 +1065,7 @@ let taskAutoRefreshTimer = null;
 let taskAutoRefreshWarningShown = false;
 let appThreadsCache = [];
 let appTurnsCache = [];
+let expandedAppTurnIds = new Set();
 let homeAppThreadsCache = [];
 let tasksCache = [];
 let projectsCache = [];
@@ -1877,30 +1944,30 @@ function updateSelectedAppThreadDisplay() {
       <div class="app-session-header">
         <div class="app-session-title-row">
           <div>
-            <div class="app-current-title">还没有会话</div>
-            <span class="muted">创建一个 App Server 会话，开始连续对话。</span>
+            <div class="app-current-title">开始一次 Codex 会话</div>
+            <span class="muted">选择或新建会话后，就可以连续发送消息。</span>
           </div>
           ${statusBadge("WARNING")}
         </div>
         <div class="app-session-actions">
           <button class="btn-primary" onclick="showAppThreadSwitcher()">新建会话</button>
-          <button class="btn-secondary" onclick="showAppThreadSwitcher()">切换已有会话</button>
+          <button class="btn-secondary" onclick="showAppThreadSwitcher()">选择已有</button>
           <button class="ghost" onclick="showAppSessionMore()" disabled>更多</button>
         </div>
       </div>`;
     updateAppActionState();
     return;
   }
-  const title = selectedAppThread ? selectedAppThread.title : "";
+  const title = selectedAppThread ? appThreadTitle(selectedAppThread) : "";
   const status = selectedAppThread ? selectedAppThread.status : "";
   const missingHint = selectedAppThreadMissingFromList
     ? `<span class="muted">当前会话不在当前筛选结果中</span>`
-    : `<span class="muted">当前会话</span>`;
+    : `<span class="muted">${escapeHtml(appThreadSubtitle(selectedAppThread))}</span>`;
   target.innerHTML = `
     <div class="app-session-header">
       <div class="app-session-title-row">
         <div>
-          <div class="app-current-title">${escapeHtml(title || "App Thread")}</div>
+          <div class="app-current-title" title="${escapeHtml(title)}">${escapeHtml(title || "当前会话")}</div>
           ${missingHint}
         </div>
         ${statusBadge(status)}
@@ -1922,29 +1989,28 @@ function projectOptionsHtml() {
 
 function renderAppThreadSwitcherSheet() {
   openSheet("切换会话", `
-    <div class="task-detail-sheet">
-      <div class="detail-section">
-        <h3>新建会话</h3>
+    <div class="session-switch-sheet">
+      <div class="detail-card">
+        <h3>快速新建</h3>
         <label>项目 <select id="appThreadProject">${projectOptionsHtml()}</select></label>
-        <label>App Thread 标题 <input id="appThreadTitleInput" placeholder="App Thread 标题"></label>
+        <label>会话标题 <input id="appThreadTitleInput" placeholder="例如：代码审查 / 今日计划"></label>
         <button id="appCreateThreadFromSheet">新建会话</button>
       </div>
-      <div class="detail-section">
+      <div class="detail-card">
         <h3>最近会话</h3>
-        <div class="thread-list-tools">
-          <div class="row">
-            <label>Thread 状态筛选
-              <select id="appThreadStatusFilterSheet">
-                <option value="">全部</option>
-                <option value="ACTIVE">ACTIVE</option>
-                <option value="ERROR">ERROR</option>
-                <option value="CLOSED">CLOSED</option>
-              </select>
-            </label>
-            <label class="inline"><input id="appIncludeArchivedSheet" type="checkbox"> 显示 archived</label>
-          </div>
-          <button id="refreshAppThreadsFromSheet" class="secondary">刷新会话列表</button>
-        </div>
+        <details class="thread-list-tools">
+          <summary>筛选</summary>
+          <label>状态筛选
+            <select id="appThreadStatusFilterSheet">
+              <option value="">全部</option>
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="ERROR">ERROR</option>
+              <option value="CLOSED">CLOSED</option>
+            </select>
+          </label>
+          <label class="inline"><input id="appIncludeArchivedSheet" type="checkbox"> 显示 archived</label>
+        </details>
+        <button id="refreshAppThreadsFromSheet" class="secondary">刷新会话列表</button>
         <div id="appThreadsSheet" class="stack"></div>
       </div>
     </div>`);
@@ -1982,53 +2048,48 @@ async function showAppThreadSwitcher() {
 }
 
 function showAppSessionMore() {
-  const title = selectedAppThread ? selectedAppThread.title : "App Thread";
+  const title = selectedAppThread ? appThreadTitle(selectedAppThread) : "当前会话";
   openSheet("会话更多", `
-    <div class="task-detail-sheet">
+    <div class="session-more-sheet">
       <div class="detail-card">
-        <h3>${escapeHtml(title || "App Thread")}</h3>
+        <h3>${escapeHtml(title || "当前会话")}</h3>
         <div id="appSessionMoreStatus">
           ${selectedAppThread ? statusBadge(selectedAppThread.status) : `<span class="muted">未选择会话</span>`}
         </div>
       </div>
       <div class="detail-card">
-        <h3>会话操作</h3>
+        <h3>常用</h3>
         <div class="task-actions">
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', async () => { await loadAppTurns(); showToast('Turns 已刷新', 'success'); })">刷新会话</button>
           <button class="secondary" onclick="showAppFinalSheet(this)">查看最终回复</button>
-          <button class="secondary" onclick="withButtonLoading(this, '处理中...', refreshCurrentAppTurn)">刷新当前 Turn</button>
+          <button class="secondary" onclick="showAppThreadSwitcher()">切换会话</button>
         </div>
       </div>
       <div class="detail-card">
         <h3>会话管理</h3>
         <div class="task-actions">
-          <button class="secondary" onclick="showAppThreadSwitcher()">切换会话</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', reopenAppThread)">重开</button>
+          <button class="danger" onclick="withButtonLoading(this, '处理中...', closeAppThread)">关闭会话</button>
+          <button class="danger" onclick="withButtonLoading(this, '处理中...', cancelCurrentAppTurn)">取消当前 Turn</button>
+          <button class="secondary" onclick="withButtonLoading(this, '处理中...', refreshCurrentAppTurn)">刷新当前回复</button>
         </div>
       </div>
       <details class="detail-card">
-        <summary>调试详情</summary>
+        <summary>调试与维护</summary>
         <div class="task-actions">
           <button class="secondary" onclick="showAppEventsSheet(this)">查看事件摘要</button>
           <button class="secondary" onclick="showAppDebugSheet()">调试输出</button>
+          <button class="secondary" onclick="withButtonLoading(this, '处理中...', checkAppServerBridge)">检查 App Server Bridge</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', recoverStaleAppTurns)">恢复卡住 turn</button>
         </div>
       </details>
       <details class="detail-card">
-        <summary>Bridge 与清理</summary>
+        <summary>清理归档</summary>
         <div class="task-actions">
-          <button class="secondary" onclick="withButtonLoading(this, '处理中...', checkAppServerBridge)">检查 App Server Bridge</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', () => cleanupAppThreads('CLOSED'))">清理 CLOSED</button>
           <button class="secondary" onclick="withButtonLoading(this, '处理中...', () => cleanupAppThreads('ERROR'))">清理 ERROR</button>
         </div>
       </details>
-      <div class="detail-card">
-        <h3>危险操作</h3>
-        <div class="task-actions">
-          <button class="danger" onclick="withButtonLoading(this, '处理中...', cancelCurrentAppTurn)">取消当前 Turn</button>
-          <button class="danger" onclick="withButtonLoading(this, '处理中...', closeAppThread)">关闭会话</button>
-        </div>
-      </div>
     </div>`);
 }
 
@@ -2036,6 +2097,65 @@ function shortText(value, maxLength = 180) {
   const text = String(value || "");
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength)}...`;
+}
+
+function appThreadTitle(thread) {
+  if (!thread) return "";
+  const title = String(thread.title || "").trim();
+  return title || `未命名会话 #${thread.id}`;
+}
+
+function appThreadShortId(thread) {
+  if (!thread || thread.id === undefined || thread.id === null) return "";
+  return `#${String(thread.id).slice(0, 8)}`;
+}
+
+function appThreadSubtitle(thread) {
+  if (!thread) return "";
+  const parts = [
+    `状态 ${normalizedStatus(thread.status) || "UNKNOWN"}`,
+    `${Number(thread.turn_count || 0)} 轮`,
+  ];
+  if (thread.updated_at) parts.push(`更新 ${thread.updated_at}`);
+  return parts.join(" · ");
+}
+
+function runningTurnLabel(turn) {
+  const status = normalizedStatus(turn.status);
+  if (status === "PENDING") return "正在思考";
+  if (status === "RUNNING") return "正在执行";
+  return "正在等待回复";
+}
+
+function turnDurationText(turn) {
+  return turn && turn.duration_seconds !== undefined && turn.duration_seconds !== null && turn.duration_seconds !== ""
+    ? `已等待 ${turn.duration_seconds} 秒`
+    : "等待 App Server 返回";
+}
+
+function recoveryAdviceForTurn(turn) {
+  const text = errorText(turn ? turn.error_message || turn.assistant_final || "" : "");
+  const info = classifyError(text);
+  const adviceMap = {
+    stale_bridge_thread: "Bridge 重启后旧会话已失效，建议重开会话。",
+    turn_conflict: "已有回复正在运行，先刷新或取消当前回复。",
+    bridge_unavailable: "Bridge sidecar 可能未启动，建议查看启动提示。",
+    token_invalid: "Token 无效，请到「我的」页保存 Token。",
+    app_thread_closed: "当前会话已关闭，重开后再继续。",
+  };
+  return {
+    ...info,
+    advice: adviceMap[info.code] || "可以查看错误详情，复制上一条消息后重新发送。",
+  };
+}
+
+function scrollAppMessagesToBottom(force = false) {
+  const target = document.getElementById("appTurns");
+  if (!target) return;
+  const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 96;
+  if (force || nearBottom) {
+    requestAnimationFrame(() => target.scrollIntoView({block: "end"}));
+  }
 }
 
 function taskTitleLine(task) {
@@ -2121,19 +2241,20 @@ function updateAppComposerState() {
   const hasThread = Boolean(selectedAppThreadId);
   const hasRunningTurn = appTurnsCache.some(turn => ["PENDING", "RUNNING"].includes(normalizedStatus(turn.status)));
   const modeText = selectedSendMode() === "async" ? "快速发送" : "等待回复";
+  const modeHint = selectedSendMode() === "async" ? "快速发送，后台等待回复" : "等待回复，完成后返回";
   if (modeLabel) modeLabel.textContent = modeText;
   if (count) count.textContent = `${rawMessage.length} 字`;
   if (hint) {
     if (!hasThread) {
       hint.textContent = "请先新建或选择会话";
     } else if (status === "CLOSED") {
-      hint.textContent = "当前会话已关闭，请先重开";
+      hint.textContent = "当前会话已关闭，请重开后继续";
     } else if (hasRunningTurn) {
       hint.textContent = "正在等待回复，可以继续编辑，但暂时不能发送";
     } else if (!message) {
       hint.textContent = "输入消息后即可发送";
     } else {
-      hint.textContent = selectedSendMode() === "async" ? "快速发送，后台等待回复" : "等待回复，完成后返回";
+      hint.textContent = modeHint;
     }
   }
   if (unifiedSendButton) unifiedSendButton.disabled = !hasThread || status === "CLOSED" || !message || hasRunningTurn;
@@ -2145,14 +2266,14 @@ function renderAppTurnStatus(turn) {
   const isRunning = ["PENDING", "RUNNING"].includes(status);
   const message = turn.assistant_final || turn.error_message || "";
   const messageHtml = message
-    ? `<span>${escapeHtml(message)}</span>`
+    ? `<span>${escapeHtml(shortText(message, 120))}</span>`
     : `<span class="muted">等待 assistant_final</span>`;
   document.getElementById("appTurnStatus").innerHTML = `
     <div class="${isRunning ? "inline-status-bar" : ""}">
-      <span>当前回复 #${escapeHtml(turn.id)} ${statusBadge(turn.status)}</span>
+      <span>${isRunning ? escapeHtml(runningTurnLabel(turn)) : "最近回复"} ${statusBadge(turn.status)}</span>
       ${isRunning ? `<button class="btn-text" onclick="withButtonLoading(this, '处理中...', cancelCurrentAppTurn)">取消当前 Turn</button>` : ""}
     </div>
-    <span class="muted">duration_seconds=${escapeHtml(turn.duration_seconds ?? "")} bridge_turn=${escapeHtml(turn.bridge_turn_id || "")}</span><br>
+    <span class="muted">${escapeHtml(turnDurationText(turn))}</span><br>
     ${messageHtml}`;
   updateAppComposerState();
 }
@@ -2181,10 +2302,15 @@ function renderAppThreads(appThreads) {
     return;
   }
   const html = appThreads.map(t => `
-    <div class="${selectedAppThreadId === t.id ? "item selected" : "item"}">
-      <strong>#${escapeHtml(t.id)}</strong> ${escapeHtml(t.title)}<br>
+    <div class="${selectedAppThreadId === t.id ? "item list-card thread-card selected" : `item list-card thread-card ${escapeHtml(statusClass(t.status))}`}">
+      <div class="task-card-header">
+        <div class="thread-card-title">
+          <strong>${escapeHtml(appThreadTitle(t))}</strong>
+          <span class="muted">${escapeHtml(appThreadShortId(t))}</span>
+        </div>
+        ${statusBadge(t.status)}
+      </div>
       ${String(t.title || "").startsWith("[archived]") ? `<span class="muted">archived</span><br>` : ""}
-      ${statusBadge(t.status)}<br>
       <span class="muted">project=${escapeHtml(t.project_id)} status=${escapeHtml(t.status)} turns=${escapeHtml(t.turn_count)} updated=${escapeHtml(t.updated_at)}</span><br>
       <span>${escapeHtml(shortText(t.latest_assistant_final || "", 160))}</span>
       ${t.last_error ? `<br><span class="muted">last_error=${escapeHtml(t.last_error)}</span>` : ""}
@@ -2297,6 +2423,7 @@ async function sendAppTurn() {
     await loadAppTurns();
     await loadAppFinal();
     renderAppTurnStatus(appTurn);
+    scrollAppMessagesToBottom(true);
     showToast(`App Turn #${appTurn.id} ${appTurn.status}`, "success");
     appLog(`App Turn #${appTurn.id} ${appTurn.status}`);
   } finally {
@@ -2324,6 +2451,7 @@ async function sendAsyncAppTurn() {
     await loadAppThreadList();
     await loadAppTurns();
     renderAppTurnStatus(appTurn);
+    scrollAppMessagesToBottom(true);
     showToast(`已提交 App Turn #${appTurn.id}`, "info");
     appLog(`已提交 App Turn #${appTurn.id}，状态 ${appTurn.status}`);
     startAppTurnPolling(appTurn.id);
@@ -2423,10 +2551,12 @@ async function loadAppTurns() {
   document.getElementById("appTurns").innerHTML = turns.length
     ? turns.map(renderAppTurnConversation).join("")
     : `<div class="empty-state">
-        <strong>暂无 AppTurn</strong>
-        <span>请在底部输入消息后发送，或通过「更多」查看 Bridge 状态。</span>
+        <strong>还没有消息</strong>
+        <span>请在底部输入消息后发送，或通过「更多」查看会话状态。</span>
         <button class="secondary" onclick="document.getElementById('appMessage').focus()">输入消息</button>
       </div>`;
+  scrollAppMessagesToBottom(false);
+  updateAppComposerState();
 }
 
 function resumeActiveAppTurnPolling() {
@@ -2461,6 +2591,23 @@ function copyTurnMessageToComposer(turnId) {
   showToast("已复制上一条消息到输入框", "success");
 }
 
+function showTurnErrorSheet(turnId) {
+  const turn = appTurnsCache.find(item => item.id === turnId);
+  if (!turn) return;
+  showErrorSheet(turn.error_message || turn.assistant_final || "暂无错误详情", "turn_detail");
+}
+
+function toggleTurnExpanded(turnId) {
+  if (expandedAppTurnIds.has(turnId)) {
+    expandedAppTurnIds.delete(turnId);
+  } else {
+    expandedAppTurnIds.add(turnId);
+  }
+  document.getElementById("appTurns").innerHTML = appTurnsCache.length
+    ? appTurnsCache.map(renderAppTurnConversation).join("")
+    : document.getElementById("appTurns").innerHTML;
+}
+
 function renderAppTurnConversation(turn) {
   const status = normalizedStatus(turn.status);
   const pending = ["PENDING", "RUNNING"].includes(status);
@@ -2468,13 +2615,17 @@ function renderAppTurnConversation(turn) {
   const cancelled = status === "CANCELLED";
   const assistantText = turn.assistant_final || turn.error_message || "";
   const assistantFallback = pending
-    ? APP_WAITING_TEXT
+    ? runningTurnLabel(turn)
     : cancelled
       ? "App Turn 已取消。"
       : failed
         ? "App Turn 失败，暂无错误详情。"
         : "暂无 assistant_final";
   const assistantBody = assistantText || assistantFallback;
+  const expanded = expandedAppTurnIds.has(turn.id);
+  const longAssistant = assistantBody.length > 1000;
+  const visibleAssistant = longAssistant && !expanded ? assistantBody.slice(0, 1000) : assistantBody;
+  const recovery = failed ? recoveryAdviceForTurn(turn) : null;
   return `
     <div class="chat-turn">
       <div class="bubble-row user">
@@ -2487,17 +2638,32 @@ function renderAppTurnConversation(turn) {
         <div class="bubble assistant ${escapeHtml(statusClass(turn.status))}" onclick="selectAppTurn(${escapeHtml(turn.id)})">
           <div class="turn-meta">
             ${statusBadge(turn.status)}
-            <span class="muted">duration_seconds=${escapeHtml(turn.duration_seconds ?? "")}</span>
+            <span class="muted">${escapeHtml(turnDurationText(turn))}</span>
           </div>
-          ${pending ? `<div class="loading-card">${escapeHtml(APP_WAITING_TEXT)}</div>` : ""}
-          ${escapeHtml(assistantBody)}
+          ${pending ? `
+            <div class="loading-card">
+              <strong>${escapeHtml(runningTurnLabel(turn))}</strong>
+              <span>${escapeHtml(APP_WAITING_TEXT)}</span>
+              <span class="muted">${escapeHtml(turnDurationText(turn))}</span>
+              <div class="bubble-action-row">
+                <button class="btn-secondary" onclick="event.stopPropagation(); withButtonLoading(this, '处理中...', cancelCurrentAppTurn)">取消当前 Turn</button>
+              </div>
+            </div>` : ""}
+          <span class="${longAssistant && !expanded ? "assistant-message collapsed" : "assistant-message"}">${escapeHtml(visibleAssistant)}</span>
+          ${longAssistant ? `
+            <div class="bubble-action-row">
+              <button class="btn-secondary" onclick="event.stopPropagation(); toggleTurnExpanded(${escapeHtml(turn.id)})">${expanded ? "收起" : "展开全文"}</button>
+            </div>` : ""}
           ${failed ? `
             <div class="recovery-card">
               <strong>这次回复失败</strong>
-              <span>可以查看错误、复制上一条消息后重新发送，或重开会话。</span>
+              <span>${escapeHtml(recovery.advice)}</span>
               <div class="task-actions">
-                <button class="btn-secondary" onclick="event.stopPropagation(); selectAppTurn(${escapeHtml(turn.id)})">查看错误</button>
+                <button class="btn-secondary" onclick="event.stopPropagation(); showTurnErrorSheet(${escapeHtml(turn.id)})">查看错误</button>
                 <button class="btn-secondary" onclick="event.stopPropagation(); copyTurnMessageToComposer(${escapeHtml(turn.id)})">复制重试</button>
+                ${recovery.primaryAction === "open_bridge_help" ? `<button class="btn-secondary" onclick="event.stopPropagation(); showBridgeHelpSheet()">查看启动提示</button>` : ""}
+                ${recovery.primaryAction === "open_settings_token" ? `<button class="btn-secondary" onclick="event.stopPropagation(); switchTab('settings')">去我的页保存 Token</button>` : ""}
+                ${recovery.primaryAction === "refresh_current_turn" ? `<button class="btn-secondary" onclick="event.stopPropagation(); withButtonLoading(this, '处理中...', refreshCurrentAppTurn)">刷新当前回复</button>` : ""}
                 <button class="btn-danger" onclick="event.stopPropagation(); withButtonLoading(this, '处理中...', reopenAppThread)">重开会话</button>
               </div>
             </div>` : ""}
@@ -2509,6 +2675,7 @@ function renderAppTurnConversation(turn) {
 
 function showAppTurnDetailSheet(turn) {
   selectedAppTurnId = turn.id;
+  const recovery = recoveryAdviceForTurn(turn);
   openSheet(`回复 #${turn.id}`, `
     <div class="task-detail-sheet">
       <div class="detail-card">
@@ -2524,9 +2691,12 @@ function showAppTurnDetailSheet(turn) {
       ${["FAILED", "ERROR"].includes(normalizedStatus(turn.status)) ? `
         <div class="recovery-card">
           <strong>失败恢复</strong>
-          <span>可以复制上一条消息后重新发送，或重开当前会话。</span>
+          <span>${escapeHtml(recovery.advice)}</span>
           <div class="task-actions">
             <button class="btn-secondary" onclick="copyTurnMessageToComposer(${escapeHtml(turn.id)}); closeSheet();">复制重试</button>
+            <button class="btn-secondary" onclick="showTurnErrorSheet(${escapeHtml(turn.id)})">查看错误</button>
+            ${recovery.primaryAction === "open_bridge_help" ? `<button class="btn-secondary" onclick="showBridgeHelpSheet()">查看启动提示</button>` : ""}
+            ${recovery.primaryAction === "open_settings_token" ? `<button class="btn-secondary" onclick="switchTab('settings'); closeSheet();">去我的页保存 Token</button>` : ""}
             <button class="btn-danger" onclick="withButtonLoading(this, '处理中...', reopenAppThread)">重开会话</button>
           </div>
         </div>` : ""}
