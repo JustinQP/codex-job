@@ -496,8 +496,8 @@ def mobile_styles() -> str:
       top: auto;
       z-index: 1;
       flex: 0 0 auto;
-      min-height: 54px;
-      padding: 7px 10px;
+      min-height: 48px;
+      padding: 6px 10px;
       border: 0;
       border-bottom: 1px solid var(--border);
       border-radius: 0;
@@ -570,9 +570,9 @@ def mobile_styles() -> str:
     .app-session-actions button {
       width: auto;
       min-width: 0;
-      max-width: 64px;
-      min-height: 34px;
-      padding: 6px 8px;
+      max-width: 58px;
+      min-height: 30px;
+      padding: 5px 7px;
       border-radius: var(--radius-sm);
       font-size: 12px;
     }
@@ -669,7 +669,7 @@ def mobile_styles() -> str:
       cursor: pointer;
     }
     .bubble.user {
-      max-width: 78%;
+      max-width: 76%;
       background: var(--primary);
       color: #fff;
       border-color: var(--primary);
@@ -677,7 +677,7 @@ def mobile_styles() -> str:
     }
     .bubble.user .muted { color: #dbeafe; }
     .bubble.assistant {
-      max-width: 92%;
+      max-width: 94%;
       background: var(--surface);
       border-bottom-left-radius: 4px;
       box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
@@ -829,6 +829,10 @@ def mobile_styles() -> str:
     }
     .message-count {
       white-space: nowrap;
+      opacity: 0.72;
+    }
+    .message-count.empty {
+      display: none;
     }
     .summary-grid {
       display: grid;
@@ -1004,7 +1008,7 @@ def mobile_app_tab() -> str:
       </div>
       <div class="composer-meta">
         <label class="send-mode-toggle send-mode-toggle-hidden"><input id="appSendAsync" type="checkbox" checked> <span id="appSendModeLabel" class="send-mode-label">快速发送</span></label>
-        <span id="appMessageCount" class="message-count">0 字</span>
+        <span id="appMessageCount" class="message-count empty"></span>
       </div>
     </div>
 
@@ -1080,7 +1084,7 @@ def mobile_settings_tab() -> str:
         <h2>关于</h2>
         <div class="item">
         <strong>当前版本</strong><br>
-          <span class="muted">v1.4 mobile design system interaction POC</span>
+          <span class="muted">v1.6 mobile chat viewport POC</span>
       </div>
       <div class="item">
         <strong>Backend 地址</strong><br>
@@ -2224,13 +2228,35 @@ function appThreadShortId(thread) {
   return `#${String(thread.id).slice(0, 8)}`;
 }
 
+function formatRelativeTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const pad = number => String(number).padStart(2, "0");
+  if (diffMs >= 0 && diffMs < minuteMs) return "刚刚";
+  if (diffMs >= 0 && diffMs < hourMs) {
+    return `${Math.max(1, Math.floor(diffMs / minuteMs))} 分钟前`;
+  }
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const sameDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  if (sameDay) return `今天 ${time}`;
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
+}
+
 function appThreadSubtitle(thread) {
   if (!thread) return "";
   const parts = [
     `状态 ${normalizedStatus(thread.status) || "UNKNOWN"}`,
     `${Number(thread.turn_count || 0)} 轮`,
   ];
-  if (thread.updated_at) parts.push(`更新 ${thread.updated_at}`);
+  const updatedAt = formatRelativeTime(thread.updated_at);
+  if (updatedAt) parts.push(`更新 ${updatedAt}`);
   return parts.join(" · ");
 }
 
@@ -2370,7 +2396,10 @@ function updateAppComposerState() {
   const modeHint = selectedSendMode() === "async" ? "快速发送，后台等待回复" : "等待回复，完成后返回";
   if (modeLabel) modeLabel.textContent = modeText;
   if (modeToggle) modeToggle.textContent = modeText;
-  if (count) count.textContent = `${rawMessage.length} 字`;
+  if (count) {
+    count.textContent = rawMessage.length ? `${rawMessage.length} 字` : "";
+    count.classList.toggle("empty", rawMessage.length === 0);
+  }
   if (hint) {
     if (!hasThread) {
       hint.textContent = "请先新建或选择会话";

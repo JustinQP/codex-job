@@ -199,7 +199,7 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert 'class="task-form-sheet"' in html
         assert "floating-action" in html
         assert "普通使用只需要选择项目、Prompt 和任务类型" in html
-        assert "v1.4 mobile design system interaction POC" in html
+        assert "v1.6 mobile chat viewport POC" in html
         assert "--space-1: 4px" in html
         assert "--touch-min: 40px" in html
         assert "summary-card" in html
@@ -268,14 +268,15 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "session-composer" in html
         assert ".session-title-area" in html
         assert ".session-subtitle" in html
-        assert "min-height: 54px" in html
-        assert "max-width: 64px" in html
+        assert "min-height: 48px" in html
+        assert "max-width: 58px" in html
         assert "box-shadow: none" in html
         assert "overflow-y: auto" in html
         assert 'id="appMessageHint"' in html
-        assert 'id="appMessageCount"' in html
+        assert 'id="appMessageCount" class="message-count empty"' in html
         assert 'id="sendModeToggle"' in html
         assert ".composer-meta" in html
+        assert ".message-count.empty" in html
         assert ".composer-status-row" in html
         assert ".composer-input-row" in html
         assert ".send-mode-inline" in html
@@ -289,6 +290,17 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "function autoResizeComposer()" in html
         assert "function toggleAppSendMode()" in html
         assert "document.getElementById(\"sendModeToggle\").onclick = toggleAppSendMode" in html
+        assert "function formatRelativeTime(value)" in html
+        assert 'if (!value) return ""' in html
+        assert 'return "刚刚"' in html
+        assert "分钟前" in html
+        assert "今天 ${time}" in html
+        assert "padStart(2, \"0\")" in html
+        assert "const updatedAt = formatRelativeTime(thread.updated_at)" in html
+        assert "parts.push(`更新 ${updatedAt}`)" in html
+        assert "parts.push(`更新 ${thread.updated_at}`)" not in html
+        assert "count.textContent = rawMessage.length ? `${rawMessage.length} 字` : \"\"" in html
+        assert 'count.classList.toggle("empty", rawMessage.length === 0)' in html
         assert "输入消息后即可发送" in html
         assert "请先新建或选择会话" in html
         assert "快速发送，后台等待回复" in html
@@ -331,6 +343,10 @@ def test_mobile_console_contains_app_server_session_block() -> None:
         assert "let expandedAppTurnIds = new Set()" in html
         assert ".bubble-row.user" in html
         assert ".bubble-row.assistant" in html
+        assert ".bubble.user" in html
+        assert "max-width: 76%" in html
+        assert ".bubble.assistant" in html
+        assert "max-width: 94%" in html
         assert ".bubble.assistant.running" in html
         assert ".bubble.assistant.failed" in html
         assert ".assistant-message.collapsed" in html
