@@ -31,7 +31,7 @@ export function SessionHeader({ onMore, onSwitch, selectedThread }: SessionHeade
   const updated = formatRelativeTime(selectedThread.updated_at);
   return (
     <header className="session-header">
-      <div className="session-header-main">
+      <div className="session-header-main selected">
         <div className="session-title-area">
           <h2 className="session-title">{selectedThread.title}</h2>
           <span className="session-subtitle">

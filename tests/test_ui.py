@@ -258,6 +258,9 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     composer = (root / "components/session/Composer.tsx").read_text(encoding="utf-8")
     assert "disabledReason" in composer
     assert 'disabled ? "请选择会话后发送消息"' not in composer
+    assert '"同步"' not in composer
+    assert "快速发送" in composer
+    assert "等待回复" in composer
 
     switcher = (root / "components/session/ThreadSwitcherSheet.tsx").read_text(encoding="utf-8")
     assert "AppThread 状态筛选" in switcher
@@ -278,9 +281,27 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     assert "请先新建或选择会话" in session
     assert "当前会话已关闭，请重开后继续" in session
     assert "正在等待回复，可以继续编辑，但暂时不能发送" in session
+    assert "messageListRef" in session
+    assert "shouldStickToBottomRef" in session
+    assert "forceScrollAfterSendRef" in session
+    assert "distanceToBottom < 96" in session
+
+    header = (root / "components/session/SessionHeader.tsx").read_text(encoding="utf-8")
+    assert 'className="session-header-main selected"' in header
+
+    session_css = (root / "styles/session.css").read_text(encoding="utf-8")
+    assert ".session-header-main.selected" in session_css
+    assert "grid-template-columns: minmax(0, 1fr) auto" in session_css
 
     bubble = (root / "components/session/MessageBubble.tsx").read_text(encoding="utf-8")
     assert "#{turn.id}" not in bubble
+    assert "点击查看详情" not in bubble
+    assert "展开全文" in bubble
+    assert "收起" in bubble
+
+    task_card = (root / "components/tasks/TaskCard.tsx").read_text(encoding="utf-8")
+    assert 'className="task-more-actions"' in task_card
+    assert "<summary>更多</summary>" in task_card
 
     readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
     assert "Mobile UI 当前迭代：v1.2" not in readme

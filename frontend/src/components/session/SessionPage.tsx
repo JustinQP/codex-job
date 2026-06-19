@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   cancelAppTurn,
@@ -53,6 +53,9 @@ export function SessionPage({ showToast }: PageProps) {
   const [sheet, setSheet] = useState<"switch" | "more" | "final" | "events" | null>(null);
   const [sheetContent, setSheetContent] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const messageListRef = useRef<HTMLElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const forceScrollAfterSendRef = useRef(false);
 
   const selectedThreadId = selectedThreadIdText ? Number(selectedThreadIdText) : null;
   const includeArchived = appIncludeArchived === "true";
@@ -68,6 +71,19 @@ export function SessionPage({ showToast }: PageProps) {
       : runningTurn
         ? "正在等待回复，可以继续编辑，但暂时不能发送"
         : "";
+
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const target = messageListRef.current;
+    if (!target) return;
+    target.scrollTo({ top: target.scrollHeight, behavior });
+  }, []);
+
+  const updateStickToBottom = useCallback(() => {
+    const target = messageListRef.current;
+    if (!target) return;
+    const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    shouldStickToBottomRef.current = distanceToBottom < 96;
+  }, []);
 
   const loadThreads = useCallback(async () => {
     const [threadData, projectData] = await Promise.all([
@@ -153,6 +169,7 @@ export function SessionPage({ showToast }: PageProps) {
       const sender = sendMode === "async" ? sendAsyncAppTurn : sendAppTurn;
       const turn = await sender(selectedThreadId, message.trim());
       setMessage("");
+      forceScrollAfterSendRef.current = true;
       setTurns((current) => [...current, turn]);
       showToast("消息已发送", "success");
       if (!isRunningStatus(turn.status)) setWaitingText("");
@@ -162,6 +179,15 @@ export function SessionPage({ showToast }: PageProps) {
       showToast(errorText(err), "error");
     }
   }
+
+  useEffect(() => {
+    if (forceScrollAfterSendRef.current) {
+      forceScrollAfterSendRef.current = false;
+      scrollMessagesToBottom();
+      return;
+    }
+    if (shouldStickToBottomRef.current) scrollMessagesToBottom();
+  }, [scrollMessagesToBottom, turns.length, turns]);
 
   async function handleCancelTurn() {
     if (!runningTurn) {
@@ -255,7 +281,7 @@ export function SessionPage({ showToast }: PageProps) {
           selectedThread={selectedThread}
         />
         {error ? <div className="inline-error">{error}</div> : null}
-        <main className="message-list">
+        <main className="message-list" onScroll={updateStickToBottom} ref={messageListRef}>
           <div className="message-flow">
             <MessageList
               expandedIds={expandedIds}

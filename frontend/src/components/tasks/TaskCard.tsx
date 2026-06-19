@@ -31,14 +31,19 @@ export function TaskCard({ task, onCancel, onRerun, onOpen }: TaskCardProps) {
       {task.error_message ? <div className="inline-error">{task.error_message}</div> : null}
       <div className="task-actions">
         <Button onClick={() => onOpen(task)} variant="secondary">查看</Button>
-        <Button onClick={() => onRerun(task)} variant="secondary">重跑</Button>
-        <Button
-          disabled={!["PENDING", "RUNNING"].includes(task.status)}
-          onClick={() => onCancel(task)}
-          variant="danger"
-        >
-          取消
-        </Button>
+        <details className="task-more-actions">
+          <summary>更多</summary>
+          <div>
+            <Button onClick={() => onRerun(task)} variant="secondary">重跑</Button>
+            <Button
+              disabled={!["PENDING", "RUNNING"].includes(task.status)}
+              onClick={() => onCancel(task)}
+              variant="danger"
+            >
+              取消
+            </Button>
+          </div>
+        </details>
       </div>
     </article>
   );

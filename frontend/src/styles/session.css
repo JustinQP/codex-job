@@ -30,6 +30,14 @@
   gap: var(--space-2);
 }
 
+.session-header-main.selected {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.session-header-main.selected .session-title-area {
+  text-align: left;
+}
+
 .session-title-area {
   min-width: 0;
   text-align: center;

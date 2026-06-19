@@ -84,6 +84,34 @@
   font-size: 12px;
 }
 
+.task-more-actions {
+  position: relative;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-more-actions summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  background: #f2f2f2;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.task-more-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-more-actions div {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-left: var(--space-2);
+}
+
 .task-form-sheet {
   display: grid;
   gap: var(--space-3);

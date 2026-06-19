@@ -38,7 +38,7 @@ export function Composer({
       <div className="composer-status-row">
         <span>{disabledReason || waitingText || "输入消息"}</span>
         <Button onClick={onToggleMode} variant="text">
-          {sendMode === "async" ? "后台" : "同步"}
+          {sendMode === "async" ? "快速发送" : "等待回复"}
         </Button>
       </div>
       <div className="composer-input-row">

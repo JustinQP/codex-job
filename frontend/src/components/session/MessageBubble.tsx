@@ -35,9 +35,11 @@ export function MessageBubble({
           <div className={longText && !expanded ? "assistant-message collapsed" : "assistant-message"}>
             {expanded || !longText ? assistantText : shortText(assistantText, 520)}
           </div>
-          <div className="bubble-detail-hint">
-            {longText ? (expanded ? "收起" : "展开全文") : "点击查看详情"}
-          </div>
+          {longText ? (
+            <div className="bubble-detail-hint">
+              {expanded ? "收起" : "展开全文"}
+            </div>
+          ) : null}
           {failed ? (
             <div className="task-actions">
               <Button onClick={(event) => { event.stopPropagation(); onRetry(); }} variant="secondary">
