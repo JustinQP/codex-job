@@ -285,6 +285,7 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     assert "shouldStickToBottomRef" in session
     assert "forceScrollAfterSendRef" in session
     assert "distanceToBottom < 96" in session
+    assert "onReopenThread={handleReopen}" in session
 
     header = (root / "components/session/SessionHeader.tsx").read_text(encoding="utf-8")
     assert 'className="session-header-main selected"' in header
@@ -298,6 +299,13 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     assert "点击查看详情" not in bubble
     assert "展开全文" in bubble
     assert "收起" in bubble
+    assert "unknown bridge thread id" in bubble
+    assert "canRecoverByReopen" in bubble
+    assert "重开会话" in bubble
+    assert "onReopenThread" in bubble
+
+    message_list = (root / "components/session/MessageList.tsx").read_text(encoding="utf-8")
+    assert "onReopenThread" in message_list
 
     task_card = (root / "components/tasks/TaskCard.tsx").read_text(encoding="utf-8")
     assert 'className="task-more-actions"' in task_card

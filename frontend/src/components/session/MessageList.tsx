@@ -7,11 +7,13 @@ type MessageListProps = {
   expandedIds: Set<number>;
   onToggle: (turnId: number) => void;
   onRetry: (turn: AppTurn) => void;
+  onReopenThread: () => void;
   onShowError: (turn: AppTurn) => void;
 };
 
 export function MessageList({
   expandedIds,
+  onReopenThread,
   onRetry,
   onShowError,
   onToggle,
@@ -27,6 +29,7 @@ export function MessageList({
         <MessageBubble
           expanded={expandedIds.has(turn.id)}
           key={turn.id}
+          onReopenThread={onReopenThread}
           onRetry={() => onRetry(turn)}
           onShowError={() => onShowError(turn)}
           onToggle={() => onToggle(turn.id)}

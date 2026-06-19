@@ -8,12 +8,14 @@ type MessageBubbleProps = {
   expanded: boolean;
   onToggle: () => void;
   onRetry: () => void;
+  onReopenThread: () => void;
   onShowError: () => void;
 };
 
 export function MessageBubble({
   turn,
   expanded,
+  onReopenThread,
   onRetry,
   onShowError,
   onToggle
@@ -21,6 +23,7 @@ export function MessageBubble({
   const assistantText = turn.assistant_final || turn.error_message || "正在等待 App Server 返回";
   const longText = assistantText.length > 520;
   const failed = ["FAILED", "ERROR", "CANCELLED"].includes(turn.status);
+  const canRecoverByReopen = /unknown bridge thread id/i.test(turn.error_message || "");
 
   return (
     <article className="chat-turn">
@@ -42,9 +45,15 @@ export function MessageBubble({
           ) : null}
           {failed ? (
             <div className="task-actions">
-              <Button onClick={(event) => { event.stopPropagation(); onRetry(); }} variant="secondary">
-                复制重试
-              </Button>
+              {canRecoverByReopen ? (
+                <Button onClick={(event) => { event.stopPropagation(); onReopenThread(); }} variant="primary">
+                  重开会话
+                </Button>
+              ) : (
+                <Button onClick={(event) => { event.stopPropagation(); onRetry(); }} variant="secondary">
+                  复制重试
+                </Button>
+              )}
               <Button onClick={(event) => { event.stopPropagation(); onShowError(); }} variant="danger">
                 查看错误
               </Button>

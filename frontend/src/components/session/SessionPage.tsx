@@ -285,6 +285,7 @@ export function SessionPage({ showToast }: PageProps) {
           <div className="message-flow">
             <MessageList
               expandedIds={expandedIds}
+              onReopenThread={handleReopen}
               onRetry={(turn) => setMessage(turn.user_message)}
               onShowError={(turn) => {
                 setSheetContent(turn.error_message || turn.assistant_final || "无错误详情");
