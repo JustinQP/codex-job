@@ -1,10 +1,10 @@
 export type TabName = "home" | "tasks" | "app" | "settings";
 
-const tabs: Array<{ key: TabName; label: string }> = [
-  { key: "home", label: "首页" },
-  { key: "tasks", label: "任务" },
-  { key: "app", label: "会话" },
-  { key: "settings", label: "我的" }
+const tabs: Array<{ key: TabName; label: string; icon: string }> = [
+  { key: "home", label: "工作台", icon: "⌂" },
+  { key: "tasks", label: "任务", icon: "□" },
+  { key: "app", label: "会话", icon: "○" },
+  { key: "settings", label: "我的", icon: "◇" }
 ];
 
 type BottomNavProps = {
@@ -23,7 +23,8 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
           onClick={() => onChange(tab.key)}
           type="button"
         >
-          {tab.label}
+          <span aria-hidden="true" className="bottom-nav-icon">{tab.icon}</span>
+          <span>{tab.label}</span>
         </button>
       ))}
     </nav>

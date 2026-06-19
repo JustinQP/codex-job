@@ -6,6 +6,7 @@ type ComposerProps = {
   message: string;
   sendMode: string;
   disabled: boolean;
+  disabledReason: string;
   waitingText: string;
   onMessageChange: (message: string) => void;
   onSend: () => void;
@@ -14,6 +15,7 @@ type ComposerProps = {
 
 export function Composer({
   disabled,
+  disabledReason,
   message,
   onMessageChange,
   onSend,
@@ -34,9 +36,9 @@ export function Composer({
   return (
     <footer className="session-composer">
       <div className="composer-status-row">
-        <span>{disabled ? "请选择会话后发送消息" : waitingText || "输入消息后即可发送"}</span>
+        <span>{disabledReason || waitingText || "输入消息"}</span>
         <Button onClick={onToggleMode} variant="text">
-          {sendMode === "async" ? "快速发送" : "等待回复"}
+          {sendMode === "async" ? "后台" : "同步"}
         </Button>
       </div>
       <div className="composer-input-row">
@@ -52,11 +54,11 @@ export function Composer({
           onClick={onSend}
           variant="primary"
         >
-          发送
+          发
         </Button>
       </div>
       <div className="composer-meta">
-        <span>{sendMode === "async" ? "后台等待回复" : "完成后返回"}</span>
+        <span>{sendMode === "async" ? "后台等待回复" : "等待完成后返回"}</span>
         <span className={`message-count ${message.length ? "" : "empty"}`}>
           {message.length ? `${message.length} 字` : ""}
         </span>

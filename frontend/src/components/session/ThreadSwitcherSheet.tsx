@@ -10,17 +10,25 @@ type ThreadSwitcherSheetProps = {
   projects: Project[];
   threads: AppThread[];
   selectedThreadId: number | null;
+  statusFilter: string;
+  includeArchived: boolean;
   onCreate: (projectId: number, title: string) => void;
+  onIncludeArchivedChange: (includeArchived: boolean) => void;
   onSelect: (thread: AppThread) => void;
   onRefresh: () => void;
+  onStatusFilterChange: (status: string) => void;
 };
 
 export function ThreadSwitcherSheet({
+  includeArchived,
   onCreate,
+  onIncludeArchivedChange,
   onRefresh,
   onSelect,
+  onStatusFilterChange,
   projects,
   selectedThreadId,
+  statusFilter,
   threads
 }: ThreadSwitcherSheetProps) {
   const [projectId, setProjectId] = useState(projects[0]?.id ?? 0);
@@ -28,7 +36,7 @@ export function ThreadSwitcherSheet({
 
   return (
     <div className="session-switch-sheet stack">
-      <div className="detail-card stack">
+      <div className="wechat-form stack">
         <h3>快速新建</h3>
         <label>
           项目
@@ -46,25 +54,46 @@ export function ThreadSwitcherSheet({
           新建会话
         </Button>
       </div>
-      <div className="detail-card stack">
-        <div className="row">
+      <div className="wechat-section stack">
+        <div className="section-title-row">
           <h3>最近会话</h3>
           <Button onClick={onRefresh} variant="secondary">刷新</Button>
         </div>
+        <div className="segmented-control" aria-label="AppThread 状态筛选">
+          {["", "ACTIVE", "ERROR", "CLOSED"].map((status) => (
+            <button
+              className={statusFilter === status ? "active" : ""}
+              key={status || "all"}
+              onClick={() => onStatusFilterChange(status)}
+              type="button"
+            >
+              {status || "全部"}
+            </button>
+          ))}
+        </div>
+        <label className="inline">
+          <input
+            checked={includeArchived}
+            onChange={(event) => onIncludeArchivedChange(event.target.checked)}
+            type="checkbox"
+          />{" "}
+          显示 archived
+        </label>
         {threads.map((thread) => (
           <button
-            className={`list-card thread-card ${selectedThreadId === thread.id ? "selected" : ""}`}
+            className={`wechat-row thread-card ${selectedThreadId === thread.id ? "selected" : ""}`}
             key={thread.id}
             onClick={() => onSelect(thread)}
             type="button"
           >
-            <div className="thread-card-header">
+            <div className={`wechat-avatar ${statusTone(thread.status)}`}>会</div>
+            <div className="wechat-row-main">
               <strong className="thread-title">{thread.title}</strong>
-              <Badge tone={statusTone(thread.status)}>{thread.status}</Badge>
+              <span>
+                #{String(thread.id).slice(0, 8)} · {thread.turn_count} 轮 · {formatRelativeTime(thread.updated_at)}
+              </span>
             </div>
-            <span className="muted">
-              #{String(thread.id).slice(0, 8)} · {thread.turn_count} 轮 · {formatRelativeTime(thread.updated_at)}
-            </span>
+            <Badge tone={statusTone(thread.status)}>{thread.status}</Badge>
           </button>
         ))}
       </div>

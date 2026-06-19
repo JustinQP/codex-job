@@ -6,6 +6,7 @@ param(
   [string]$BridgeHost = "127.0.0.1",
   [int]$BridgePort = 8766,
   [string]$CodexCommand = "codex.cmd",
+  [switch]$BuildFrontend,
   [switch]$RunSmoke
 )
 
@@ -19,6 +20,7 @@ function Quote-ForPowerShell {
 $ProjectRoot = (Get-Location).Path
 $BackendMain = Join-Path $ProjectRoot "backend\main.py"
 $BridgeScript = Join-Path $ProjectRoot "poc\app_server\app_server_bridge.py"
+$FrontendIndex = Join-Path $ProjectRoot "frontend\dist\index.html"
 
 if (-not (Test-Path -LiteralPath $BackendMain)) {
   Write-Error "backend/main.py not found. Please run this script from the project root."
@@ -28,6 +30,29 @@ if (-not (Test-Path -LiteralPath $BackendMain)) {
 if (-not (Test-Path -LiteralPath $BridgeScript)) {
   Write-Error "poc/app_server/app_server_bridge.py not found. Please run this script from the project root."
   exit 1
+}
+
+if (-not (Test-Path -LiteralPath $FrontendIndex)) {
+  if ($BuildFrontend) {
+    Write-Host "frontend/dist/index.html not found. Building frontend..."
+    Push-Location (Join-Path $ProjectRoot "frontend")
+    try {
+      npm.cmd install
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      npm.cmd run build
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } finally {
+      Pop-Location
+    }
+  } else {
+    Write-Host "frontend/dist/index.html not found. Build the mobile frontend first:"
+    Write-Host "cd frontend"
+    Write-Host "npm install"
+    Write-Host "npm run build"
+    Write-Host ""
+    Write-Host "Or rerun this script with -BuildFrontend."
+    exit 1
+  }
 }
 
 $BackendBaseUrl = "http://${BackendHost}:$BackendPort"

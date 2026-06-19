@@ -2,9 +2,6 @@
 
 当前版本：v1.0.0
 
-Mobile UI 当前迭代：v1.2
-
-
 Mobile Frontend current iteration: v1.7.x. The mobile console has moved to `frontend/` with Vite + React + TypeScript; `/mobile` serves `frontend/dist/index.html` first.
 定位：Codex Remote Runner + App Server Sidecar 本地控制台
 

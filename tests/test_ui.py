@@ -212,7 +212,7 @@ def test_frontend_v17_pages_are_migrated_to_react() -> None:
     assert "usePolling(loadTasks" in tasks
 
     session = (root / "components/session/SessionPage.tsx").read_text(encoding="utf-8")
-    assert "listAppThreads({ limit: 20 })" in session
+    assert "listAppThreads({" in session
     assert "createAppThread(projectId, title)" in session
     assert "listAppTurns(selectedThreadId)" in session
     assert "sendAsyncAppTurn" in session
@@ -251,6 +251,48 @@ def test_frontend_v17_docs_and_scripts_are_documented() -> None:
     assert "v1.7.5" in plan
     assert "python -m compileall backend runner scripts poc/app_server" in plan
     assert "npm run build" in plan
+
+
+def test_frontend_v176_regression_fixes_exist() -> None:
+    root = Path("frontend/src")
+    composer = (root / "components/session/Composer.tsx").read_text(encoding="utf-8")
+    assert "disabledReason" in composer
+    assert 'disabled ? "请选择会话后发送消息"' not in composer
+
+    switcher = (root / "components/session/ThreadSwitcherSheet.tsx").read_text(encoding="utf-8")
+    assert "AppThread 状态筛选" in switcher
+    assert '"ACTIVE"' in switcher
+    assert '"ERROR"' in switcher
+    assert '"CLOSED"' in switcher
+    assert "includeArchived" in switcher
+    assert "onIncludeArchivedChange" in switcher
+    assert "显示 archived" in switcher
+
+    session = (root / "components/session/SessionPage.tsx").read_text(encoding="utf-8")
+    assert "getAppThread(selectedThreadId)" in session
+    assert "setSelectedThreadIdText(\"\")" in session
+    assert "UI_STATE_KEYS.appThreadStatusFilter" in session
+    assert "UI_STATE_KEYS.appIncludeArchived" in session
+    assert "status: appThreadStatusFilter || undefined" in session
+    assert "includeArchived" in session
+    assert "请先新建或选择会话" in session
+    assert "当前会话已关闭，请重开后继续" in session
+    assert "正在等待回复，可以继续编辑，但暂时不能发送" in session
+
+    bubble = (root / "components/session/MessageBubble.tsx").read_text(encoding="utf-8")
+    assert "#{turn.id}" not in bubble
+
+    readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
+    assert "Mobile UI 当前迭代：v1.2" not in readme
+    assert "Mobile Frontend current iteration: v1.7.x" in readme
+    assert "frontend/dist/index.html" in readme
+
+    start_script = Path("scripts/start_app_server_stack.ps1").read_text(encoding="utf-8")
+    assert "[switch]$BuildFrontend" in start_script
+    assert "frontend\\dist\\index.html" in start_script
+    assert "cd frontend" in start_script
+    assert "npm install" in start_script
+    assert "npm run build" in start_script
 
 
 def test_legacy_mobile_module_is_frontend_hosting_helper() -> None:

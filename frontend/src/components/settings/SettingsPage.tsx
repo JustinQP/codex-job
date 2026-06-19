@@ -59,13 +59,16 @@ export function SettingsPage({ showToast }: PageProps) {
 
   return (
     <section className="page active" id="tab-settings">
-      <div className="page-header summary-card">
-        <h2>我的</h2>
-        <p className="muted">v1.7 frontend split POC</p>
+      <div className="profile-hero">
+        <div className="profile-avatar">我</div>
+        <div>
+          <h2>移动控制台</h2>
+          <p>v1.7 frontend split POC</p>
+        </div>
       </div>
 
       <div className="settings-grid">
-        <div className="detail-card stack">
+        <div className="wechat-form stack">
           <h3>API Token</h3>
           <label>
             Token
@@ -100,34 +103,46 @@ export function SettingsPage({ showToast }: PageProps) {
           <span className="muted">当前状态：{token ? "configured" : "not configured"}</span>
         </div>
 
-        <div className="detail-card stack">
-          <div className="row">
+        <div className="wechat-section stack">
+          <div className="section-title-row">
             <h3>运行诊断</h3>
             <Button onClick={() => void loadDiagnostics()} variant="secondary">刷新</Button>
           </div>
           {error ? <div className="inline-warning">{error}</div> : null}
-          <div className="status-grid">
-            <div className="status-tile">
-              <strong>Bridge</strong>
-              <span>{bridge?.status || "unavailable"}</span>
+          <div className="wechat-list">
+            <div className="wechat-row">
+              <div className="wechat-avatar online">B</div>
+              <div className="wechat-row-main">
+                <strong>Bridge</strong>
+                <span>{bridge?.status || "unavailable"}</span>
+              </div>
             </div>
-            <div className="status-tile">
-              <strong>mode</strong>
-              <span>{bridge?.mode || "-"}</span>
+            <div className="wechat-row">
+              <div className="wechat-avatar">M</div>
+              <div className="wechat-row-main">
+                <strong>mode</strong>
+                <span>{bridge?.mode || "-"}</span>
+              </div>
             </div>
-            <div className="status-tile">
-              <strong>sandbox</strong>
-              <span>{bridge?.sandbox || "-"}</span>
+            <div className="wechat-row">
+              <div className="wechat-avatar">S</div>
+              <div className="wechat-row-main">
+                <strong>sandbox</strong>
+                <span>{bridge?.sandbox || "-"}</span>
+              </div>
             </div>
-            <div className="status-tile">
-              <strong>runners</strong>
-              <span>{runners.length}</span>
+            <div className="wechat-row">
+              <div className="wechat-avatar">R</div>
+              <div className="wechat-row-main">
+                <strong>runners</strong>
+                <span>{runners.length}</span>
+              </div>
             </div>
           </div>
           <RunnerDiagnostics runners={runners} />
         </div>
 
-        <div className="detail-card stack">
+        <div className="wechat-form stack">
           <h3>维护操作</h3>
           <div className="task-actions">
             <Button onClick={handleRecoverStale} variant="secondary">recover stale AppTurn</Button>
@@ -140,13 +155,13 @@ export function SettingsPage({ showToast }: PageProps) {
           </div>
         </div>
 
-        <div className="detail-card stack">
+        <div className="wechat-form stack">
           <h3>Smoke 命令</h3>
           <pre className="code-block">$env:API_TOKEN="dev-token"
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000</pre>
         </div>
 
-        <div className="detail-card stack">
+        <div className="wechat-form stack">
           <h3>当前限制</h3>
           <ul>
             <li>不支持 SSE。</li>

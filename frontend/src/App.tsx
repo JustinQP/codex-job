@@ -14,12 +14,24 @@ function App() {
   const currentTab = ["home", "tasks", "app", "settings"].includes(activeTab)
     ? (activeTab as TabName)
     : "home";
+  const pageTitle: Record<TabName, string> = {
+    home: "工作台",
+    tasks: "任务",
+    app: "会话",
+    settings: "我的"
+  };
+  const pageSubtitle: Record<TabName, string> = {
+    home: "Codex Mobile Console",
+    tasks: "查看、筛选和处理远程任务",
+    app: "Codex Remote Runner + App Server Sidecar",
+    settings: "连接、诊断与维护"
+  };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell app-shell-${currentTab}`}>
       <header className="top-bar">
-        <h1>Codex Mobile Console</h1>
-        <div className="top-subtitle">Codex Remote Runner + App Server Sidecar</div>
+        <h1>{pageTitle[currentTab]}</h1>
+        <div className="top-subtitle">{pageSubtitle[currentTab]}</div>
       </header>
 
       <main>

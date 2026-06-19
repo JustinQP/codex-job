@@ -15,12 +15,12 @@ export function SessionHeader({ onMore, onSwitch, selectedThread }: SessionHeade
     return (
       <header className="session-header">
         <div className="session-header-main">
+          <Button onClick={onSwitch} variant="text">＋</Button>
           <div className="session-title-area">
-            <h2 className="session-title">开始一次 Codex 会话</h2>
+            <h2 className="session-title">Codex 会话</h2>
             <span className="session-subtitle">选择或新建会话后即可发送消息</span>
           </div>
           <div className="session-actions">
-            <Button onClick={onSwitch} variant="text">新建</Button>
             <Button onClick={onSwitch} variant="text">选择</Button>
           </div>
         </div>
@@ -35,14 +35,14 @@ export function SessionHeader({ onMore, onSwitch, selectedThread }: SessionHeade
         <div className="session-title-area">
           <h2 className="session-title">{selectedThread.title}</h2>
           <span className="session-subtitle">
-            状态 {selectedThread.status} · {selectedThread.turn_count} 轮
+            {selectedThread.status} · {selectedThread.turn_count} 轮
             {updated ? ` · 更新 ${updated}` : ""}
           </span>
         </div>
-        <Badge tone={statusTone(selectedThread.status)}>{selectedThread.status}</Badge>
         <div className="session-actions">
+          <Badge tone={statusTone(selectedThread.status)}>{selectedThread.status}</Badge>
           <Button onClick={onSwitch} variant="text">切换</Button>
-          <Button onClick={onMore} variant="text">更多</Button>
+          <Button onClick={onMore} variant="text">···</Button>
         </div>
       </div>
     </header>

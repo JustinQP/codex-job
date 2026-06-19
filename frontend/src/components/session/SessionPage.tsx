@@ -5,6 +5,7 @@ import {
   cleanupAppThreads,
   closeAppThread,
   createAppThread,
+  getAppThread,
   getAppThreadEvents,
   getAppThreadFinal,
   getAppTurn,
@@ -37,6 +38,14 @@ export function SessionPage({ showToast }: PageProps) {
     UI_STATE_KEYS.selectedAppThreadId,
     ""
   );
+  const [appThreadStatusFilter, setAppThreadStatusFilter] = useLocalStorage(
+    UI_STATE_KEYS.appThreadStatusFilter,
+    ""
+  );
+  const [appIncludeArchived, setAppIncludeArchived] = useLocalStorage(
+    UI_STATE_KEYS.appIncludeArchived,
+    "false"
+  );
   const [sendMode, setSendMode] = useLocalStorage(UI_STATE_KEYS.appSendMode, "async");
   const [message, setMessage] = useState("");
   const [waitingText, setWaitingText] = useState("");
@@ -46,20 +55,47 @@ export function SessionPage({ showToast }: PageProps) {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const selectedThreadId = selectedThreadIdText ? Number(selectedThreadIdText) : null;
+  const includeArchived = appIncludeArchived === "true";
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
     [selectedThreadId, threads]
   );
   const runningTurn = turns.find((turn) => isRunningStatus(turn.status)) || null;
+  const disabledReason = !selectedThread
+    ? "请先新建或选择会话"
+    : selectedThread.status === "CLOSED"
+      ? "当前会话已关闭，请重开后继续"
+      : runningTurn
+        ? "正在等待回复，可以继续编辑，但暂时不能发送"
+        : "";
 
   const loadThreads = useCallback(async () => {
     const [threadData, projectData] = await Promise.all([
-      listAppThreads({ limit: 20 }),
+      listAppThreads({
+        includeArchived,
+        limit: 20,
+        status: appThreadStatusFilter || undefined
+      }),
       listProjects()
     ]);
-    setThreads(threadData);
+    let nextThreads = threadData;
+    if (selectedThreadId && !threadData.some((thread) => thread.id === selectedThreadId)) {
+      try {
+        const fallbackThread = await getAppThread(selectedThreadId);
+        nextThreads = [fallbackThread, ...threadData];
+      } catch {
+        setSelectedThreadIdText("");
+        setTurns([]);
+      }
+    }
+    setThreads(nextThreads);
     setProjects(projectData);
-  }, []);
+  }, [
+    appThreadStatusFilter,
+    includeArchived,
+    selectedThreadId,
+    setSelectedThreadIdText
+  ]);
 
   const loadTurns = useCallback(async () => {
     if (!selectedThreadId) {
@@ -241,7 +277,8 @@ export function SessionPage({ showToast }: PageProps) {
           </div>
         </main>
         <Composer
-          disabled={!selectedThread || selectedThread.status === "CLOSED" || Boolean(runningTurn)}
+          disabled={Boolean(disabledReason)}
+          disabledReason={disabledReason}
           message={message}
           onMessageChange={setMessage}
           onSend={handleSend}
@@ -256,9 +293,15 @@ export function SessionPage({ showToast }: PageProps) {
           <ThreadSwitcherSheet
             onCreate={handleCreateThread}
             onRefresh={() => void loadAll()}
+            onIncludeArchivedChange={(nextIncludeArchived) => {
+              setAppIncludeArchived(nextIncludeArchived ? "true" : "false");
+            }}
             onSelect={handleSelectThread}
+            onStatusFilterChange={setAppThreadStatusFilter}
+            includeArchived={includeArchived}
             projects={projects}
             selectedThreadId={selectedThreadId}
+            statusFilter={appThreadStatusFilter}
             threads={threads}
           />
         </Sheet>

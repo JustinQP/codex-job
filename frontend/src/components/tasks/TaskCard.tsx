@@ -12,30 +12,25 @@ type TaskCardProps = {
 };
 
 export function TaskCard({ task, onCancel, onRerun, onOpen }: TaskCardProps) {
+  const runnerLabel = task.assigned_runner_id || task.runner_id || "自动分配";
+
   return (
-    <article className="list-card task-card">
-      <div className="task-card-header">
-        <div>
-          <h3 className="task-title">#{task.id} {shortText(task.prompt, 64)}</h3>
+    <article className="task-card">
+      <button className="task-card-main" onClick={() => onOpen(task)} type="button">
+        <div className={`wechat-avatar ${statusTone(task.status)}`}>{task.id}</div>
+        <div className="task-card-copy">
+          <div className="task-card-title-row">
+            <h3 className="task-title">{shortText(task.prompt, 58)}</h3>
+            <Badge tone={statusTone(task.status)}>{task.status}</Badge>
+          </div>
           <span className="muted">
-            {task.task_type} · updated {formatRelativeTime(task.updated_at)}
+            {task.task_type} · {runnerLabel} · {formatRelativeTime(task.updated_at)}
           </span>
         </div>
-        <Badge tone={statusTone(task.status)}>{task.status}</Badge>
-      </div>
-      <div className="meta-grid">
-        <div className="meta-cell">
-          <span className="meta-label">runner</span>
-          <span className="meta-value">{task.assigned_runner_id || task.runner_id || "-"}</span>
-        </div>
-        <div className="meta-cell">
-          <span className="meta-label">sandbox</span>
-          <span className="meta-value">{task.sandbox || "-"}</span>
-        </div>
-      </div>
+      </button>
       {task.error_message ? <div className="inline-error">{task.error_message}</div> : null}
       <div className="task-actions">
-        <Button onClick={() => onOpen(task)} variant="secondary">详情</Button>
+        <Button onClick={() => onOpen(task)} variant="secondary">查看</Button>
         <Button onClick={() => onRerun(task)} variant="secondary">重跑</Button>
         <Button
           disabled={!["PENDING", "RUNNING"].includes(task.status)}

@@ -29,9 +29,8 @@ export function MessageBubble({
       </div>
       <div className="bubble-row assistant">
         <div className={`bubble assistant ${statusTone(turn.status)}`} onClick={onToggle}>
-          <div className="row">
+          <div className="bubble-meta-row">
             <Badge tone={statusTone(turn.status)}>{turn.status}</Badge>
-            <span className="muted">#{turn.id}</span>
           </div>
           <div className={longText && !expanded ? "assistant-message collapsed" : "assistant-message"}>
             {expanded || !longText ? assistantText : shortText(assistantText, 520)}

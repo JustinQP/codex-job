@@ -102,13 +102,17 @@ export function TasksPage({ showToast }: PageProps) {
 
   return (
     <section className="page active" id="tab-tasks">
-      <div className="page-header summary-card">
-        <div className="row">
-          <h2>任务</h2>
-          <Button onClick={() => setCreating(true)} variant="primary">
-            新建任务
-          </Button>
+      <div className="tasks-toolbar">
+        <div>
+          <h2>任务中心</h2>
+          <span>{loading ? "刷新中" : `显示 ${filteredTasks.length}/${tasks.length} 个任务`}</span>
         </div>
+        <Button onClick={() => setCreating(true)} variant="primary">
+          新建
+        </Button>
+      </div>
+
+      <div className="wechat-section">
         <div className="segmented-control" aria-label="任务状态筛选">
           {statuses.map((status) => (
             <button
@@ -121,14 +125,11 @@ export function TasksPage({ showToast }: PageProps) {
             </button>
           ))}
         </div>
-        <div className="muted">
-          {loading ? "刷新中" : `显示 ${filteredTasks.length}/${tasks.length} 个任务`}
-        </div>
       </div>
 
       {error ? <div className="inline-error">{error}</div> : null}
 
-      <div className="page-body stack">
+      <div className="task-list">
         {filteredTasks.length ? (
           filteredTasks.map((task) => (
             <TaskCard
