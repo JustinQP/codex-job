@@ -35,6 +35,7 @@ def test_openapi_keeps_core_routes_after_router_split() -> None:
         "/agent/commands/{command_id}/ack",
         "/agent/commands/{command_id}/renew",
         "/agent/commands/{command_id}/complete",
+        "/agent/commands/{command_id}/events",
         "/devices",
         "/devices/{device_id}",
         "/workspaces",

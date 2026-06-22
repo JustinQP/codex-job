@@ -8,6 +8,8 @@ from backend.dependencies import require_agent_token
 from backend.schemas import (
     AgentCommandClaimRequest,
     AgentCommandCompleteRequest,
+    AgentCommandEventsUploadRead,
+    AgentCommandEventsUploadRequest,
     AgentCommandLeaseRequest,
     AgentCommandRead,
     DeviceHeartbeat,
@@ -16,7 +18,12 @@ from backend.schemas import (
     WorkspaceSyncRead,
     WorkspaceSyncRequest,
 )
-from backend.services import agent_command_service, device_service, workspace_service
+from backend.services import (
+    agent_command_event_service,
+    agent_command_service,
+    device_service,
+    workspace_service,
+)
 
 
 router = APIRouter()
@@ -32,6 +39,11 @@ ERROR_STATUS = {
     "invalid_agent_command_state": status.HTTP_409_CONFLICT,
     "invalid_completion_status": status.HTTP_400_BAD_REQUEST,
     "missing_claim_request_id": status.HTTP_400_BAD_REQUEST,
+    "too_many_command_events": status.HTTP_413_CONTENT_TOO_LARGE,
+    "command_event_too_large": status.HTTP_413_CONTENT_TOO_LARGE,
+    "duplicate_event_sequence_in_batch": status.HTTP_409_CONFLICT,
+    "out_of_order_command_events": status.HTTP_409_CONFLICT,
+    "command_event_sequence_conflict": status.HTTP_409_CONFLICT,
 }
 
 
@@ -137,6 +149,30 @@ def complete_agent_command(
             lease_token=payload.lease_token,
             status=payload.status,
             error_message=payload.error_message,
+        )
+    except agent_command_service.AgentCommandServiceError as exc:
+        raise_agent_command_error(exc)
+
+
+@router.post("/agent/commands/{command_id}/events", response_model=AgentCommandEventsUploadRead)
+def upload_agent_command_events(
+    command_id: str,
+    payload: AgentCommandEventsUploadRequest,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_agent_token),
+):
+    try:
+        agent_command_service.renew_command(
+            session,
+            command_id=command_id,
+            device_id=payload.device_id,
+            lease_token=payload.lease_token,
+        )
+        return agent_command_event_service.upload_command_events(
+            session,
+            command_id=command_id,
+            device_id=payload.device_id,
+            payload=payload,
         )
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)

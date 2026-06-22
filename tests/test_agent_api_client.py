@@ -13,6 +13,8 @@ from backend.models import AgentCommandStatus
 from backend.schemas import (
     AgentCommandClaimRequest,
     AgentCommandCompleteRequest,
+    AgentCommandEventUploadItem,
+    AgentCommandEventsUploadRequest,
     AgentCommandLeaseRequest,
     DeviceHeartbeat,
     DeviceRegister,
@@ -95,6 +97,21 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
                 status=AgentCommandStatus.SUCCESS,
             ),
         )
+        events = client.upload_command_events(
+            "cmd-1",
+            AgentCommandEventsUploadRequest(
+                device_id="device-a",
+                lease_token="lease-a",
+                events=[
+                    AgentCommandEventUploadItem(
+                        sequence=1,
+                        kind="log",
+                        payload={"text": "hello"},
+                        created_at="2026-06-22T00:00:00+00:00",
+                    )
+                ],
+            ),
+        )
 
         assert registered == {"ok": True, "path": "/agent/register"}
         assert heartbeat == {"ok": True, "path": "/agent/heartbeat"}
@@ -103,6 +120,7 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert ack == {"ok": True, "path": "/agent/commands/cmd-1/ack"}
         assert renew == {"ok": True, "path": "/agent/commands/cmd-1/renew"}
         assert complete == {"ok": True, "path": "/agent/commands/cmd-1/complete"}
+        assert events == {"ok": True, "path": "/agent/commands/cmd-1/events"}
         assert AgentClientHandler.calls[0][0] == "/agent/register"
         assert AgentClientHandler.calls[0][1] == "secret"
         assert AgentClientHandler.calls[0][2]["device_id"] == "device-a"
@@ -115,6 +133,8 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert AgentClientHandler.calls[4][0] == "/agent/commands/cmd-1/ack"
         assert AgentClientHandler.calls[5][0] == "/agent/commands/cmd-1/renew"
         assert AgentClientHandler.calls[6][0] == "/agent/commands/cmd-1/complete"
+        assert AgentClientHandler.calls[7][0] == "/agent/commands/cmd-1/events"
+        assert AgentClientHandler.calls[7][2]["events"][0]["sequence"] == 1
     finally:
         server.shutdown()
 

@@ -305,6 +305,49 @@ def add_agent_command_claim_request_id(engine: Engine) -> None:
         )
 
 
+def create_agent_command_events_table(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS agent_command_events (
+                    id INTEGER PRIMARY KEY,
+                    command_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL,
+                    FOREIGN KEY(command_id) REFERENCES agent_commands(id)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_command_events_sequence
+                ON agent_command_events (command_id, sequence)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_agent_command_events_command_id
+                ON agent_command_events (command_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_agent_command_events_kind
+                ON agent_command_events (kind)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -335,6 +378,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0006",
         name="agent_command_claim_request_id",
         apply=add_agent_command_claim_request_id,
+    ),
+    Migration(
+        version="0007",
+        name="agent_command_events",
+        apply=create_agent_command_events_table,
     ),
 )
 

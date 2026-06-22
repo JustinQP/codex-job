@@ -116,7 +116,7 @@ Codex 执行本清单时必须遵守：
 - [x] C02 实现命令创建服务和幂等键
 - [x] C03 实现命令 claim、续租和完成接口
 - [x] C04 实现 Agent 命令循环
-- [ ] C05 实现命令事件增量上传
+- [x] C05 实现命令事件增量上传
 - [ ] C06 实现 Agent 重连 reconciliation
 
 ### D. 多设备 Run
@@ -1342,7 +1342,7 @@ tests/test_agent_command_loop.py
 
 ---
 
-### [ ] C05 实现命令事件增量上传
+### [x] C05 实现命令事件增量上传
 
 **目标**
 
@@ -1392,6 +1392,37 @@ tests/test_command_events.py
 - 断线重传不会重复事件。
 - 乱序批次能被拒绝或稳定处理，行为有测试。
 - 过大事件返回明确错误。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/routers/agent.py`
+  - `backend/services/agent_command_event_service.py`
+  - `agent/api_client.py`
+  - `agent/event_uploader.py`
+  - `agent/local_state.py`
+  - `tests/test_agent_command_events.py`
+  - `tests/test_agent_event_uploader.py`
+  - `tests/test_agent_api_client.py`
+  - `tests/test_db_migrations.py`
+  - `tests/test_api_contract.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0007 agent_command_events`，创建 `agent_command_events` 表并建立 `(command_id, sequence)` 唯一约束
+- API：新增 `POST /agent/commands/{id}/events`，批量上传事件前校验 device、lease token，并续租当前命令
+- 去重与限制：相同 sequence 且内容一致返回成功并计入 duplicate；同 sequence 内容不同返回 `command_event_sequence_conflict`；乱序、批量过多、单事件过大均返回稳定错误 code
+- Agent：新增 `CommandEventUploader` 和本地 pending event 缓存，服务端确认 `latest_sequence` 后清理已确认事件
+- 自动化测试：
+  - `pytest -q tests/test_agent_command_events.py tests/test_agent_event_uploader.py tests/test_agent_api_client.py tests/test_db_migrations.py tests/test_api_contract.py`：通过，14 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，236 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：仅新增命令事件能力，不改变旧 Runner/Task 或当前 Agent fake handler 执行路径
+- 风险与未完成项：事件目前仅接入通用命令事件表；RunEvent/TurnEvent 复用和重连补传策略由后续 D/E/C06 任务细化
 
 ---
 

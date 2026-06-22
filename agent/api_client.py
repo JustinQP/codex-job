@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 from backend.schemas import (
     AgentCommandClaimRequest,
     AgentCommandCompleteRequest,
+    AgentCommandEventsUploadRequest,
     AgentCommandLeaseRequest,
     DeviceHeartbeat,
     DeviceRegister,
@@ -58,6 +59,12 @@ class AgentApiClient:
         return self._json_request(
             f"/agent/commands/{command_id}/complete",
             payload.model_dump(exclude_none=True),
+        )
+
+    def upload_command_events(self, command_id: str, payload: AgentCommandEventsUploadRequest) -> dict[str, Any]:
+        return self._json_request(
+            f"/agent/commands/{command_id}/events",
+            payload.model_dump(mode="json", exclude_none=True),
         )
 
     def _json_request(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:

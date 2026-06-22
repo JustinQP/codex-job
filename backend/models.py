@@ -178,6 +178,20 @@ class AgentCommand(SQLModel, table=True):
     last_error: Optional[str] = None
 
 
+class AgentCommandEvent(SQLModel, table=True):
+    __tablename__ = "agent_command_events"
+    __table_args__ = (
+        UniqueConstraint("command_id", "sequence", name="ux_agent_command_events_sequence"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    command_id: str = Field(foreign_key="agent_commands.id", index=True)
+    sequence: int = Field(index=True)
+    kind: str = Field(index=True)
+    payload_json: str
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class AppThread(SQLModel, table=True):
     __tablename__ = "app_threads"
 

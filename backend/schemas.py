@@ -294,6 +294,23 @@ class AgentCommandCompleteRequest(AgentCommandLeaseRequest):
     error_message: Optional[str] = None
 
 
+class AgentCommandEventUploadItem(BaseModel):
+    sequence: int = Field(..., ge=1)
+    kind: str = Field(..., min_length=1, max_length=80)
+    payload: dict = Field(default_factory=dict)
+    created_at: datetime
+
+
+class AgentCommandEventsUploadRequest(AgentCommandLeaseRequest):
+    events: list[AgentCommandEventUploadItem] = Field(default_factory=list)
+
+
+class AgentCommandEventsUploadRead(BaseModel):
+    accepted_count: int
+    duplicate_count: int
+    latest_sequence: Optional[int]
+
+
 class AppThreadCreate(BaseModel):
     project_id: int
     title: Optional[str] = None
