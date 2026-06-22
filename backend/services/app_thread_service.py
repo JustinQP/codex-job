@@ -24,6 +24,7 @@ from backend.services.app_server_bridge_client import (
     get_default_client,
 )
 from backend.services import agent_command_service
+from backend.services import turn_event_service
 
 
 APP_THREAD_CREATED = "CREATED"
@@ -732,6 +733,40 @@ def get_app_turn_stream_snapshot(
     bridge_client: AppServerBridgeClient | None = None,
 ) -> dict[str, Any]:
     app_turn = get_app_turn_or_404(session, app_turn_id)
+    persisted_events = turn_event_service.list_turn_event_models(
+        session,
+        turn_id=app_turn_id,
+        since=since,
+        limit=100,
+    )
+    if persisted_events:
+        events = [_stream_event_from_turn_event(event) for event in persisted_events]
+        next_sequence = max(event.sequence for event in persisted_events)
+        terminal = app_turn.status in {APP_TURN_SUCCESS, APP_TURN_FAILED, APP_TURN_CANCELLED}
+        if terminal:
+            terminal_event = _terminal_stream_event(app_turn, next_sequence + 1)
+            if terminal_event is not None:
+                events.append(terminal_event)
+                next_sequence += 1
+        return {
+            "next_index": next_sequence,
+            "events": events,
+            "terminal": terminal,
+        }
+    if since > 0:
+        terminal_event = _terminal_stream_event(app_turn, since + 1)
+        if terminal_event is not None:
+            return {
+                "next_index": since + 1,
+                "events": [terminal_event],
+                "terminal": True,
+            }
+        return {
+            "next_index": since,
+            "events": [],
+            "terminal": False,
+        }
+
     app_thread = get_app_thread_or_404(session, app_turn.app_thread_id)
     if not app_thread.bridge_thread_id:
         return {
@@ -803,6 +838,105 @@ def get_app_turn_stream_snapshot(
         "events": events,
         "terminal": app_turn.status in {APP_TURN_SUCCESS, APP_TURN_FAILED, APP_TURN_CANCELLED},
     }
+
+
+def _stream_event_from_turn_event(event) -> dict[str, Any]:
+    payload = turn_event_service.to_turn_event_read(event).payload
+    stream_event = _stream_event_from_payload(
+        turn_id=event.turn_id,
+        sequence=event.sequence,
+        kind=event.kind,
+        payload=payload,
+    )
+    stream_event["sequence"] = event.sequence
+    return stream_event
+
+
+def _stream_event_from_payload(
+    *,
+    turn_id: int,
+    sequence: int,
+    kind: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if kind == "status":
+        return {
+            "kind": "status",
+            "turn_id": turn_id,
+            "sequence": sequence,
+            "status": _string_or_none(payload.get("status")) or "RUNNING",
+        }
+    if kind == "final":
+        return {
+            "kind": "final",
+            "turn_id": turn_id,
+            "sequence": sequence,
+            "assistant_final": _string_or_none(payload.get("assistant_final"))
+            or _string_or_none(payload.get("assistant_final_preview")),
+            "event": payload,
+        }
+
+    delta = _extract_persisted_assistant_delta(payload)
+    if delta:
+        return {
+            "kind": "assistant_delta",
+            "turn_id": turn_id,
+            "sequence": sequence,
+            "text": delta,
+            "event": payload,
+        }
+    if "error" in kind.lower() or payload.get("error"):
+        return {
+            "kind": "error",
+            "turn_id": turn_id,
+            "sequence": sequence,
+            "message": _string_or_none(payload.get("message")) or _string_or_default(payload.get("error"), kind),
+            "event": payload,
+        }
+    return {
+        "kind": "event",
+        "turn_id": turn_id,
+        "sequence": sequence,
+        "event_kind": kind,
+        "event": payload,
+    }
+
+
+def _terminal_stream_event(app_turn: AppTurn, sequence: int) -> dict[str, Any] | None:
+    if app_turn.status == APP_TURN_SUCCESS:
+        return {
+            "kind": "final",
+            "turn_id": app_turn.id,
+            "sequence": sequence,
+            "status": app_turn.status,
+            "turn": to_app_turn_read(app_turn).model_dump(mode="json"),
+        }
+    if app_turn.status in {APP_TURN_FAILED, APP_TURN_CANCELLED}:
+        return {
+            "kind": "error",
+            "turn_id": app_turn.id,
+            "sequence": sequence,
+            "status": app_turn.status,
+            "message": app_turn.error_message or app_turn.status,
+            "turn": to_app_turn_read(app_turn).model_dump(mode="json"),
+        }
+    return None
+
+
+def _extract_persisted_assistant_delta(payload: dict[str, Any]) -> str | None:
+    for container in _persisted_event_containers(payload):
+        delta = container.get("delta")
+        if isinstance(delta, str) and delta:
+            return delta
+    return None
+
+
+def _persisted_event_containers(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    containers = [payload]
+    event = payload.get("event")
+    if isinstance(event, dict):
+        containers.extend(_event_containers(event))
+    return containers
 
 
 def to_app_thread_read(session: Session, app_thread: AppThread) -> AppThreadRead:

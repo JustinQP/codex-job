@@ -346,11 +346,15 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     assert "streamAppTurn" in session
     assert "startTurnStream(turn.id)" in session
     assert "assistant_delta" in session
+    assert "streamSequencesRef" in session
+    assert "sequence <= previous" in session
     assert "window.requestAnimationFrame" in session
     assert "onReopenThread={handleReopen}" in session
 
     app_threads_api = (root / "api/appThreads.ts").read_text(encoding="utf-8")
     assert "export async function streamAppTurn" in app_threads_api
+    assert "since = 0" in app_threads_api
+    assert "idLine" in app_threads_api
     assert "/stream" in app_threads_api
     assert "apiHeaders(false)" in app_threads_api
 

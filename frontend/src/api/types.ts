@@ -131,11 +131,15 @@ export type AppTurn = {
 };
 
 export type AppTurnStreamEvent = {
-  kind: "status" | "assistant_delta" | "final" | "error";
+  kind: "status" | "assistant_delta" | "final" | "error" | "event";
   turn_id: number;
+  sequence?: number;
   status?: string;
   text?: string;
   message?: string;
+  assistant_final?: string | null;
+  event_kind?: string;
+  event?: Record<string, unknown>;
   turn?: AppTurn;
 };
 

@@ -106,6 +106,27 @@ def list_turn_events(
     )
 
 
+def list_turn_event_models(
+    session: Session,
+    *,
+    turn_id: int,
+    since: int = 0,
+    limit: int = 100,
+) -> list[TurnEvent]:
+    bounded_limit = max(1, min(limit, 500))
+    return list(
+        session.exec(
+            select(TurnEvent)
+            .where(
+                TurnEvent.turn_id == turn_id,
+                TurnEvent.sequence > since,
+            )
+            .order_by(TurnEvent.sequence)
+            .limit(bounded_limit)
+        ).all()
+    )
+
+
 def to_turn_event_read(event: TurnEvent) -> TurnEventRead:
     if event.id is None:
         raise ValueError("turn event id is required")

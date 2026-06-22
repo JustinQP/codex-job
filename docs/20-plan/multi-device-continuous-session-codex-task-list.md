@@ -2191,7 +2191,7 @@ created_at
 
 ---
 
-### [ ] E06 改造 SSE 为可重放事件流
+### [x] E06 改造 SSE 为可重放事件流
 
 **目标**
 
@@ -2216,6 +2216,31 @@ E05。
 - 主动中断 SSE 后从中间 sequence 恢复。
 - 输出文本与不掉线场景完全一致。
 - 控制端重启后可重放已有事件。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/routers/app_threads.py`
+  - `backend/services/app_thread_service.py`
+  - `backend/services/turn_event_service.py`
+  - `frontend/src/api/appThreads.ts`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/components/session/SessionPage.tsx`
+  - `tests/test_app_threads_api.py`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 后端：`/app-turns/{app_turn_id}/stream` 支持 `since` 查询参数和 `Last-Event-ID`；存在 TurnEvent 时优先从数据库按 sequence 重放，SSE 输出稳定 `id: sequence`，终态补 final/error 后关闭；无持久化事件时保留旧 Bridge live-events 兼容路径
+- 前端：`streamAppTurn` 支持 since，解析 SSE `id:` 为 sequence；会话页记录每个 Turn 最后 sequence，忽略重复或旧 sequence，断线/重复启动 stream 时从最后 sequence 继续
+- 自动化测试：
+  - `pytest -q tests/test_app_threads_api.py tests/test_app_thread_service.py tests/test_ui.py -o cache_dir=data/pytest-cache-e06 -o addopts=--basetemp=data/pytest-tmp-e06`：通过，70 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-e06-full -o addopts=--basetemp=data/pytest-tmp-e06-full`：通过，289 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及；通过自动化测试覆盖 since 重放、`Last-Event-ID` 续传、终态关闭和前端 sequence 去重逻辑
+- 回归影响：旧 Bridge stream fallback 保留；新增可重放路径依赖 E05 TurnEvent
+- 风险与未完成项：本次不实现持久化 delta 组装为页面初始 assistant 内容，刷新恢复完整页面状态由 E12 继续处理；本机一次 targeted pytest 因前一次中断遗留 `data/pytest-tmp-current` 占用失败，后续使用独立 basetemp/cache 验证通过
 
 ---
 

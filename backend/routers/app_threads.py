@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
@@ -173,23 +173,26 @@ def list_app_turn_events(
 @router.get("/app-turns/{app_turn_id}/stream")
 def stream_app_turn(
     app_turn_id: int,
+    since: int = Query(default=0, ge=0),
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
     session: Session = Depends(get_session),
     _: None = Depends(require_api_token),
 ):
     app_thread_service.get_app_turn_or_404(session, app_turn_id)
 
     def event_generator():
-        since = 0
+        cursor = _stream_cursor(since, last_event_id)
         while True:
             session.expire_all()
             snapshot = app_thread_service.get_app_turn_stream_snapshot(
                 session,
                 app_turn_id,
-                since=since,
+                since=cursor,
             )
-            since = int(snapshot.get("next_index") or since)
             for event in snapshot.get("events", []):
+                cursor = max(cursor, int(event.get("sequence") or cursor))
                 yield _sse_event(event)
+            cursor = int(snapshot.get("next_index") or cursor)
             if snapshot.get("terminal"):
                 break
             time.sleep(0.8)
@@ -250,5 +253,16 @@ def get_app_thread_events(
 
 def _sse_event(payload: dict) -> str:
     event_name = str(payload.get("kind") or "message")
+    event_id = payload.get("sequence")
     data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    return f"event: {event_name}\ndata: {data}\n\n"
+    id_line = f"id: {event_id}\n" if isinstance(event_id, int) else ""
+    return f"{id_line}event: {event_name}\ndata: {data}\n\n"
+
+
+def _stream_cursor(since: int, last_event_id: str | None) -> int:
+    if last_event_id is None or not last_event_id.strip():
+        return since
+    try:
+        return max(since, int(last_event_id))
+    except ValueError:
+        return since

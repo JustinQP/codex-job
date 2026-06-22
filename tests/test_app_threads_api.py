@@ -11,7 +11,7 @@ import backend.main as main_module
 import backend.routers.ui as ui_router
 from backend.db import get_session
 from backend.main import app
-from backend.models import AgentCommandStatus, AppThread, AppTurn, Project, utc_now
+from backend.models import AgentCommandStatus, AppThread, AppTurn, Project, TurnEvent, utc_now
 from backend.services import agent_command_service
 from tests.test_runs_api import add_device, add_workspace
 from backend.services.app_server_bridge_client import AppServerBridgeError
@@ -557,6 +557,118 @@ def test_app_turn_stream_returns_terminal_error_event(monkeypatch) -> None:
         assert response.status_code == 200
         assert "event: error" in response.text
         assert '"message":"boom"' in response.text
+
+
+def test_app_turn_stream_replays_persisted_events_from_sequence(monkeypatch) -> None:
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Chat",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_turn = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="hello",
+            status="SUCCESS",
+            assistant_final="one two",
+            created_at=utc_now(),
+            started_at=utc_now(),
+            completed_at=utc_now(),
+        )
+        session.add(app_turn)
+        session.commit()
+        session.refresh(app_turn)
+        session.add(
+            TurnEvent(
+                turn_id=app_turn.id,
+                sequence=1,
+                kind="agent/message_delta",
+                payload_json='{"event":{"method":"agent/message_delta","params":{"turnId":"codex-turn-1","delta":"one"}}}',
+                created_at=utc_now(),
+            )
+        )
+        session.add(
+            TurnEvent(
+                turn_id=app_turn.id,
+                sequence=2,
+                kind="agent/message_delta",
+                payload_json='{"event":{"method":"agent/message_delta","params":{"turnId":"codex-turn-1","delta":"two"}}}',
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+
+        response = client.get(f"/app-turns/{app_turn.id}/stream?since=1")
+
+        assert response.status_code == 200
+        assert "id: 1" not in response.text
+        assert "id: 2" in response.text
+        assert '"sequence":2' in response.text
+        assert '"text":"two"' in response.text
+        assert '"text":"one"' not in response.text
+
+
+def test_app_turn_stream_uses_last_event_id_header(monkeypatch) -> None:
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Chat",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_turn = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="hello",
+            status="SUCCESS",
+            assistant_final="done",
+            created_at=utc_now(),
+            started_at=utc_now(),
+            completed_at=utc_now(),
+        )
+        session.add(app_turn)
+        session.commit()
+        session.refresh(app_turn)
+        session.add(
+            TurnEvent(
+                turn_id=app_turn.id,
+                sequence=1,
+                kind="agent/message_delta",
+                payload_json='{"event":{"method":"agent/message_delta","params":{"turnId":"codex-turn-1","delta":"old"}}}',
+                created_at=utc_now(),
+            )
+        )
+        session.add(
+            TurnEvent(
+                turn_id=app_turn.id,
+                sequence=2,
+                kind="final",
+                payload_json='{"assistant_final":"done"}',
+                created_at=utc_now(),
+            )
+        )
+        session.commit()
+
+        response = client.get(
+            f"/app-turns/{app_turn.id}/stream",
+            headers={"Last-Event-ID": "1"},
+        )
+
+        assert response.status_code == 200
+        assert "id: 1" not in response.text
+        assert "id: 2" in response.text
+        assert "event: final" in response.text
+        assert '"assistant_final":"done"' in response.text
 
 
 def test_async_app_turn_rejects_closed_thread(monkeypatch) -> None:

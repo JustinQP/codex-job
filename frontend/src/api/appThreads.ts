@@ -89,9 +89,11 @@ export function listAppTurnEvents(turnId: number, since = 0, limit = 100) {
 export async function streamAppTurn(
   turnId: number,
   onEvent: (event: AppTurnStreamEvent) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  since = 0
 ) {
-  const response = await fetch(`/app-turns/${turnId}/stream`, {
+  const params = since > 0 ? `?since=${encodeURIComponent(String(since))}` : "";
+  const response = await fetch(`/app-turns/${turnId}/stream${params}`, {
     headers: apiHeaders(false),
     signal
   });
@@ -145,10 +147,18 @@ export function cleanupAppThreads(status: string, limit = 50) {
 }
 
 function parseSseEvent(chunk: string): AppTurnStreamEvent | null {
+  const idLine = chunk
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("id:"));
   const dataLines = chunk
     .split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trimStart());
   if (!dataLines.length) return null;
-  return JSON.parse(dataLines.join("\n")) as AppTurnStreamEvent;
+  const event = JSON.parse(dataLines.join("\n")) as AppTurnStreamEvent;
+  if (idLine && event.sequence === undefined) {
+    const sequence = Number(idLine.slice(3).trim());
+    if (Number.isFinite(sequence)) event.sequence = sequence;
+  }
+  return event;
 }

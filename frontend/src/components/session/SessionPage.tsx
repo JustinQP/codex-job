@@ -66,6 +66,7 @@ export function SessionPage({ showToast }: PageProps) {
   const shouldStickToBottomRef = useRef(true);
   const forceScrollAfterSendRef = useRef(false);
   const streamControllersRef = useRef<Map<number, AbortController>>(new Map());
+  const streamSequencesRef = useRef<Map<number, number>>(new Map());
 
   const selectedThreadId = selectedThreadIdText ? Number(selectedThreadIdText) : null;
   const currentProjectId = currentProjectIdText ? Number(currentProjectIdText) : null;
@@ -187,6 +188,7 @@ export function SessionPage({ showToast }: PageProps) {
     return () => {
       streamControllersRef.current.forEach((controller) => controller.abort());
       streamControllersRef.current.clear();
+      streamSequencesRef.current.clear();
     };
   }, []);
 
@@ -221,6 +223,12 @@ export function SessionPage({ showToast }: PageProps) {
   }, []);
 
   const handleStreamEvent = useCallback((event: AppTurnStreamEvent) => {
+    const sequence = typeof event.sequence === "number" ? event.sequence : null;
+    if (sequence !== null) {
+      const previous = streamSequencesRef.current.get(event.turn_id) || 0;
+      if (sequence <= previous) return;
+      streamSequencesRef.current.set(event.turn_id, sequence);
+    }
     if (event.kind === "assistant_delta" && event.text) {
       setTurns((current) =>
         current.map((turn) =>
@@ -248,7 +256,18 @@ export function SessionPage({ showToast }: PageProps) {
       mergeTurn(event.turn);
       setWaitingText("");
       streamControllersRef.current.delete(event.turn_id);
+      if (sequence !== null) streamSequencesRef.current.set(event.turn_id, sequence);
       void loadAll();
+      return;
+    }
+    if (event.kind === "final" && event.assistant_final) {
+      setTurns((current) =>
+        current.map((turn) =>
+          turn.id === event.turn_id
+            ? { ...turn, assistant_final: event.assistant_final || turn.assistant_final }
+            : turn
+        )
+      );
       return;
     }
     if (event.kind === "error") {
@@ -265,6 +284,7 @@ export function SessionPage({ showToast }: PageProps) {
       }
       setWaitingText("");
       streamControllersRef.current.delete(event.turn_id);
+      if (sequence !== null) streamSequencesRef.current.set(event.turn_id, sequence);
     }
   }, [loadAll, mergeTurn, scrollMessagesToBottom]);
 
@@ -272,12 +292,19 @@ export function SessionPage({ showToast }: PageProps) {
     streamControllersRef.current.get(turnId)?.abort();
     const controller = new AbortController();
     streamControllersRef.current.set(turnId, controller);
-    void streamAppTurn(turnId, handleStreamEvent, controller.signal).catch((err) => {
+    const since = streamSequencesRef.current.get(turnId) || 0;
+    void streamAppTurn(turnId, handleStreamEvent, controller.signal, since).catch((err) => {
       if (controller.signal.aborted) return;
       streamControllersRef.current.delete(turnId);
       showToast(errorText(err), "error");
     });
   }, [handleStreamEvent, showToast]);
+
+  useEffect(() => {
+    if (!runningTurn) return;
+    if (streamControllersRef.current.has(runningTurn.id)) return;
+    startTurnStream(runningTurn.id);
+  }, [runningTurn, startTurnStream]);
 
   async function handleCreateThread(projectId: number, title: string) {
     if (executionDisabledReason) {
