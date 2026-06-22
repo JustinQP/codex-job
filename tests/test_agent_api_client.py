@@ -19,6 +19,7 @@ from backend.schemas import (
     AgentReconcileRequest,
     DeviceHeartbeat,
     DeviceRegister,
+    RunLogChunkUpload,
     WorkspaceSyncItem,
     WorkspaceSyncRequest,
 )
@@ -120,6 +121,15 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
                 process_status="STARTING",
             )
         )
+        log_chunk = client.upload_run_log_chunk(
+            1,
+            RunLogChunkUpload(
+                device_id="device-a",
+                command_id="cmd-1",
+                offset=0,
+                content="hello",
+            ),
+        )
 
         assert registered == {"ok": True, "path": "/agent/register"}
         assert heartbeat == {"ok": True, "path": "/agent/heartbeat"}
@@ -130,6 +140,7 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert complete == {"ok": True, "path": "/agent/commands/cmd-1/complete"}
         assert events == {"ok": True, "path": "/agent/commands/cmd-1/events"}
         assert reconcile == {"ok": True, "path": "/agent/reconcile"}
+        assert log_chunk == {"ok": True, "path": "/agent/runs/1/log-chunks"}
         assert AgentClientHandler.calls[0][0] == "/agent/register"
         assert AgentClientHandler.calls[0][1] == "secret"
         assert AgentClientHandler.calls[0][2]["device_id"] == "device-a"
@@ -146,6 +157,8 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert AgentClientHandler.calls[7][2]["events"][0]["sequence"] == 1
         assert AgentClientHandler.calls[8][0] == "/agent/reconcile"
         assert AgentClientHandler.calls[8][2]["command_id"] == "cmd-1"
+        assert AgentClientHandler.calls[9][0] == "/agent/runs/1/log-chunks"
+        assert AgentClientHandler.calls[9][2]["offset"] == 0
     finally:
         server.shutdown()
 

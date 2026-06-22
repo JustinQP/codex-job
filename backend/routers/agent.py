@@ -17,6 +17,8 @@ from backend.schemas import (
     DeviceHeartbeat,
     DeviceRead,
     DeviceRegister,
+    RunLogChunkUpload,
+    RunLogChunkUploadRead,
     WorkspaceSyncRead,
     WorkspaceSyncRequest,
 )
@@ -25,6 +27,7 @@ from backend.services import (
     agent_command_service,
     agent_reconciliation_service,
     device_service,
+    run_log_service,
     workspace_service,
 )
 
@@ -191,3 +194,13 @@ def reconcile_agent(
         return agent_reconciliation_service.reconcile_agent(session, payload)
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)
+
+
+@router.post("/agent/runs/{task_id}/log-chunks", response_model=RunLogChunkUploadRead)
+def upload_run_log_chunk(
+    task_id: int,
+    payload: RunLogChunkUpload,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_agent_token),
+):
+    return run_log_service.upload_run_log_chunk(session, task_id, payload)

@@ -123,7 +123,7 @@ Codex 执行本清单时必须遵守：
 
 - [x] D01 将 Run/Task 绑定 Device 和 Workspace
 - [x] D02 通过 AgentCommand 下发 `codex exec`
-- [ ] D03 实现增量日志上传
+- [x] D03 实现增量日志上传
 - [ ] D04 实现产物 manifest 和大小限制
 - [ ] D05 实现真实 Run 取消
 - [ ] D06 手机端运行页显示设备和 Workspace
@@ -1632,7 +1632,7 @@ tests/test_agent_run_executor.py
 
 ---
 
-### [ ] D03 实现增量日志上传
+### [x] D03 实现增量日志上传
 
 **目标**
 
@@ -1657,6 +1657,32 @@ C05、D02。
 - 追加 3 次日志只传输 3 个增量块。
 - 重复发送一个块不会重复写入。
 - 中断恢复后可以从正确 offset 继续。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/schemas.py`
+  - `backend/routers/agent.py`
+  - `backend/services/run_log_service.py`
+  - `agent/api_client.py`
+  - `agent/log_uploader.py`
+  - `tests/test_run_log_chunks.py`
+  - `tests/test_agent_api_client.py`
+  - `tests/test_api_contract.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- API：新增 `POST /agent/runs/{task_id}/log-chunks`，按 offset 增量追加到现有 `run.log`
+- 校验：后端校验 Run 的 `device_id`/`command_id` 绑定、offset 连续性、单 chunk 大小和 Run 总日志大小
+- 幂等：重复上传相同 offset 和相同内容返回成功且 `duplicate=true`，不会重复写入
+- Agent：新增 `RunLogUploadTracker` 和 `RunLogUploader`，只读取并上传新增日志内容，服务端返回 current offset 后更新本地 offset
+- 自动化测试：
+  - `pytest -q tests/test_run_log_chunks.py tests/test_agent_api_client.py tests/test_api_contract.py`：通过，8 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，250 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：旧 `/tasks/{id}/log` 读取接口继续读取同一个 `run.log`
+- 风险与未完成项：当前只处理日志增量；result/diff/Git 状态等产物 manifest 由 D04 完成
 
 ---
 

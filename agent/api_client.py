@@ -13,6 +13,7 @@ from backend.schemas import (
     AgentReconcileRequest,
     DeviceHeartbeat,
     DeviceRegister,
+    RunLogChunkUpload,
     WorkspaceSyncRequest,
 )
 
@@ -70,6 +71,12 @@ class AgentApiClient:
 
     def reconcile(self, payload: AgentReconcileRequest) -> dict[str, Any]:
         return self._json_request("/agent/reconcile", payload.model_dump(exclude_none=True))
+
+    def upload_run_log_chunk(self, task_id: int, payload: RunLogChunkUpload) -> dict[str, Any]:
+        return self._json_request(
+            f"/agent/runs/{task_id}/log-chunks",
+            payload.model_dump(exclude_none=True),
+        )
 
     def _json_request(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._json_request_or_none(path, payload)

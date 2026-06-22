@@ -338,6 +338,21 @@ class AgentReconcileRead(BaseModel):
     reason: str
 
 
+class RunLogChunkUpload(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    command_id: str = Field(..., min_length=1)
+    offset: int = Field(..., ge=0)
+    content: str
+
+
+class RunLogChunkUploadRead(BaseModel):
+    accepted: bool
+    duplicate: bool = False
+    current_offset: int
+    max_chunk_bytes: int
+    max_log_bytes: int
+
+
 class AppThreadCreate(BaseModel):
     project_id: int
     title: Optional[str] = None
