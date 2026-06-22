@@ -352,10 +352,19 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     assert "forceScrollAfterSendRef" in session
     assert "distanceToBottom < 96" in session
     assert "streamAppTurn" in session
+    assert "listAppTurnEvents" in session
     assert "startTurnStream(turn.id)" in session
+    assert "restoreTurnFromPersistedEvents" in session
+    assert "streamEventFromTurnEvent" in session
     assert "assistant_delta" in session
     assert "streamSequencesRef" in session
     assert "sequence <= previous" in session
+    assert "const since = streamSequencesRef.current.get(turnId) || 0" in session
+    assert "listAppTurnEvents(turn.id, cursor, 500)" in session
+    assert "eventList.next_sequence" in session
+    assert "streamRetryCountsRef" in session
+    assert "retryCount < 3" in session
+    assert "连接中断，正在尝试恢复输出" in session
     assert "window.requestAnimationFrame" in session
     assert "onReopenThread={handleReopen}" in session
 

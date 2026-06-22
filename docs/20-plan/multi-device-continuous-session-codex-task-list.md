@@ -142,7 +142,7 @@ Codex 执行本清单时必须遵守：
 - [x] E09 实现 Session reopen 和 generation
 - [x] E10 实现 Workspace 写入锁
 - [x] E11 手机会话页显示设备、目录和执行模式
-- [ ] E12 手机刷新后恢复当前 Turn 输出
+- [x] E12 手机刷新后恢复当前 Turn 输出
 
 ### F. 验收与交付
 
@@ -2523,7 +2523,7 @@ B08、E02、E10。
 
 ---
 
-### [ ] E12 手机刷新后恢复当前 Turn 输出
+### [x] E12 手机刷新后恢复当前 Turn 输出
 
 **目标**
 
@@ -2547,6 +2547,24 @@ E06、E11。
 - Turn 运行中刷新页面，文本不丢失、不重复。
 - final 到达后状态正确结束。
 - 设备离线时显示等待恢复或失败原因，而不是无限加载。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `frontend/src/components/session/SessionPage.tsx`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_ui.py tests/test_app_threads_api.py -o cache_dir=data/pytest-cache-e12-target2 -o addopts=--basetemp=data/pytest-tmp-e12-target2`：40 passed
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-e12-full -o addopts=--basetemp=data/pytest-tmp-e12-full`：306 passed, 1 skipped
+- 人工验证：不涉及；通过前端类型检查、生产构建和静态 UI 断言覆盖持久化事件恢复、sequence 续接和有限重连
+- 回归影响：刷新或重新进入运行中 Turn 时会先按 `/app-turns/{id}/events` 恢复已持久化 delta，再按最后 sequence 连接 SSE；最终状态仍由 `getAppTurn`/SSE final 同步
+- 风险与未完成项：恢复依赖后端已持久化 TurnEvent；尚未覆盖真实浏览器断网场景的端到端人工 smoke，后续 F 阶段补充
 
 ---
 

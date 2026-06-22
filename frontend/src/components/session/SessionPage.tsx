@@ -8,6 +8,7 @@ import {
   getAppThread,
   getAppThreadEvents,
   getAppThreadFinal,
+  listAppTurnEvents,
   getAppTurn,
   listAppThreads,
   listAppTurns,
@@ -19,7 +20,7 @@ import {
 } from "../../api/appThreads";
 import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
-import type { AppThread, AppTurn, AppTurnStreamEvent, Device, Project, Workspace } from "../../api/types";
+import type { AppThread, AppTurn, AppTurnStreamEvent, Device, Project, TurnEvent, Workspace } from "../../api/types";
 import { listWorkspaces } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePolling } from "../../hooks/usePolling";
@@ -70,6 +71,8 @@ export function SessionPage({ showToast }: PageProps) {
   const forceScrollAfterSendRef = useRef(false);
   const streamControllersRef = useRef<Map<number, AbortController>>(new Map());
   const streamSequencesRef = useRef<Map<number, number>>(new Map());
+  const streamRetryCountsRef = useRef<Map<number, number>>(new Map());
+  const streamRetryTimersRef = useRef<Map<number, number>>(new Map());
 
   const selectedThreadId = selectedThreadIdText ? Number(selectedThreadIdText) : null;
   const currentProjectId = currentProjectIdText ? Number(currentProjectIdText) : null;
@@ -201,13 +204,54 @@ export function SessionPage({ showToast }: PageProps) {
     setSelectedThreadIdText
   ]);
 
+  const restoreTurnFromPersistedEvents = useCallback(async (turn: AppTurn) => {
+    if (!isRunningStatus(turn.status)) return turn;
+    try {
+      let assistantFinal = turn.assistant_final || "";
+      let lastSequence = streamSequencesRef.current.get(turn.id) || 0;
+      let cursor = 0;
+      while (true) {
+        const eventList = await listAppTurnEvents(turn.id, cursor, 500);
+        for (const event of eventList.events) {
+          if (event.sequence <= lastSequence) continue;
+          const streamEvent = streamEventFromTurnEvent(turn.id, event);
+          lastSequence = Math.max(lastSequence, event.sequence);
+          if (streamEvent.kind === "assistant_delta" && streamEvent.text) {
+            assistantFinal += streamEvent.text;
+          } else if (streamEvent.kind === "final" && streamEvent.assistant_final) {
+            assistantFinal = streamEvent.assistant_final;
+          }
+        }
+        if (!eventList.next_sequence) break;
+        cursor = eventList.next_sequence;
+      }
+      streamSequencesRef.current.set(turn.id, lastSequence);
+      return assistantFinal ? { ...turn, assistant_final: assistantFinal } : turn;
+    } catch {
+      return turn;
+    }
+  }, []);
+
   const loadTurns = useCallback(async () => {
     if (!selectedThreadId) {
       setTurns([]);
       return;
     }
-    setTurns(await listAppTurns(selectedThreadId));
-  }, [selectedThreadId]);
+    const loadedTurns = await listAppTurns(selectedThreadId);
+    const restoredTurns = await Promise.all(loadedTurns.map((turn) => restoreTurnFromPersistedEvents(turn)));
+    setTurns((current) =>
+      restoredTurns.map((turn) => {
+        const currentTurn = current.find((item) => item.id === turn.id);
+        if (!currentTurn?.assistant_final) return turn;
+        const currentText = currentTurn.assistant_final;
+        const restoredText = turn.assistant_final || "";
+        if (isRunningStatus(turn.status) && currentText.length > restoredText.length) {
+          return { ...turn, assistant_final: currentText };
+        }
+        return turn;
+      })
+    );
+  }, [restoreTurnFromPersistedEvents, selectedThreadId]);
 
   const loadAll = useCallback(async () => {
     setError("");
@@ -228,6 +272,9 @@ export function SessionPage({ showToast }: PageProps) {
       streamControllersRef.current.forEach((controller) => controller.abort());
       streamControllersRef.current.clear();
       streamSequencesRef.current.clear();
+      streamRetryTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      streamRetryTimersRef.current.clear();
+      streamRetryCountsRef.current.clear();
     };
   }, []);
 
@@ -262,6 +309,7 @@ export function SessionPage({ showToast }: PageProps) {
   }, []);
 
   const handleStreamEvent = useCallback((event: AppTurnStreamEvent) => {
+    streamRetryCountsRef.current.set(event.turn_id, 0);
     const sequence = typeof event.sequence === "number" ? event.sequence : null;
     if (sequence !== null) {
       const previous = streamSequencesRef.current.get(event.turn_id) || 0;
@@ -295,6 +343,10 @@ export function SessionPage({ showToast }: PageProps) {
       mergeTurn(event.turn);
       setWaitingText("");
       streamControllersRef.current.delete(event.turn_id);
+      streamRetryCountsRef.current.delete(event.turn_id);
+      const retryTimer = streamRetryTimersRef.current.get(event.turn_id);
+      if (retryTimer) window.clearTimeout(retryTimer);
+      streamRetryTimersRef.current.delete(event.turn_id);
       if (sequence !== null) streamSequencesRef.current.set(event.turn_id, sequence);
       void loadAll();
       return;
@@ -323,11 +375,15 @@ export function SessionPage({ showToast }: PageProps) {
       }
       setWaitingText("");
       streamControllersRef.current.delete(event.turn_id);
+      streamRetryCountsRef.current.delete(event.turn_id);
+      const retryTimer = streamRetryTimersRef.current.get(event.turn_id);
+      if (retryTimer) window.clearTimeout(retryTimer);
+      streamRetryTimersRef.current.delete(event.turn_id);
       if (sequence !== null) streamSequencesRef.current.set(event.turn_id, sequence);
     }
   }, [loadAll, mergeTurn, scrollMessagesToBottom]);
 
-  const startTurnStream = useCallback((turnId: number) => {
+  function startTurnStream(turnId: number) {
     streamControllersRef.current.get(turnId)?.abort();
     const controller = new AbortController();
     streamControllersRef.current.set(turnId, controller);
@@ -335,15 +391,26 @@ export function SessionPage({ showToast }: PageProps) {
     void streamAppTurn(turnId, handleStreamEvent, controller.signal, since).catch((err) => {
       if (controller.signal.aborted) return;
       streamControllersRef.current.delete(turnId);
-      showToast(errorText(err), "error");
+      const retryCount = streamRetryCountsRef.current.get(turnId) || 0;
+      if (retryCount < 3) {
+        streamRetryCountsRef.current.set(turnId, retryCount + 1);
+        setWaitingText("连接中断，正在尝试恢复输出。");
+        const timerId = window.setTimeout(() => {
+          streamRetryTimersRef.current.delete(turnId);
+          if (!streamControllersRef.current.has(turnId)) startTurnStream(turnId);
+        }, Math.min(8000, 1200 * 2 ** retryCount));
+        streamRetryTimersRef.current.set(turnId, timerId);
+        return;
+      }
+      showToast(`输出流连接失败：${errorText(err)}`, "error");
     });
-  }, [handleStreamEvent, showToast]);
+  }
 
   useEffect(() => {
     if (!runningTurn) return;
     if (streamControllersRef.current.has(runningTurn.id)) return;
     startTurnStream(runningTurn.id);
-  }, [runningTurn, startTurnStream]);
+  }, [runningTurn?.id]);
 
   async function handleCreateThread(projectId: number, title: string) {
     if (executionDisabledReason) {
@@ -575,4 +642,79 @@ export function SessionPage({ showToast }: PageProps) {
       ) : null}
     </section>
   );
+}
+
+function streamEventFromTurnEvent(turnId: number, event: TurnEvent): AppTurnStreamEvent {
+  if (event.kind === "final") {
+    return {
+      kind: "final",
+      turn_id: turnId,
+      sequence: event.sequence,
+      assistant_final: stringFromPayload(event.payload, "assistant_final")
+        || stringFromPayload(event.payload, "assistant_final_preview")
+    };
+  }
+  const delta = extractDelta(event.payload);
+  if (delta) {
+    return {
+      kind: "assistant_delta",
+      turn_id: turnId,
+      sequence: event.sequence,
+      text: delta
+    };
+  }
+  if (event.kind === "status") {
+    return {
+      kind: "status",
+      turn_id: turnId,
+      sequence: event.sequence,
+      status: stringFromPayload(event.payload, "status") || "RUNNING"
+    };
+  }
+  if (event.kind.toLowerCase().includes("error") || event.payload.error) {
+    return {
+      kind: "error",
+      turn_id: turnId,
+      sequence: event.sequence,
+      message: stringFromPayload(event.payload, "message") || stringFromPayload(event.payload, "error") || event.kind
+    };
+  }
+  return {
+    kind: "event",
+    turn_id: turnId,
+    sequence: event.sequence,
+    event_kind: event.kind,
+    event: event.payload
+  };
+}
+
+function extractDelta(payload: Record<string, unknown>): string | null {
+  const containers = payloadContainers(payload);
+  for (const container of containers) {
+    const delta = container.delta;
+    if (typeof delta === "string" && delta) return delta;
+  }
+  return null;
+}
+
+function payloadContainers(payload: Record<string, unknown>): Record<string, unknown>[] {
+  const containers = [payload];
+  const event = payload.event;
+  if (isRecord(event)) {
+    containers.push(event);
+    for (const key of ["params", "result", "item", "message", "delta", "content", "output"]) {
+      const nested = event[key];
+      if (isRecord(nested)) containers.push(nested);
+    }
+  }
+  return containers;
+}
+
+function stringFromPayload(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
