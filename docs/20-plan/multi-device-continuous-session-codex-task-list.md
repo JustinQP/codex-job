@@ -94,7 +94,7 @@ Codex 执行本清单时必须遵守：
 ### A. 重构基线
 
 - [x] A01 建立重构前回归基线
-- [ ] A02 增加最小 GitHub Actions CI
+- [x] A02 增加最小 GitHub Actions CI
 - [ ] A03 引入轻量数据库版本迁移机制
 - [ ] A04 拆分 FastAPI 路由装配层
 - [ ] A05 增加新旧执行模式功能开关
@@ -231,7 +231,7 @@ npm run build
 
 ---
 
-### [ ] A02 增加最小 GitHub Actions CI
+### [x] A02 增加最小 GitHub Actions CI
 
 **目标**
 
@@ -277,6 +277,24 @@ npm ci
 npm run typecheck
 npm run build
 ```
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `.github/workflows/ci.yml`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `python -m compileall backend runner scripts poc/app_server`：通过
+  - `pytest -q`：通过，157 passed
+  - `cd frontend; npm.cmd ci`：本机既有 `node_modules` 原生文件被占用导致 EPERM，未作为通过结果
+  - 干净前端副本中 `npm.cmd ci --cache ..\npm-cache-a02-clean`：提权联网后通过，等价验证 GitHub Actions fresh checkout 场景
+  - 干净前端副本中 `npm.cmd run typecheck`：通过
+  - 干净前端副本中 `npm.cmd run build`：通过
+  - 原 `frontend` 目录恢复依赖后 `npm.cmd run typecheck`：通过
+- 人工验证：检查 workflow 包含独立 Python 和 Frontend job，未配置发布、Docker、缓存服务或真实 Codex Token
+- 回归影响：仅新增 CI 配置，不影响运行时代码
+- 风险与未完成项：本机 PowerShell 直接执行 `npm ...` 会受执行策略影响，本次使用 `npm.cmd`；本机既有 `node_modules` 文件锁会影响 `npm ci`，CI fresh checkout 不受该残留影响
 
 ---
 
