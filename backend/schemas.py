@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models import TaskStatus, TaskType
+from backend.models import DeviceStatus, TaskStatus, TaskType
 
 
 class ProjectCreate(BaseModel):
@@ -166,6 +166,40 @@ class RunnerTaskCancelState(BaseModel):
     task_id: int
     cancel_requested: bool
     status: TaskStatus
+
+
+class DeviceRegister(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    display_name: str = Field(..., min_length=1, max_length=200)
+    hostname: str = Field(..., min_length=1, max_length=200)
+    os_name: str = Field(..., min_length=1, max_length=100)
+    agent_version: str = Field(..., min_length=1, max_length=100)
+    capabilities_json: Optional[str] = None
+
+
+class DeviceHeartbeat(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    hostname: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    os_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    agent_version: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    capabilities_json: Optional[str] = None
+
+
+class DeviceRead(BaseModel):
+    device_id: str
+    display_name: str
+    hostname: str
+    os_name: str
+    agent_version: str
+    capabilities_json: Optional[str]
+    status: DeviceStatus
+    last_heartbeat_at: datetime
+    lease_expires_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AppThreadCreate(BaseModel):

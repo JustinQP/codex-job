@@ -28,6 +28,12 @@ class TaskType(str, Enum):
     COMMIT = "COMMIT"
 
 
+class DeviceStatus(str, Enum):
+    ONLINE = "ONLINE"
+    OFFLINE = "OFFLINE"
+    DISABLED = "DISABLED"
+
+
 class Project(SQLModel, table=True):
     __tablename__ = "projects"
 
@@ -86,6 +92,22 @@ class RunnerRecord(SQLModel, table=True):
     registered_at: datetime = Field(default_factory=utc_now)
     last_heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
     lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class Device(SQLModel, table=True):
+    __tablename__ = "devices"
+
+    device_id: str = Field(primary_key=True)
+    display_name: str
+    hostname: str
+    os_name: str
+    agent_version: str
+    capabilities_json: Optional[str] = None
+    status: DeviceStatus = Field(default=DeviceStatus.ONLINE, index=True)
+    last_heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
+    lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class AppThread(SQLModel, table=True):

@@ -96,11 +96,63 @@ def apply_legacy_sqlite_columns(engine: Engine) -> None:
                 )
 
 
+def create_devices_table(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS devices (
+                    device_id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    hostname TEXT NOT NULL,
+                    os_name TEXT NOT NULL,
+                    agent_version TEXT NOT NULL,
+                    capabilities_json TEXT,
+                    status TEXT NOT NULL DEFAULT 'ONLINE',
+                    last_heartbeat_at TIMESTAMP NOT NULL,
+                    lease_expires_at TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL,
+                    updated_at TIMESTAMP NOT NULL
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_devices_status
+                ON devices (status)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_devices_last_heartbeat_at
+                ON devices (last_heartbeat_at)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_devices_lease_expires_at
+                ON devices (lease_expires_at)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
         name="legacy_sqlite_columns",
         apply=apply_legacy_sqlite_columns,
+    ),
+    Migration(
+        version="0002",
+        name="devices",
+        apply=create_devices_table,
     ),
 )
 

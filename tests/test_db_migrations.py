@@ -95,8 +95,11 @@ def test_empty_database_initializes_to_latest_migration() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001"]
-    assert migration_rows(engine) == [("0001", "legacy_sqlite_columns")]
+    assert applied == ["0001", "0002"]
+    assert migration_rows(engine) == [
+        ("0001", "legacy_sqlite_columns"),
+        ("0002", "devices"),
+    ]
 
 
 def test_legacy_database_upgrades_missing_columns() -> None:
@@ -105,10 +108,11 @@ def test_legacy_database_upgrades_missing_columns() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001"]
+    assert applied == ["0001", "0002"]
     assert "default_runner_id" in table_columns(engine, "projects")
     assert "task_type" in table_columns(engine, "tasks")
     assert "lease_expires_at" in table_columns(engine, "runner_records")
+    assert "device_id" in table_columns(engine, "devices")
 
 
 def test_migrations_are_idempotent() -> None:
@@ -118,9 +122,12 @@ def test_migrations_are_idempotent() -> None:
     first = run_migrations(engine, backup=False)
     second = run_migrations(engine, backup=False)
 
-    assert first == ["0001"]
+    assert first == ["0001", "0002"]
     assert second == []
-    assert migration_rows(engine) == [("0001", "legacy_sqlite_columns")]
+    assert migration_rows(engine) == [
+        ("0001", "legacy_sqlite_columns"),
+        ("0002", "devices"),
+    ]
 
 
 def test_failed_migration_is_not_marked_complete() -> None:

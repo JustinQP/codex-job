@@ -101,7 +101,7 @@ Codex 执行本清单时必须遵守：
 
 ### B. Device 与 Workspace
 
-- [ ] B01 新增 Device 数据模型和迁移
+- [x] B01 新增 Device 数据模型和迁移
 - [ ] B02 实现 Agent 稳定设备身份
 - [ ] B03 实现 Agent 注册、心跳和认证接口
 - [ ] B04 新增 Workspace 数据模型和迁移
@@ -500,7 +500,7 @@ tests/test_config.py
 
 ## B. Device 与 Workspace
 
-### [ ] B01 新增 Device 数据模型和迁移
+### [x] B01 新增 Device 数据模型和迁移
 
 **目标**
 
@@ -550,6 +550,24 @@ tests/test_device_service.py
 - 相同 `device_id` 重复注册只更新记录。
 - lease 过期后设备可被标记 OFFLINE。
 - DISABLED 设备不能被心跳自动恢复为 ONLINE，除非业务明确允许并有测试。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/services/device_service.py`
+  - `tests/test_device_service.py`
+  - `tests/test_db_migrations.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0002 devices`，创建 `devices` 表及 status、last_heartbeat_at、lease_expires_at 索引
+- 自动化测试：
+  - `pytest -q tests/test_device_service.py tests/test_db_migrations.py`：通过，10 passed
+  - `pytest -q`：通过，182 passed
+- 人工验证：不涉及
+- 回归影响：新增 Device 模型和服务，不改变现有 Runner/Task/AppThread 链路
+- 风险与未完成项：本任务仅提供模型和服务，Agent API 和前端设备列表由后续 B03/B08 接入
 
 ---
 
