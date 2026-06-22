@@ -263,13 +263,16 @@ def test_frontend_v17_docs_and_scripts_are_documented() -> None:
     assert "/mobile" in readme
     assert "/assets/*" in readme
 
-    plan = Path("docs/mobile-v1.7-frontend-split-plan.md").read_text(
-        encoding="utf-8",
-        errors="replace",
-    )
-    assert "v1.7.5" in plan
-    assert "python -m compileall backend runner scripts poc/app_server" in plan
-    assert "npm run build" in plan
+    docs_index = Path("docs/README.md").read_text(encoding="utf-8", errors="replace")
+    assert "多设备连续会话开发路线图" in docs_index
+    assert "多设备连续会话 Codex 执行任务清单" in docs_index
+    assert "历史版本计划索引" in docs_index
+
+    task_list = Path(
+        "docs/20-plan/multi-device-continuous-session-codex-task-list.md"
+    ).read_text(encoding="utf-8", errors="replace")
+    assert "python -m compileall backend runner scripts poc/app_server" in task_list
+    assert "npm run build" in task_list
 
 
 def test_frontend_v176_regression_fixes_exist() -> None:
@@ -374,6 +377,7 @@ def test_backend_mobile_py_no_longer_contains_embedded_app() -> None:
     assert "def mobile_settings_tab" not in source
     assert "def mobile_script" not in source
     assert len(source.splitlines()) < 80
+
 def test_create_task_form_redirects_to_detail() -> None:
     for client, session in make_client():
         project = add_project(session)
