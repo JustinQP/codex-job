@@ -67,7 +67,7 @@ export function SettingsPage({ showToast }: PageProps) {
         <div className="profile-avatar">我</div>
         <div>
           <h2>移动控制台</h2>
-          <p>v1.7 frontend split POC</p>
+          <p>v2.0.0 multi-device control plane</p>
         </div>
       </div>
 

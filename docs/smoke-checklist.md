@@ -1,6 +1,6 @@
 # Smoke Checklist
 
-本文档用于 v1.0.0 本地验收。
+本文档用于 v2.0.0 本地验收和发布收口。
 
 ## 0. 重构前自动化回归基线
 
@@ -115,3 +115,40 @@ http://127.0.0.1:8000/mobile
 - recover stale AppTurn。
 - 状态筛选。
 - 清理 CLOSED/ERROR。
+
+## 10. 多设备 Agent smoke
+
+前置条件：
+
+- Control Plane 已启动，`AGENT_COMMAND_MODE=true`。
+- 至少一台或两台 Device Agent 已配置 `AGENT_TOKEN` 并完成 `--register` 与 `--sync-workspaces`。
+- 每台设备的 `workspaces.json` 只包含允许执行的本机目录。
+
+基础命令：
+
+```powershell
+python -m agent.main --register
+python -m agent.main --sync-workspaces
+python -m agent.main --run-loop
+```
+
+预期：
+
+- 手机项目页能看到设备和 Workspace。
+- 在 Workspace 上创建 Run 后，只由该 Workspace 所属设备执行。
+- 在 Workspace 上创建 Session 后，连续 Turn 复用相同 cwd 和同一 Agent session。
+- 取消 Run/Turn 后状态闭环明确。
+
+当前记录：
+
+- F05 真实双设备 smoke 已按用户指令越过，未执行，不记录为通过。
+- 本地 fake Agent、Windows 安装脚本和迁移验证已通过对应自动化测试。
+
+## 11. v2.0.0 Release Checklist
+
+- [x] README 已更新为 Control Plane + Device Agent 定位。
+- [x] API、状态机、Session 和 smoke 文档已更新到 v2.0.0。
+- [x] 旧 Runner 接口保留为 deprecated fallback。
+- [x] v2.0 计划和执行清单已移入 `docs/90-archive/`。
+- [x] 数据迁移验证脚本保留，正式库不直接迁移。
+- [ ] 真实双设备 smoke：未执行，按用户指令跳过，后续补验。

@@ -9,7 +9,7 @@ from agent.identity import AgentIdentity
 from backend.schemas import DeviceHeartbeat, DeviceRegister
 
 
-AGENT_VERSION = "0.1.0"
+AGENT_VERSION = "2.0.0"
 
 
 def build_register_payload(identity: AgentIdentity) -> DeviceRegister:

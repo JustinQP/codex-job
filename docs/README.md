@@ -13,16 +13,9 @@
 
 ### 当前开发计划
 
-`20-plan/` 只维护当前仍在执行的正式计划：
+当前没有活跃开发计划。v2.0 多设备连续会话计划已完成并归档到 `docs/90-archive/`。
 
-- [多设备连续会话开发路线图](20-plan/multi-device-continuous-session-roadmap.md)
-- [多设备连续会话 Codex 执行任务清单](20-plan/multi-device-continuous-session-codex-task-list.md)
-
-计划的职责：
-
-- 路线图说明产品目标、架构方向、阶段和完成标准。
-- 执行清单说明 Codex 每次可以独立执行的任务、依赖和验收标准。
-- 一次性小改动、临时分析和对话提示词不写入项目文档。
+新一轮跨提交开发开始前，再在 `20-plan/` 中放置一份路线图和一份执行清单。
 
 ### 工程规则
 
@@ -34,6 +27,8 @@
 ### 历史资料
 
 - [历史版本计划索引](90-archive/README.md)
+- [v2.0 多设备连续会话路线图](90-archive/multi-device-continuous-session-roadmap.md)
+- [v2.0 多设备连续会话执行清单](90-archive/multi-device-continuous-session-codex-task-list.md)
 
 历史资料通过不可变 commit 链接保存，避免在当前工作树中保留大量已完成的过程计划。
 

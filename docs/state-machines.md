@@ -1,6 +1,57 @@
 # State Machines
 
-本文档说明 v1.0.0 当前 App Server 会话状态机。
+本文档说明 v2.0.0 当前 Device、AgentCommand、Run 和 App Server 会话状态机。
+
+## Device 状态
+
+```text
+ONLINE
+OFFLINE
+DISABLED
+```
+
+含义：
+
+- `ONLINE`：Agent 最近心跳有效，可以认领命令。
+- `OFFLINE`：Agent 心跳过期，不能新建执行。
+- `DISABLED`：设备被禁用，不能新建执行。
+
+## AgentCommand 状态
+
+```text
+PENDING
+CLAIMED
+RUNNING
+SUCCESS
+FAILED
+CANCELLED
+EXPIRED
+```
+
+典型流转：
+
+```text
+PENDING -> CLAIMED -> RUNNING -> SUCCESS
+PENDING -> CLAIMED -> RUNNING -> FAILED
+PENDING -> CANCELLED
+CLAIMED/RUNNING -> CANCELLED
+CLAIMED/RUNNING -> EXPIRED by reconciliation
+```
+
+## Run/Task 状态
+
+```text
+PENDING
+RUNNING
+SUCCESS
+FAILED
+CANCELLED
+```
+
+说明：
+
+- Agent Run 绑定 `device_id`、`workspace_id` 和 `command_id`。
+- Deprecated Runner task 不绑定 Workspace，仍可在 `AGENT_COMMAND_MODE=false` 下通过旧 Runner 队列执行。
 
 ## AppThread 状态
 

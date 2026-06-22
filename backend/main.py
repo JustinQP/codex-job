@@ -46,8 +46,8 @@ async def lifespan(_: FastAPI) -> Iterable[None]:
 
 
 app = FastAPI(
-    title="Codex Remote Runner MVP",
-    version="1.0.0",
+    title="Codex Job Control Plane",
+    version="2.0.0",
     lifespan=lifespan,
 )
 app.mount(

@@ -299,7 +299,7 @@ def test_frontend_v17_docs_and_scripts_are_documented() -> None:
     assert package_json["scripts"]["dev"] == "vite"
 
     readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
-    assert "Mobile Frontend current iteration: v1.8 conversation-first" in readme
+    assert "Mobile Frontend current iteration: v2.0.0 multi-device control plane" in readme
     assert "会话 / 项目 / 运行 / 我的" in readme
     assert "运行是底层 Task / Runner 执行记录" in readme
     assert "frontend/src/api" in readme
@@ -307,12 +307,11 @@ def test_frontend_v17_docs_and_scripts_are_documented() -> None:
     assert "/assets/*" in readme
 
     docs_index = Path("docs/README.md").read_text(encoding="utf-8", errors="replace")
-    assert "多设备连续会话开发路线图" in docs_index
-    assert "多设备连续会话 Codex 执行任务清单" in docs_index
     assert "历史版本计划索引" in docs_index
+    assert "当前没有活跃开发计划" in docs_index
 
     task_list = Path(
-        "docs/20-plan/multi-device-continuous-session-codex-task-list.md"
+        "docs/90-archive/multi-device-continuous-session-codex-task-list.md"
     ).read_text(encoding="utf-8", errors="replace")
     assert "python -m compileall backend runner scripts poc/app_server" in task_list
     assert "npm run build" in task_list
@@ -409,7 +408,7 @@ def test_frontend_v176_regression_fixes_exist() -> None:
 
     readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
     assert "Mobile UI 当前迭代：v1.2" not in readme
-    assert "Mobile Frontend current iteration: v1.8 conversation-first" in readme
+    assert "Mobile Frontend current iteration: v2.0.0 multi-device control plane" in readme
     assert "frontend/dist/index.html" in readme
 
     start_script = Path("scripts/start_app_server_stack.ps1").read_text(encoding="utf-8")

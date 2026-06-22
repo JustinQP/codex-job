@@ -151,7 +151,7 @@ Codex 执行本清单时必须遵守：
 - [x] F03 增加 Windows Agent 安装和自启动脚本
 - [x] F04 完成已有数据升级和回滚验证
 - [ ] F05 完成真实多设备 smoke 验收
-- [ ] F06 收口文档、归档旧计划并发布 v2.0
+- [x] F06 收口文档、归档旧计划并发布 v2.0
 
 ---
 
@@ -2846,7 +2846,7 @@ D05、E12、F03、F04。
 
 ---
 
-### [ ] F06 收口文档、归档旧计划并发布 v2.0
+### [x] F06 收口文档、归档旧计划并发布 v2.0
 
 **目标**
 
@@ -2889,6 +2889,40 @@ npm run build
 - 文档不包含租户、组织、RBAC、计费等无关设计。
 - 当前真实双设备 smoke 已记录。
 - 旧数据升级说明和回滚说明完整。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `README.md`
+  - `docs/README.md`
+  - `docs/api-overview.md`
+  - `docs/app-server-session.md`
+  - `docs/state-machines.md`
+  - `docs/smoke-checklist.md`
+  - `docs/90-archive/README.md`
+  - `docs/90-archive/multi-device-continuous-session-roadmap.md`
+  - `docs/90-archive/multi-device-continuous-session-codex-task-list.md`
+  - `backend/main.py`
+  - `agent/heartbeat.py`
+  - `frontend/package.json`
+  - `frontend/package-lock.json`
+  - `frontend/src/components/settings/SettingsPage.tsx`
+  - `tests/test_docs.py`
+  - `tests/test_ui.py`
+  - `tests/test_app_threads_api.py`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-f06-full -o addopts=--basetemp=data/pytest-tmp-f06-full`：通过，313 passed, 1 skipped
+  - `cd frontend; npm.cmd ci`：失败，Windows 拒绝删除被占用的 Rollup 原生模块 `node_modules/@rollup/.rollup-win32-x64-msvc-*/rollup.win32-x64-msvc.node`
+  - `cd frontend; npm.cmd ci --cache ..\data\npm-cache-f06`：失败，同上，说明阻塞点是本地 `node_modules` 文件占用，不是 npm 下载缓存
+  - `cd frontend; npm.cmd install --cache ..\data\npm-cache-f06`：通过，用于恢复被 `npm ci` 中断后的依赖目录
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：真实双设备 smoke 按用户指令越过，未执行；已在 smoke 文档和 release checklist 中列为未验证项
+- 回归影响：当前有效文档切换到 v2.0.0；旧 Runner fallback、POC Bridge 和历史计划保留为 deprecated/归档内容
+- 风险与未完成项：F05 真实双设备 smoke 未验证，v2.0.0 release checklist 将其记录为后续补验项
 
 ## 5. 执行顺序与停止条件
 

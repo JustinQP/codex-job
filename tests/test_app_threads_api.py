@@ -17,8 +17,8 @@ from tests.test_runs_api import add_device, add_workspace
 from backend.services.app_server_bridge_client import AppServerBridgeError
 
 
-def test_fastapi_version_is_1_0_0() -> None:
-    assert app.version == "1.0.0"
+def test_fastapi_version_is_2_0_0() -> None:
+    assert app.version == "2.0.0"
 
 
 class FakeBridgeClient:

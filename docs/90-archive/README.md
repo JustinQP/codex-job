@@ -7,8 +7,10 @@
 当前实现和后续开发应优先参考：
 
 - [`docs/README.md`](../README.md)
-- [`docs/20-plan/multi-device-continuous-session-roadmap.md`](../20-plan/multi-device-continuous-session-roadmap.md)
-- [`docs/20-plan/multi-device-continuous-session-codex-task-list.md`](../20-plan/multi-device-continuous-session-codex-task-list.md)
+- [`README.md`](../../README.md)
+- [`docs/api-overview.md`](../api-overview.md)
+- [`docs/app-server-session.md`](../app-server-session.md)
+- [`docs/smoke-checklist.md`](../smoke-checklist.md)
 
 ## 1. 早期设计与开发计划
 
@@ -42,7 +44,14 @@
 
 - [`v1.9.0-plan.md`](https://github.com/JustinQP/codex-job/blob/224589d6262e27700dc067681493f28e41b0a303/docs/v1.9.0-plan.md) 的正文实际是 **v1.8 Conversation-first 产品结构清理计划**。归档保留原文件名以对应历史提交，但不再作为当前版本号依据。
 
-## 5. 使用规则
+## 5. v2.0 多设备连续会话计划
+
+- [multi-device-continuous-session-roadmap.md](multi-device-continuous-session-roadmap.md)
+- [multi-device-continuous-session-codex-task-list.md](multi-device-continuous-session-codex-task-list.md)
+
+归档说明：v2.0 收口时将多设备连续会话路线图和 Codex 执行清单从 `docs/20-plan/` 移入本目录。F05 真实双设备 smoke 按用户指令越过，未作为已通过验收记录；后续需要补验时应以当前 smoke 文档为准。
+
+## 6. 使用规则
 
 - 历史 plan 用于了解演进过程，不用于指导当前实现。
 - 历史计划中的路径、版本、限制和测试命令可能已经失效。
