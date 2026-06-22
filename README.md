@@ -2,7 +2,8 @@
 
 当前版本：v1.0.0
 
-Mobile Frontend current iteration: v1.7.x. The mobile console has moved to `frontend/` with Vite + React + TypeScript; `/mobile` serves `frontend/dist/index.html` first.
+Mobile Frontend current iteration: v1.8 conversation-first. The mobile console has moved to `frontend/` with Vite + React + TypeScript; `/mobile` serves `frontend/dist/index.html` first.
+Mobile 前端现在是会话优先结构：会话 / 项目 / 运行 / 我的。运行是底层 Task / Runner 执行记录，不再作为主交互入口。
 定位：Codex Remote Runner + App Server Sidecar 本地控制台
 
 ## 1. 项目定位
@@ -132,7 +133,7 @@ FastAPI hosts the production build:
 - `/assets/*` serves `frontend/dist/assets/*`.
 - If the build is missing, `/mobile` returns a clear build instruction page.
 
-v1.7.x migrated the main mobile console shell, tasks page, App Server session page, and settings page into React. It still does not add SSE, approval UI, or diff UI.
+v1.8 conversation-first changes the primary mobile navigation to 会话 / 项目 / 运行 / 我的. The 会话 page is the main entry; 项目 manages the current project selection; 运行 shows underlying Task / Runner execution records. It still does not add SSE, approval UI, or diff UI.
 
 ## 4. 主线 Runner/codex exec 任务链路
 
@@ -212,8 +213,8 @@ http://127.0.0.1:8000/mobile
 
 - 保存 API Token 到 localStorage。
 - 查看 Runner 列表和状态。
-- 选择项目、Runner、任务类型、模型、推理难度、sandbox。
-- 提交任务、查看最近任务、查看 log/result/diff、取消任务。
+- 选择当前项目，供会话新建时默认使用。
+- 查看底层运行记录、log/result/diff，必要时重跑或取消运行。
 - 检查 App Server Bridge。
 - 创建、选择、关闭、重开 AppThread。
 - 同步/异步发送 AppTurn。

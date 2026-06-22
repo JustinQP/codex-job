@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { AppThread, Project } from "../../api/types";
 import { formatRelativeTime } from "../../utils/date";
@@ -10,6 +10,7 @@ type ThreadSwitcherSheetProps = {
   projects: Project[];
   threads: AppThread[];
   selectedThreadId: number | null;
+  currentProjectId: number | null;
   statusFilter: string;
   includeArchived: boolean;
   onCreate: (projectId: number, title: string) => void;
@@ -27,12 +28,18 @@ export function ThreadSwitcherSheet({
   onSelect,
   onStatusFilterChange,
   projects,
+  currentProjectId,
   selectedThreadId,
   statusFilter,
   threads
 }: ThreadSwitcherSheetProps) {
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? 0);
+  const [projectId, setProjectId] = useState(currentProjectId || projects[0]?.id || 0);
   const [title, setTitle] = useState("");
+
+  useEffect(() => {
+    const fallbackProjectId = currentProjectId || projects[0]?.id || 0;
+    if (fallbackProjectId) setProjectId(fallbackProjectId);
+  }, [currentProjectId, projects]);
 
   return (
     <div className="session-switch-sheet stack">

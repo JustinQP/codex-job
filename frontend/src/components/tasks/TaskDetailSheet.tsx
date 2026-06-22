@@ -11,7 +11,7 @@ export function TaskDetailSheet({ task, onCancel, onRerun }: TaskDetailSheetProp
   return (
     <div className="task-detail-grid">
       <div className="detail-card">
-        <h3>Prompt</h3>
+        <h3>运行输入</h3>
         <pre>{task.prompt}</pre>
       </div>
       <div className="meta-grid">

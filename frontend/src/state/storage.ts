@@ -5,6 +5,7 @@ export const UI_STATE_KEYS = {
   taskStatusFilter: "mobile.taskStatusFilter",
   appThreadStatusFilter: "mobile.appThreadStatusFilter",
   appIncludeArchived: "mobile.appIncludeArchived",
+  currentProjectId: "mobile.currentProjectId",
   selectedAppThreadId: "mobile.selectedAppThreadId",
   appSendMode: "mobile.appSendMode"
 } as const;

@@ -1,9 +1,9 @@
-export type TabName = "home" | "tasks" | "app" | "settings";
+export type TabName = "app" | "projects" | "runs" | "settings";
 
 const tabs: Array<{ key: TabName; label: string; icon: string }> = [
-  { key: "home", label: "工作台", icon: "⌂" },
-  { key: "tasks", label: "任务", icon: "□" },
   { key: "app", label: "会话", icon: "○" },
+  { key: "projects", label: "项目", icon: "⌂" },
+  { key: "runs", label: "运行", icon: "□" },
   { key: "settings", label: "我的", icon: "◇" }
 ];
 

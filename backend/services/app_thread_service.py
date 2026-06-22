@@ -67,7 +67,7 @@ def create_app_thread(
     title = _clean_title(payload.title) or _default_title()
     client = bridge_client or get_default_client()
     try:
-        bridge_thread = client.create_thread(title)
+        bridge_thread = client.create_thread(title, cwd=project.path)
     except AppServerBridgeError as exc:
         raise _bridge_http_exception(exc) from exc
     bridge_thread_id = _require_bridge_thread_id(bridge_thread)
@@ -209,9 +209,14 @@ def reopen_app_thread(
     bridge_client: AppServerBridgeClient | None = None,
 ) -> AppThread:
     app_thread = get_app_thread_or_404(session, app_thread_id)
+    project = session.get(Project, app_thread.project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+    if not project.enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project is disabled")
     client = bridge_client or get_default_client()
     try:
-        bridge_thread = client.create_thread(app_thread.title)
+        bridge_thread = client.create_thread(app_thread.title, cwd=project.path)
     except AppServerBridgeError as exc:
         app_thread.status = APP_THREAD_ERROR
         app_thread.last_error = exc.message
@@ -448,6 +453,86 @@ def get_app_thread_events(session: Session, app_thread_id: int) -> AppThreadEven
         latest_turn_id=latest_turn.id if latest_turn else None,
         event_summary=_event_summary_from_json(latest_turn.event_summary_json) if latest_turn else None,
     )
+
+
+def get_app_turn_stream_snapshot(
+    session: Session,
+    app_turn_id: int,
+    since: int = 0,
+    bridge_client: AppServerBridgeClient | None = None,
+) -> dict[str, Any]:
+    app_turn = get_app_turn_or_404(session, app_turn_id)
+    app_thread = get_app_thread_or_404(session, app_turn.app_thread_id)
+    if not app_thread.bridge_thread_id:
+        return {
+            "next_index": since,
+            "events": [
+                {
+                    "kind": "error",
+                    "turn_id": app_turn.id,
+                    "message": "app thread has no bridge thread id",
+                }
+            ],
+            "terminal": True,
+        }
+
+    events: list[dict[str, Any]] = [
+        {
+            "kind": "status",
+            "turn_id": app_turn.id,
+            "status": app_turn.status,
+        }
+    ]
+    next_index = since
+
+    if app_turn.status in {APP_TURN_PENDING, APP_TURN_RUNNING}:
+        client = bridge_client or get_default_client()
+        try:
+            live_payload = client.get_live_events(app_thread.bridge_thread_id, since=since)
+            next_index = _int_or_default(live_payload.get("next_index"), since)
+            active_bridge_turn_id = _string_or_none(live_payload.get("active_turn_id"))
+            if active_bridge_turn_id:
+                events.extend(
+                    _stream_events_from_bridge_events(
+                        app_turn.id,
+                        _list_or_empty(live_payload.get("events")),
+                        active_bridge_turn_id,
+                    )
+                )
+        except AppServerBridgeError as exc:
+            events.append(
+                {
+                    "kind": "error",
+                    "turn_id": app_turn.id,
+                    "message": exc.message,
+                }
+            )
+
+    if app_turn.status == APP_TURN_SUCCESS:
+        events.append(
+            {
+                "kind": "final",
+                "turn_id": app_turn.id,
+                "status": app_turn.status,
+                "turn": to_app_turn_read(app_turn).model_dump(mode="json"),
+            }
+        )
+    elif app_turn.status in {APP_TURN_FAILED, APP_TURN_CANCELLED}:
+        events.append(
+            {
+                "kind": "error",
+                "turn_id": app_turn.id,
+                "status": app_turn.status,
+                "message": app_turn.error_message or app_turn.status,
+                "turn": to_app_turn_read(app_turn).model_dump(mode="json"),
+            }
+        )
+
+    return {
+        "next_index": next_index,
+        "events": events,
+        "terminal": app_turn.status in {APP_TURN_SUCCESS, APP_TURN_FAILED, APP_TURN_CANCELLED},
+    }
 
 
 def to_app_thread_read(session: Session, app_thread: AppThread) -> AppThreadRead:
@@ -699,6 +784,91 @@ def _extract_text_preview(summary: dict[str, Any]) -> str:
         if isinstance(value, str):
             return value[:500]
     return ""
+
+
+def _stream_events_from_bridge_events(
+    app_turn_id: int,
+    bridge_events: list[Any],
+    bridge_turn_id: str,
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for bridge_event in bridge_events:
+        if not isinstance(bridge_event, dict):
+            continue
+        if _bridge_event_turn_id(bridge_event) != bridge_turn_id:
+            continue
+        for delta in _extract_assistant_deltas(bridge_event):
+            events.append(
+                {
+                    "kind": "assistant_delta",
+                    "turn_id": app_turn_id,
+                    "text": delta,
+                }
+            )
+    return events
+
+
+def _extract_assistant_deltas(event: dict[str, Any]) -> list[str]:
+    event_name = _event_name(event)
+    deltas: list[str] = []
+    if not _looks_like_assistant_event(event_name):
+        return deltas
+    for container in _event_containers(event):
+        delta = container.get("delta")
+        if isinstance(delta, str) and delta:
+            deltas.append(delta)
+    return deltas
+
+
+def _event_name(event: dict[str, Any]) -> str:
+    for key in ("method", "type", "event"):
+        value = event.get(key)
+        if isinstance(value, str):
+            return value
+    if "id" in event and ("result" in event or "error" in event):
+        return "response"
+    return "unknown"
+
+
+def _looks_like_assistant_event(event_name: str) -> bool:
+    normalized = event_name.replace("-", "_").replace("/", "_").lower()
+    return "assistant" in normalized or "agent_message" in normalized or "agentmessage" in normalized
+
+
+def _event_containers(event: dict[str, Any]) -> list[dict[str, Any]]:
+    containers: list[dict[str, Any]] = [event]
+    for key in ("params", "result", "item", "message", "delta", "content", "output"):
+        value = event.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+    params = event.get("params")
+    result = event.get("result")
+    for parent in (params, result):
+        if isinstance(parent, dict):
+            for key in ("item", "message", "delta", "content", "output"):
+                value = parent.get(key)
+                if isinstance(value, dict):
+                    containers.append(value)
+    return containers
+
+
+def _bridge_event_turn_id(event: dict[str, Any]) -> str | None:
+    result = event.get("result")
+    if isinstance(result, dict):
+        turn = result.get("turn")
+        if isinstance(turn, dict) and isinstance(turn.get("id"), str):
+            return turn["id"]
+        if isinstance(result.get("turnId"), str):
+            return result["turnId"]
+
+    params = event.get("params")
+    if isinstance(params, dict):
+        if isinstance(params.get("turnId"), str):
+            return params["turnId"]
+        turn = params.get("turn")
+        if isinstance(turn, dict) and isinstance(turn.get("id"), str):
+            return turn["id"]
+    return None
 
 
 def _clean_title(value: str | None) -> str:

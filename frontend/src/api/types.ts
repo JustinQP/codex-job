@@ -91,6 +91,15 @@ export type AppTurn = {
   event_summary?: Record<string, unknown> | null;
 };
 
+export type AppTurnStreamEvent = {
+  kind: "status" | "assistant_delta" | "final" | "error";
+  turn_id: number;
+  status?: string;
+  text?: string;
+  message?: string;
+  turn?: AppTurn;
+};
+
 export type BridgeHealth = {
   status?: string;
   service?: string;

@@ -12,8 +12,16 @@ export type CreateTaskPayload = {
   sandbox?: string | null;
 };
 
-export function listTasks(limit = 20) {
-  return apiRequest<Task[]>(`/tasks?limit=${limit}`);
+export type ListTasksOptions = {
+  limit?: number;
+  projectId?: number | null;
+};
+
+export function listTasks(options: number | ListTasksOptions = 20) {
+  const normalized = typeof options === "number" ? { limit: options } : options;
+  const params = new URLSearchParams({ limit: String(normalized.limit ?? 20) });
+  if (normalized.projectId) params.set("project_id", String(normalized.projectId));
+  return apiRequest<Task[]>(`/tasks?${params.toString()}`);
 }
 
 export function getTask(taskId: number) {

@@ -142,13 +142,23 @@ def test_frontend_v17_design_system_and_shell_exist() -> None:
     assert "--composer-height" in tokens
 
     app = (root / "App.tsx").read_text(encoding="utf-8")
-    assert "Codex Mobile Console" in app
-    assert "currentTab === \"home\"" in app
-    assert "currentTab === \"tasks\"" in app
+    assert 'useLocalStorage(UI_STATE_KEYS.activeTab, "app")' in app
+    assert 'home: "app"' in app
+    assert 'tasks: "runs"' in app
+    assert "setActiveTab(currentTab)" in app
     assert "currentTab === \"app\"" in app
+    assert "currentTab === \"projects\"" in app
+    assert "currentTab === \"runs\"" in app
     assert "currentTab === \"settings\"" in app
+    assert "HomePage" not in app
 
     assert (root / "components/layout/BottomNav.tsx").exists()
+    bottom_nav = (root / "components/layout/BottomNav.tsx").read_text(encoding="utf-8")
+    assert "会话" in bottom_nav
+    assert "项目" in bottom_nav
+    assert "运行" in bottom_nav
+    assert "我的" in bottom_nav
+    assert "任务" not in bottom_nav
     assert (root / "components/layout/Sheet.tsx").exists()
     assert (root / "components/layout/Toast.tsx").exists()
     assert (root / "components/common/Badge.tsx").exists()
@@ -186,6 +196,7 @@ def test_frontend_v17_api_client_and_state_exist() -> None:
     assert 'taskStatusFilter: "mobile.taskStatusFilter"' in storage
     assert 'appThreadStatusFilter: "mobile.appThreadStatusFilter"' in storage
     assert 'appIncludeArchived: "mobile.appIncludeArchived"' in storage
+    assert 'currentProjectId: "mobile.currentProjectId"' in storage
     assert 'selectedAppThreadId: "mobile.selectedAppThreadId"' in storage
     assert 'appSendMode: "mobile.appSendMode"' in storage
 
@@ -196,24 +207,30 @@ def test_frontend_v17_api_client_and_state_exist() -> None:
 
 def test_frontend_v17_pages_are_migrated_to_react() -> None:
     root = Path("frontend/src")
-    home = (root / "components/home/HomePage.tsx").read_text(encoding="utf-8")
-    assert 'safeApi<Health>("/health")' in home
-    assert 'safeApi<Runner[]>("/runners")' in home
-    assert 'safeApi<Task[]>("/tasks?limit=20")' in home
-    assert 'safeApi<BridgeHealth>("/app-server-bridge/health")' in home
-    assert 'safeApi<AppThread[]>("/app-threads?limit=3")' in home
+    projects = (root / "components/projects/ProjectsPage.tsx").read_text(encoding="utf-8")
+    assert "listProjects()" in projects
+    assert "listAppThreads({ limit: 5, projectId: effectiveProject.id })" in projects
+    assert "listTasks({ limit: 5, projectId: effectiveProject.id })" in projects
+    assert "UI_STATE_KEYS.currentProjectId" in projects
+    assert "setActiveTab(\"app\")" in projects
+    assert "当前工作空间" in projects
+    assert "Bridge cwd" in projects
 
-    tasks = (root / "components/tasks/TasksPage.tsx").read_text(encoding="utf-8")
-    assert "listTasks(20)" in tasks
-    assert "createTask(payload)" in tasks
-    assert "cancelTask(task.id)" in tasks
-    assert "rerunTask(task.id)" in tasks
-    assert "UI_STATE_KEYS.taskStatusFilter" in tasks
-    assert "usePolling(loadTasks" in tasks
+    runs = (root / "components/runs/RunsPage.tsx").read_text(encoding="utf-8")
+    assert "listTasks({ limit: 20, projectId: effectiveProjectId })" in runs
+    assert "UI_STATE_KEYS.currentProjectId" in runs
+    assert "cancelTask(run.id)" in runs
+    assert "rerunTask(run.id)" in runs
+    assert "UI_STATE_KEYS.taskStatusFilter" in runs
+    assert "usePolling(loadRuns" in runs
+    assert "运行记录" in runs
+    assert "新建任务" not in runs
 
     session = (root / "components/session/SessionPage.tsx").read_text(encoding="utf-8")
     assert "listAppThreads({" in session
-    assert "createAppThread(projectId, title)" in session
+    assert "projectId: effectiveProjectId" in session
+    assert "createAppThread(effectiveProjectId, title)" in session
+    assert "UI_STATE_KEYS.currentProjectId" in session
     assert "listAppTurns(selectedThreadId)" in session
     assert "sendAsyncAppTurn" in session
     assert "sendAppTurn" in session
@@ -239,7 +256,9 @@ def test_frontend_v17_docs_and_scripts_are_documented() -> None:
     assert package_json["scripts"]["dev"] == "vite"
 
     readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
-    assert "Mobile Frontend current iteration: v1.7.x" in readme
+    assert "Mobile Frontend current iteration: v1.8 conversation-first" in readme
+    assert "会话 / 项目 / 运行 / 我的" in readme
+    assert "运行是底层 Task / Runner 执行记录" in readme
     assert "frontend/src/api" in readme
     assert "/mobile" in readme
     assert "/assets/*" in readme
@@ -285,7 +304,16 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     assert "shouldStickToBottomRef" in session
     assert "forceScrollAfterSendRef" in session
     assert "distanceToBottom < 96" in session
+    assert "streamAppTurn" in session
+    assert "startTurnStream(turn.id)" in session
+    assert "assistant_delta" in session
+    assert "window.requestAnimationFrame" in session
     assert "onReopenThread={handleReopen}" in session
+
+    app_threads_api = (root / "api/appThreads.ts").read_text(encoding="utf-8")
+    assert "export async function streamAppTurn" in app_threads_api
+    assert "/stream" in app_threads_api
+    assert "apiHeaders(false)" in app_threads_api
 
     header = (root / "components/session/SessionHeader.tsx").read_text(encoding="utf-8")
     assert 'className="session-header-main selected"' in header
@@ -313,7 +341,7 @@ def test_frontend_v176_regression_fixes_exist() -> None:
 
     readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
     assert "Mobile UI 当前迭代：v1.2" not in readme
-    assert "Mobile Frontend current iteration: v1.7.x" in readme
+    assert "Mobile Frontend current iteration: v1.8 conversation-first" in readme
     assert "frontend/dist/index.html" in readme
 
     start_script = Path("scripts/start_app_server_stack.ps1").read_text(encoding="utf-8")

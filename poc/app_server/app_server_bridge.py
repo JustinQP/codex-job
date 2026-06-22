@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock, RLock
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from app_server_event_parser import extract_assistant_text, load_events, summarize_events, write_summary
 from app_server_stdio_client import JsonlRpcClient, extract_thread_id, response_result
@@ -32,6 +32,7 @@ class BridgeThread:
     bridge_thread_id: str
     app_thread_id: str
     title: str
+    cwd: Path
     client: JsonlRpcClient
     run_dir: Path
     raw_events_path: Path
@@ -40,6 +41,7 @@ class BridgeThread:
     updated_at: str
     turn_count: int = 0
     status: str = "idle"
+    active_turn_id: str | None = None
     last_turn_id: str | None = None
     last_assistant_final: str = ""
     last_summary: dict[str, Any] = field(default_factory=dict)
@@ -66,8 +68,9 @@ class BridgeState:
         self.threads: dict[str, BridgeThread] = {}
         self.lock = RLock()
 
-    def create_thread(self, title: str | None = None) -> BridgeThread:
+    def create_thread(self, title: str | None = None, cwd: str | None = None) -> BridgeThread:
         self.cleanup_expired_threads()
+        thread_cwd = _resolve_thread_cwd(cwd, self.repo_root)
         bridge_thread_id = str(uuid.uuid4())
         thread_title = _clean_title(title) or _default_thread_title(bridge_thread_id)
         run_dir = self.bridge_runs_dir / bridge_thread_id
@@ -75,7 +78,7 @@ class BridgeState:
         raw_events_path = run_dir / "_all-events.jsonl"
         stderr_path = run_dir / "stderr.log"
         command = [self.codex_command, "app-server", "--listen", "stdio://"]
-        client = JsonlRpcClient(command, self.repo_root, raw_events_path, stderr_path)
+        client = JsonlRpcClient(command, thread_cwd, raw_events_path, stderr_path)
 
         try:
             client.request(
@@ -99,7 +102,7 @@ class BridgeState:
                 f"{bridge_thread_id}-thread-start",
                 "thread/start",
                 {
-                    "cwd": str(self.repo_root),
+                    "cwd": str(thread_cwd),
                     "approvalPolicy": "never",
                     "sandbox": "read-only",
                     "sessionStartSource": "startup",
@@ -120,6 +123,7 @@ class BridgeState:
             bridge_thread_id=bridge_thread_id,
             app_thread_id=app_thread_id,
             title=thread_title,
+            cwd=thread_cwd,
             client=client,
             run_dir=run_dir,
             raw_events_path=raw_events_path,
@@ -283,6 +287,9 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if len(route) == 3 and route[0] == "threads" and route[2] == "events":
             self._handle_get_events(route[1])
             return
+        if len(route) == 3 and route[0] == "threads" and route[2] == "live-events":
+            self._handle_get_live_events(route[1])
+            return
         if len(route) == 3 and route[0] == "threads" and route[2] == "final":
             self._handle_get_final(route[1])
             return
@@ -338,8 +345,12 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if body is None:
             return
         title = _clean_title(body.get("title"))
+        cwd = _optional_string(body.get("cwd"))
         try:
-            bridge_thread = _state().create_thread(title)
+            bridge_thread = _state().create_thread(title, cwd)
+        except ValueError as exc:
+            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_cwd", str(exc), step="validate_cwd")
+            return
         except Exception as exc:
             self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "thread_create_failed", str(exc), step="thread/start")
             return
@@ -352,6 +363,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                 "title": bridge_thread.title,
                 "status": bridge_thread.status,
                 "created_at": bridge_thread.created_at,
+                "cwd": str(bridge_thread.cwd),
                 "run_dir": str(bridge_thread.run_dir),
             },
         )
@@ -454,15 +466,17 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
 
         try:
             try:
-                result = _run_turn(bridge_thread, message.strip(), _state().repo_root, _state().timeout)
+                result = _run_turn(bridge_thread, message.strip(), _state().timeout)
             except TimeoutError as exc:
                 bridge_thread.status = "error"
+                bridge_thread.active_turn_id = None
                 bridge_thread.errors.append(str(exc))
                 bridge_thread.updated_at = _utc_now()
                 self._send_error_json(HTTPStatus.GATEWAY_TIMEOUT, "turn_timeout", str(exc), step="turn/completed")
                 return
             except Exception as exc:
                 bridge_thread.status = "error"
+                bridge_thread.active_turn_id = None
                 bridge_thread.errors.append(str(exc))
                 bridge_thread.updated_at = _utc_now()
                 status = HTTPStatus.INTERNAL_SERVER_ERROR
@@ -514,6 +528,39 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                 "latest_turn_dir": str(turn_dir),
                 "events_path": str(events_path),
                 "summary": summary,
+            },
+        )
+
+    def _handle_get_live_events(self, bridge_thread_id: str) -> None:
+        bridge_thread = _state().get_thread(bridge_thread_id)
+        if bridge_thread is None:
+            self._send_error_json(HTTPStatus.NOT_FOUND, "thread_not_found", "Unknown bridge thread id.", step="lookup_thread")
+            return
+
+        raw_since = parse_qs(urlparse(self.path).query).get("since", ["0"])[0]
+        try:
+            since = int(raw_since)
+            if since < 0:
+                raise ValueError
+        except ValueError:
+            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_since", "since must be a non-negative integer.", step="validate_request")
+            return
+
+        with bridge_thread.client._condition:
+            messages = list(bridge_thread.client._messages)
+        event_count = len(messages)
+        bounded_since = min(since, event_count)
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "bridge_thread_id": bridge_thread.bridge_thread_id,
+                "app_thread_id": bridge_thread.app_thread_id,
+                "status": bridge_thread.status,
+                "active_turn_id": bridge_thread.active_turn_id,
+                "last_turn_id": bridge_thread.last_turn_id,
+                "since": bounded_since,
+                "next_index": event_count,
+                "events": messages[bounded_since:],
             },
         )
 
@@ -592,7 +639,6 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
 def _run_turn(
     bridge_thread: BridgeThread,
     message: str,
-    repo_root: Path,
     timeout: float,
 ) -> dict[str, Any]:
     bridge_thread.status = "running"
@@ -606,7 +652,7 @@ def _run_turn(
         "turn/start",
         {
             "threadId": bridge_thread.app_thread_id,
-            "cwd": str(repo_root),
+            "cwd": str(bridge_thread.cwd),
             "approvalPolicy": "never",
             "sandboxPolicy": {
                 "type": "readOnly",
@@ -623,6 +669,8 @@ def _run_turn(
     )
     turn_start_response = bridge_thread.client.wait_for_response(request_id, timeout=60)
     turn_id = _extract_turn_id(response_result(turn_start_response, "turn/start"))
+    bridge_thread.active_turn_id = turn_id
+    bridge_thread.last_turn_id = turn_id
 
     deadline = time.monotonic() + timeout
     next_index = start_index
@@ -656,6 +704,7 @@ def _run_turn(
 
     bridge_thread.turn_count = turn_number
     bridge_thread.last_turn_id = turn_id
+    bridge_thread.active_turn_id = None
     bridge_thread.last_assistant_final = assistant_final
     bridge_thread.last_summary = summary
     bridge_thread.status = "idle"
@@ -693,7 +742,9 @@ def _thread_status_minimal(bridge_thread: BridgeThread) -> dict[str, Any]:
         "bridge_thread_id": bridge_thread.bridge_thread_id,
         "app_thread_id": bridge_thread.app_thread_id,
         "title": bridge_thread.title,
+        "cwd": str(bridge_thread.cwd),
         "status": bridge_thread.status,
+        "active_turn_id": bridge_thread.active_turn_id,
         "turn_count": bridge_thread.turn_count,
         "created_at": bridge_thread.created_at,
         "updated_at": bridge_thread.updated_at,
@@ -777,6 +828,21 @@ def _default_thread_title(bridge_thread_id: str) -> str:
 
 def _clean_title(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _optional_string(value: Any) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _resolve_thread_cwd(value: str | None, default_cwd: Path) -> Path:
+    if value is None:
+        return default_cwd
+    thread_cwd = Path(value).expanduser().resolve()
+    if not thread_cwd.exists():
+        raise ValueError("cwd does not exist")
+    if not thread_cwd.is_dir():
+        raise ValueError("cwd must be a directory")
+    return thread_cwd
 
 
 def _utc_now() -> str:

@@ -21,6 +21,7 @@ def test_fastapi_version_is_1_0_0() -> None:
 class FakeBridgeClient:
     def __init__(self) -> None:
         self.deleted: list[str] = []
+        self.created_cwds: list[str | None] = []
         self.create_count = 0
         self.missing_bridge_thread_id = False
         self.preview_final = "short preview"
@@ -29,7 +30,8 @@ class FakeBridgeClient:
     def get_health(self) -> dict[str, Any]:
         return {"status": "ok", "mode": "poc", "sandbox": "readOnly", "threads": 0}
 
-    def create_thread(self, title: str) -> dict[str, Any]:
+    def create_thread(self, title: str, cwd: str | None = None) -> dict[str, Any]:
+        self.created_cwds.append(cwd)
         self.create_count += 1
         if self.missing_bridge_thread_id:
             return {
@@ -57,6 +59,9 @@ class FakeBridgeClient:
 
     def get_events(self, bridge_thread_id: str) -> dict[str, Any]:
         return {"summary": {"total_events": 2, "bridge_thread_id": bridge_thread_id}}
+
+    def get_live_events(self, bridge_thread_id: str, since: int = 0) -> dict[str, Any]:
+        return {"next_index": since, "active_turn_id": "turn-1", "events": []}
 
     def get_final(self, bridge_thread_id: str) -> dict[str, Any]:
         return {"assistant_final": self.full_final}
@@ -147,6 +152,7 @@ def test_app_threads_crud_turns_final_and_events(monkeypatch) -> None:
 
         assert created["title"] == "Chat"
         assert created["bridge_thread_id"] == "bridge-1"
+        assert fake.created_cwds == [project.path]
         assert created["turn_count"] == 0
         assert created["latest_assistant_final"] is None
         assert listed.status_code == 200
@@ -212,6 +218,7 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
             f"/app-turns/{turn_id}",
             headers={"X-API-Token": "secret"},
         )
+        protected_stream_turn = client.get(f"/app-turns/{turn_id}/stream")
         protected_cancel_turn = client.post(f"/app-turns/{turn_id}/cancel")
         authorized_cancel_turn = client.post(
             f"/app-turns/{turn_id}/cancel",
@@ -231,6 +238,7 @@ def test_app_threads_api_token_protection(monkeypatch) -> None:
         assert authorized_async.status_code == 200
         assert protected_get_turn.status_code == 401
         assert authorized_get_turn.status_code == 200
+        assert protected_stream_turn.status_code == 401
         assert protected_cancel_turn.status_code == 401
         assert authorized_cancel_turn.status_code == 200
         assert protected_recover.status_code == 401
@@ -258,6 +266,55 @@ def test_async_app_turn_api_creates_pending_turn_and_gets_turn(monkeypatch) -> N
         assert submitted == [body["id"]]
         assert fetched.status_code == 200
         assert fetched.json()["id"] == body["id"]
+
+
+def test_app_turn_stream_returns_terminal_final_event(monkeypatch) -> None:
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        created = create_app_thread(client, project.id)
+        turn = client.post(f"/app-threads/{created['id']}/turns", json={"message": "hello"}).json()
+
+        response = client.get(f"/app-turns/{turn['id']}/stream")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert "event: status" in response.text
+        assert "event: final" in response.text
+        assert '"kind":"final"' in response.text
+
+
+def test_app_turn_stream_returns_terminal_error_event(monkeypatch) -> None:
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Chat",
+            bridge_thread_id="bridge-1",
+            app_thread_id="app-1",
+            status="ERROR",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_turn = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="bad",
+            status="FAILED",
+            error_message="boom",
+            created_at=utc_now(),
+            completed_at=utc_now(),
+        )
+        session.add(app_turn)
+        session.commit()
+        session.refresh(app_turn)
+
+        response = client.get(f"/app-turns/{app_turn.id}/stream")
+
+        assert response.status_code == 200
+        assert "event: error" in response.text
+        assert '"message":"boom"' in response.text
 
 
 def test_async_app_turn_rejects_closed_thread(monkeypatch) -> None:

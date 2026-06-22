@@ -14,10 +14,11 @@ import {
   recoverStaleAppTurns,
   reopenAppThread,
   sendAppTurn,
-  sendAsyncAppTurn
+  sendAsyncAppTurn,
+  streamAppTurn
 } from "../../api/appThreads";
 import { listProjects } from "../../api/projects";
-import type { AppThread, AppTurn, Project } from "../../api/types";
+import type { AppThread, AppTurn, AppTurnStreamEvent, Project } from "../../api/types";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePolling } from "../../hooks/usePolling";
 import { UI_STATE_KEYS } from "../../state/storage";
@@ -46,6 +47,10 @@ export function SessionPage({ showToast }: PageProps) {
     UI_STATE_KEYS.appIncludeArchived,
     "false"
   );
+  const [currentProjectIdText, setCurrentProjectIdText] = useLocalStorage(
+    UI_STATE_KEYS.currentProjectId,
+    ""
+  );
   const [sendMode, setSendMode] = useLocalStorage(UI_STATE_KEYS.appSendMode, "async");
   const [message, setMessage] = useState("");
   const [waitingText, setWaitingText] = useState("");
@@ -56,12 +61,21 @@ export function SessionPage({ showToast }: PageProps) {
   const messageListRef = useRef<HTMLElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollAfterSendRef = useRef(false);
+  const streamControllersRef = useRef<Map<number, AbortController>>(new Map());
 
   const selectedThreadId = selectedThreadIdText ? Number(selectedThreadIdText) : null;
+  const currentProjectId = currentProjectIdText ? Number(currentProjectIdText) : null;
   const includeArchived = appIncludeArchived === "true";
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
     [selectedThreadId, threads]
+  );
+  const currentProject = useMemo(
+    () => projects.find((project) => project.id === currentProjectId)
+      || projects.find((project) => project.enabled)
+      || projects[0]
+      || null,
+    [currentProjectId, projects]
   );
   const runningTurn = turns.find((turn) => isRunningStatus(turn.status)) || null;
   const disabledReason = !selectedThread
@@ -86,19 +100,34 @@ export function SessionPage({ showToast }: PageProps) {
   }, []);
 
   const loadThreads = useCallback(async () => {
-    const [threadData, projectData] = await Promise.all([
-      listAppThreads({
+    const projectData = await listProjects();
+    const effectiveProject = currentProjectId
+      ? projectData.find((project) => project.id === currentProjectId)
+      : null;
+    const fallbackProject = projectData.find((project) => project.enabled) || projectData[0] || null;
+    const effectiveProjectId = effectiveProject?.id || fallbackProject?.id || null;
+    if (!currentProjectIdText && effectiveProjectId) {
+      setCurrentProjectIdText(String(effectiveProjectId));
+    }
+
+    const threadData = effectiveProjectId
+      ? await listAppThreads({
         includeArchived,
         limit: 20,
+        projectId: effectiveProjectId,
         status: appThreadStatusFilter || undefined
-      }),
-      listProjects()
-    ]);
+      })
+      : [];
     let nextThreads = threadData;
     if (selectedThreadId && !threadData.some((thread) => thread.id === selectedThreadId)) {
       try {
         const fallbackThread = await getAppThread(selectedThreadId);
-        nextThreads = [fallbackThread, ...threadData];
+        if (fallbackThread.project_id === effectiveProjectId) {
+          nextThreads = [fallbackThread, ...threadData];
+        } else {
+          setSelectedThreadIdText("");
+          setTurns([]);
+        }
       } catch {
         setSelectedThreadIdText("");
         setTurns([]);
@@ -108,8 +137,11 @@ export function SessionPage({ showToast }: PageProps) {
     setProjects(projectData);
   }, [
     appThreadStatusFilter,
+    currentProjectId,
+    currentProjectIdText,
     includeArchived,
     selectedThreadId,
+    setCurrentProjectIdText,
     setSelectedThreadIdText
   ]);
 
@@ -135,19 +167,111 @@ export function SessionPage({ showToast }: PageProps) {
     void loadAll();
   }, [loadAll]);
 
+  useEffect(() => {
+    return () => {
+      streamControllersRef.current.forEach((controller) => controller.abort());
+      streamControllersRef.current.clear();
+    };
+  }, []);
+
   usePolling(async () => {
     if (!runningTurn) return;
     const updated = await getAppTurn(runningTurn.id);
-    setTurns((current) => current.map((turn) => (turn.id === updated.id ? updated : turn)));
+    setTurns((current) =>
+      current.map((turn) =>
+        turn.id === updated.id
+          ? {
+              ...updated,
+              assistant_final: isRunningStatus(updated.status)
+                ? turn.assistant_final || updated.assistant_final
+                : updated.assistant_final
+            }
+          : turn
+      )
+    );
     if (!isRunningStatus(updated.status)) {
       setWaitingText("");
       await loadAll();
     }
   }, 2500, Boolean(runningTurn));
 
+  const mergeTurn = useCallback((nextTurn: AppTurn) => {
+    setTurns((current) => {
+      if (current.some((turn) => turn.id === nextTurn.id)) {
+        return current.map((turn) => (turn.id === nextTurn.id ? nextTurn : turn));
+      }
+      return [...current, nextTurn];
+    });
+  }, []);
+
+  const handleStreamEvent = useCallback((event: AppTurnStreamEvent) => {
+    if (event.kind === "assistant_delta" && event.text) {
+      setTurns((current) =>
+        current.map((turn) =>
+          turn.id === event.turn_id
+            ? {
+                ...turn,
+                assistant_final: `${turn.assistant_final || ""}${event.text}`,
+                status: isRunningStatus(turn.status) ? turn.status : "RUNNING"
+              }
+            : turn
+        )
+      );
+      if (shouldStickToBottomRef.current) {
+        window.requestAnimationFrame(() => scrollMessagesToBottom());
+      }
+      return;
+    }
+    if (event.kind === "status" && event.status) {
+      setTurns((current) =>
+        current.map((turn) => (turn.id === event.turn_id ? { ...turn, status: event.status || turn.status } : turn))
+      );
+      return;
+    }
+    if (event.kind === "final" && event.turn) {
+      mergeTurn(event.turn);
+      setWaitingText("");
+      streamControllersRef.current.delete(event.turn_id);
+      void loadAll();
+      return;
+    }
+    if (event.kind === "error") {
+      if (event.turn) {
+        mergeTurn(event.turn);
+      } else {
+        setTurns((current) =>
+          current.map((turn) =>
+            turn.id === event.turn_id
+              ? { ...turn, status: "FAILED", error_message: event.message || turn.error_message }
+              : turn
+          )
+        );
+      }
+      setWaitingText("");
+      streamControllersRef.current.delete(event.turn_id);
+    }
+  }, [loadAll, mergeTurn, scrollMessagesToBottom]);
+
+  const startTurnStream = useCallback((turnId: number) => {
+    streamControllersRef.current.get(turnId)?.abort();
+    const controller = new AbortController();
+    streamControllersRef.current.set(turnId, controller);
+    void streamAppTurn(turnId, handleStreamEvent, controller.signal).catch((err) => {
+      if (controller.signal.aborted) return;
+      streamControllersRef.current.delete(turnId);
+      showToast(errorText(err), "error");
+    });
+  }, [handleStreamEvent, showToast]);
+
   async function handleCreateThread(projectId: number, title: string) {
     try {
-      const thread = await createAppThread(projectId, title);
+      const effectiveProjectId = projectId || currentProject?.id;
+      if (!effectiveProjectId) {
+        showToast("请先选择项目", "warning");
+        return;
+      }
+      setCurrentProjectIdText(String(effectiveProjectId));
+      const thread = await createAppThread(effectiveProjectId, title);
       setSelectedThreadIdText(String(thread.id));
       setSheet(null);
       showToast("会话已创建", "success");
@@ -171,9 +295,10 @@ export function SessionPage({ showToast }: PageProps) {
       setMessage("");
       forceScrollAfterSendRef.current = true;
       setTurns((current) => [...current, turn]);
+      if (sendMode === "async") startTurnStream(turn.id);
       showToast("消息已发送", "success");
       if (!isRunningStatus(turn.status)) setWaitingText("");
-      await loadAll();
+      if (sendMode !== "async") await loadAll();
     } catch (err) {
       setWaitingText("");
       showToast(errorText(err), "error");
@@ -276,6 +401,7 @@ export function SessionPage({ showToast }: PageProps) {
     <section className="page active" id="tab-app">
       <div className="session-page">
         <SessionHeader
+          currentProject={currentProject}
           onMore={() => setSheet("more")}
           onSwitch={() => setSheet("switch")}
           selectedThread={selectedThread}
@@ -326,6 +452,7 @@ export function SessionPage({ showToast }: PageProps) {
             onSelect={handleSelectThread}
             onStatusFilterChange={setAppThreadStatusFilter}
             includeArchived={includeArchived}
+            currentProjectId={currentProject?.id || null}
             projects={projects}
             selectedThreadId={selectedThreadId}
             statusFilter={appThreadStatusFilter}

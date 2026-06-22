@@ -39,6 +39,7 @@ class FakeJsonlRpcClient:
         self.events_path = events_path
         self.stderr_path = stderr_path
         self._messages: list[dict[str, Any]] = []
+        self.requests: list[dict[str, Any]] = []
         self._condition = threading.Condition()
         self.process = FakeProcess()
         self.closed = False
@@ -52,6 +53,7 @@ class FakeJsonlRpcClient:
             return len(self._messages)
 
     def request(self, request_id: str, method: str, params: dict[str, Any] | None = None) -> None:
+        self.requests.append({"id": request_id, "method": method, "params": params or {}})
         if method == "initialize":
             self._append({"id": request_id, "result": {"ok": True}})
             return
@@ -201,11 +203,13 @@ def test_token_protects_threads_routes(tmp_path: Path, monkeypatch) -> None:
 
 def test_threads_create_list_patch_and_delete(tmp_path: Path, monkeypatch) -> None:
     for base_url, _state in bridge_server(tmp_path, monkeypatch):
+        thread_cwd = tmp_path / "project"
+        thread_cwd.mkdir()
         created_status, created = request_json(
             base_url,
             "POST",
             "/threads",
-            body={"title": "Custom title"},
+            body={"title": "Custom title", "cwd": str(thread_cwd)},
         )
         default_status, default_thread = request_json(
             base_url,
@@ -242,8 +246,11 @@ def test_threads_create_list_patch_and_delete(tmp_path: Path, monkeypatch) -> No
         assert created_status == 201
         assert created["title"] == "Custom title"
         assert created["status"] == "idle"
+        assert created["cwd"] == str(thread_cwd.resolve())
         assert created["bridge_thread_id"]
         assert created["app_thread_id"] == "app-thread-1"
+        assert FakeJsonlRpcClient.instances[0].cwd == thread_cwd.resolve()
+        assert FakeJsonlRpcClient.instances[0].requests[1]["params"]["cwd"] == str(thread_cwd.resolve())
         assert default_status == 201
         assert default_thread["title"].startswith("Thread ")
         assert list_status == 200
@@ -259,6 +266,21 @@ def test_threads_create_list_patch_and_delete(tmp_path: Path, monkeypatch) -> No
         assert deleted["closed"] is True
         assert FakeJsonlRpcClient.instances[0].closed is True
         assert missing_delete_status == 404
+
+
+def test_create_thread_rejects_invalid_cwd(tmp_path: Path, monkeypatch) -> None:
+    for base_url, _state in bridge_server(tmp_path, monkeypatch):
+        missing_cwd = tmp_path / "missing"
+
+        status, body = request_json(
+            base_url,
+            "POST",
+            "/threads",
+            body={"title": "Bad cwd", "cwd": str(missing_cwd)},
+        )
+
+        assert status == 400
+        assert body["error"]["code"] == "invalid_cwd"
 
 
 def test_delete_conflicts_when_thread_running_or_locked(tmp_path: Path, monkeypatch) -> None:
@@ -292,9 +314,11 @@ def test_delete_conflicts_when_thread_running_or_locked(tmp_path: Path, monkeypa
 
 def test_turn_routes_and_final(tmp_path: Path, monkeypatch) -> None:
     for base_url, state in bridge_server(tmp_path, monkeypatch):
+        thread_cwd = tmp_path / "project"
+        thread_cwd.mkdir()
         empty_status, empty_body = request_json(base_url, "POST", "/threads/missing/turns", body={"message": ""})
         missing_status, missing_body = request_json(base_url, "POST", "/threads/missing/turns", body={"message": "hello"})
-        _, created = request_json(base_url, "POST", "/threads", body={"title": "Turn thread"})
+        _, created = request_json(base_url, "POST", "/threads", body={"title": "Turn thread", "cwd": str(thread_cwd)})
         bridge_thread_id = created["bridge_thread_id"]
 
         locked = state.threads[bridge_thread_id]
@@ -315,6 +339,7 @@ def test_turn_routes_and_final(tmp_path: Path, monkeypatch) -> None:
             f"/threads/{bridge_thread_id}/turns",
             body={"message": "hello"},
         )
+        live_status, live_body = request_json(base_url, "GET", f"/threads/{bridge_thread_id}/live-events?since=2")
         final_status, final_body = request_json(base_url, "GET", f"/threads/{bridge_thread_id}/final")
         missing_final_status, _ = request_json(base_url, "GET", "/threads/missing/final")
 
@@ -327,6 +352,11 @@ def test_turn_routes_and_final(tmp_path: Path, monkeypatch) -> None:
         assert conflict_body["error"]["code"] == "turn_conflict"
         assert turn_status == 200
         assert turn_body["assistant_final_preview"] == "assistant:hello"
+        assert FakeJsonlRpcClient.instances[-1].requests[-1]["params"]["cwd"] == str(thread_cwd.resolve())
+        assert live_status == 200
+        assert live_body["since"] == 2
+        assert live_body["next_index"] >= 2
+        assert live_body["events"]
         assert turn_dir.is_relative_to(tmp_path)
         assert (turn_dir / "events.jsonl").exists()
         assert (turn_dir / "run-summary.json").exists()

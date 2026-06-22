@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import json
 import os
 from pathlib import Path
+import time
 import traceback
 from urllib.parse import parse_qs
 from typing import Iterable
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 
@@ -311,6 +313,37 @@ def get_app_turn(
 ):
     app_turn = app_thread_service.get_app_turn_or_404(session, app_turn_id)
     return app_thread_service.to_app_turn_read(app_turn)
+
+
+@app.get("/app-turns/{app_turn_id}/stream")
+def stream_app_turn(
+    app_turn_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_thread_service.get_app_turn_or_404(session, app_turn_id)
+
+    def event_generator():
+        since = 0
+        while True:
+            session.expire_all()
+            snapshot = app_thread_service.get_app_turn_stream_snapshot(
+                session,
+                app_turn_id,
+                since=since,
+            )
+            since = int(snapshot.get("next_index") or since)
+            for event in snapshot.get("events", []):
+                yield _sse_event(event)
+            if snapshot.get("terminal"):
+                break
+            time.sleep(0.8)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/app-turns/{app_turn_id}/cancel", response_model=AppTurnRead)
@@ -732,3 +765,9 @@ def _read_artifact_path(path: Path) -> str:
             detail="artifact file not found",
         )
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _sse_event(payload: dict) -> str:
+    event_name = str(payload.get("kind") or "message")
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event_name}\ndata: {data}\n\n"

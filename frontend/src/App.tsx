@@ -1,31 +1,47 @@
-import { HomePage } from "./components/home/HomePage";
+import { useEffect } from "react";
+
 import { BottomNav, type TabName } from "./components/layout/BottomNav";
 import { Toast } from "./components/layout/Toast";
+import { ProjectsPage } from "./components/projects/ProjectsPage";
+import { RunsPage } from "./components/runs/RunsPage";
 import { SessionPage } from "./components/session/SessionPage";
 import { SettingsPage } from "./components/settings/SettingsPage";
-import { TasksPage } from "./components/tasks/TasksPage";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useToast } from "./hooks/useToast";
 import { UI_STATE_KEYS } from "./state/storage";
 
 function App() {
-  const [activeTab, setActiveTab] = useLocalStorage(UI_STATE_KEYS.activeTab, "home");
+  const [activeTab, setActiveTab] = useLocalStorage(UI_STATE_KEYS.activeTab, "app");
   const { toast, showToast } = useToast();
-  const currentTab = ["home", "tasks", "app", "settings"].includes(activeTab)
-    ? (activeTab as TabName)
-    : "home";
+  const tabAlias: Record<string, TabName> = {
+    home: "app",
+    tasks: "runs",
+    app: "app",
+    projects: "projects",
+    runs: "runs",
+    settings: "settings"
+  };
+  const currentTab = tabAlias[activeTab] || "app";
   const pageTitle: Record<TabName, string> = {
-    home: "工作台",
-    tasks: "任务",
     app: "会话",
+    projects: "项目",
+    runs: "运行",
     settings: "我的"
   };
   const pageSubtitle: Record<TabName, string> = {
-    home: "Codex Mobile Console",
-    tasks: "查看、筛选和处理远程任务",
-    app: "Codex Remote Runner + App Server Sidecar",
+    app: "连续对话控制",
+    projects: "当前工作目录与项目配置",
+    runs: "后台运行记录",
     settings: "连接、诊断与维护"
   };
+
+  useEffect(() => {
+    if (activeTab !== currentTab) setActiveTab(currentTab);
+  }, [activeTab, currentTab, setActiveTab]);
+
+  function handleTabChange(tab: TabName) {
+    setActiveTab(tab);
+  }
 
   return (
     <div className={`app-shell app-shell-${currentTab}`}>
@@ -35,13 +51,13 @@ function App() {
       </header>
 
       <main>
-        {currentTab === "home" ? <HomePage showToast={showToast} /> : null}
-        {currentTab === "tasks" ? <TasksPage showToast={showToast} /> : null}
         {currentTab === "app" ? <SessionPage showToast={showToast} /> : null}
+        {currentTab === "projects" ? <ProjectsPage showToast={showToast} /> : null}
+        {currentTab === "runs" ? <RunsPage showToast={showToast} /> : null}
         {currentTab === "settings" ? <SettingsPage showToast={showToast} /> : null}
       </main>
 
-      <BottomNav activeTab={currentTab} onChange={setActiveTab} />
+      <BottomNav activeTab={currentTab} onChange={handleTabChange} />
       <Toast toast={toast} />
     </div>
   );

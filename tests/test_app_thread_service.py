@@ -17,6 +17,7 @@ from backend.services import app_thread_service
 class FakeBridgeClient:
     def __init__(self) -> None:
         self.created_titles: list[str] = []
+        self.created_cwds: list[str | None] = []
         self.create_count = 0
         self.renamed: list[tuple[str, str]] = []
         self.deleted: list[str] = []
@@ -28,10 +29,11 @@ class FakeBridgeClient:
         self.preview_final = "short preview"
         self.full_final = "full assistant final"
 
-    def create_thread(self, title: str) -> dict[str, Any]:
+    def create_thread(self, title: str, cwd: str | None = None) -> dict[str, Any]:
         if self.fail_create:
             raise AppServerBridgeError(None, "network_error", "bridge down", "request")
         self.created_titles.append(title)
+        self.created_cwds.append(cwd)
         self.create_count += 1
         if self.missing_bridge_thread_id:
             return {
@@ -64,6 +66,22 @@ class FakeBridgeClient:
 
     def get_events(self, bridge_thread_id: str) -> dict[str, Any]:
         return {"summary": {"total_events": 2, "bridge_thread_id": bridge_thread_id}}
+
+    def get_live_events(self, bridge_thread_id: str, since: int = 0) -> dict[str, Any]:
+        return {
+            "next_index": since + 2,
+            "active_turn_id": "turn-active",
+            "events": [
+                {
+                    "method": "agent/message_delta",
+                    "params": {"turnId": "turn-old", "delta": "old"},
+                },
+                {
+                    "method": "agent/message_delta",
+                    "params": {"turnId": "turn-active", "delta": "live"},
+                },
+            ],
+        }
 
     def get_final(self, bridge_thread_id: str) -> dict[str, Any]:
         if self.fail_final:
@@ -115,6 +133,7 @@ def test_create_app_thread_success() -> None:
         assert app_thread.status == "ACTIVE"
         assert app_thread.bridge_thread_id == "bridge-1"
         assert fake.created_titles == ["Chat"]
+        assert fake.created_cwds == [project.path]
 
 
 def test_create_app_thread_rejects_missing_or_disabled_project() -> None:
@@ -360,6 +379,7 @@ def test_reopen_app_thread_updates_bridge_ids_and_keeps_turn_history() -> None:
         assert reopened.status == "ACTIVE"
         assert reopened.last_error is None
         assert [turn.id for turn in turns] == [app_turn.id]
+        assert fake.created_cwds == [project.path, project.path]
 
 
 def test_reopen_app_thread_not_found() -> None:
@@ -415,6 +435,29 @@ def test_create_async_app_turn_creates_pending_turn(monkeypatch) -> None:
         assert app_turn.started_at is None
         assert app_turn.completed_at is None
         assert submitted == [app_turn.id]
+
+
+def test_app_turn_stream_snapshot_filters_active_bridge_turn_events(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        app_turn = app_thread_service.create_async_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+        )
+
+        snapshot = app_thread_service.get_app_turn_stream_snapshot(session, app_turn.id, bridge_client=fake)
+
+        assert snapshot["next_index"] == 2
+        assert {"kind": "assistant_delta", "turn_id": app_turn.id, "text": "live"} in snapshot["events"]
+        assert all(event.get("text") != "old" for event in snapshot["events"])
 
 
 def test_create_async_app_turn_rejects_closed_thread(monkeypatch) -> None:

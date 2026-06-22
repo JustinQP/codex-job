@@ -40,8 +40,11 @@ class AppServerBridgeClient:
     def get_health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
 
-    def create_thread(self, title: str) -> dict[str, Any]:
-        return self._request("POST", "/threads", {"title": title})
+    def create_thread(self, title: str, cwd: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"title": title}
+        if cwd:
+            body["cwd"] = cwd
+        return self._request("POST", "/threads", body)
 
     def list_threads(self) -> dict[str, Any]:
         return self._request("GET", "/threads")
@@ -63,6 +66,9 @@ class AppServerBridgeClient:
 
     def get_events(self, bridge_thread_id: str) -> dict[str, Any]:
         return self._request("GET", f"/threads/{_quote_path(bridge_thread_id)}/events")
+
+    def get_live_events(self, bridge_thread_id: str, since: int = 0) -> dict[str, Any]:
+        return self._request("GET", f"/threads/{_quote_path(bridge_thread_id)}/live-events?since={since}")
 
     def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         data = None

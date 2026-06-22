@@ -33,6 +33,9 @@ class BridgeClientTestHandler(BaseHTTPRequestHandler):
         if self.path == "/threads/thread-1/events":
             self._json({"summary": {"total_events": 1}})
             return
+        if self.path == "/threads/thread-1/live-events?since=2":
+            self._json({"next_index": 3, "active_turn_id": "turn-1", "events": [{"method": "agent/message_delta"}]})
+            return
         if self.path == "/http-error":
             self._json(
                 {
@@ -84,19 +87,22 @@ class BridgeClientTestHandler(BaseHTTPRequestHandler):
         return
 
     def _record(self) -> None:
+        raw_body = b""
+        length = int(self.headers.get("Content-Length") or "0")
+        if length > 0:
+            raw_body = self.rfile.read(length)
         self.requests.append(
             {
                 "method": self.command,
                 "path": self.path,
                 "token": self.headers.get("X-Bridge-Token"),
+                "body": json.loads(raw_body.decode("utf-8")) if raw_body else {},
             }
         )
+        self._cached_body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
 
     def _body(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length") or "0")
-        if length <= 0:
-            return {}
-        return json.loads(self.rfile.read(length).decode("utf-8"))
+        return getattr(self, "_cached_body", {})
 
     def _json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -134,17 +140,19 @@ def test_bridge_client_success_methods_send_token() -> None:
         client = AppServerBridgeClient(base_url=base_url, token="secret", timeout_seconds=5)
 
         assert client.get_health()["status"] == "ok"
-        assert client.create_thread("title")["bridge_thread_id"] == "thread-1"
+        assert client.create_thread("title", cwd="E:\\demo")["bridge_thread_id"] == "thread-1"
         assert client.list_threads()["threads"] == []
         assert client.get_thread("thread-1")["bridge_thread_id"] == "thread-1"
         assert client.rename_thread("thread-1", "new")["title"] == "new"
         assert client.send_turn("thread-1", "hello")["turn_id"] == "turn-1"
         assert client.get_final("thread-1")["assistant_final"] == "done"
         assert client.get_events("thread-1")["summary"]["total_events"] == 1
+        assert client.get_live_events("thread-1", since=2)["next_index"] == 3
         assert client.delete_thread("thread-1")["closed"] is True
 
         assert BridgeClientTestHandler.requests
         assert all(request["token"] == "secret" for request in BridgeClientTestHandler.requests)
+        assert BridgeClientTestHandler.requests[1]["body"]["cwd"] == "E:\\demo"
 
 
 def test_bridge_client_http_error_to_custom_error() -> None:

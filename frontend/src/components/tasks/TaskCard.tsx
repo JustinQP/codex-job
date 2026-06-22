@@ -30,7 +30,7 @@ export function TaskCard({ task, onCancel, onRerun, onOpen }: TaskCardProps) {
       </button>
       {task.error_message ? <div className="inline-error">{task.error_message}</div> : null}
       <div className="task-actions">
-        <Button onClick={() => onOpen(task)} variant="secondary">查看</Button>
+        <Button onClick={() => onOpen(task)} variant="secondary">查看运行</Button>
         <details className="task-more-actions">
           <summary>更多</summary>
           <div>
