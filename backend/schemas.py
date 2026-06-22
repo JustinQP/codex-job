@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models import DeviceStatus, TaskStatus, TaskType
+from backend.models import DeviceStatus, TaskStatus, TaskType, WorkspaceBindingStatus
 
 
 class ProjectCreate(BaseModel):
@@ -32,6 +32,8 @@ class ProjectRead(BaseModel):
     default_branch: Optional[str]
     require_clean_worktree: Optional[bool]
     default_runner_id: Optional[str]
+    workspace_id: Optional[int]
+    workspace_binding_status: WorkspaceBindingStatus
     default_model: Optional[str]
     default_reasoning_effort: Optional[str]
     default_sandbox: Optional[str]

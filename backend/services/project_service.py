@@ -6,7 +6,7 @@ import os
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from backend.models import Project, RunnerRecord, utc_now
+from backend.models import Project, RunnerRecord, WorkspaceBindingStatus, utc_now
 from backend.schemas import ProjectCreate
 
 
@@ -101,6 +101,34 @@ def get_project_or_404(session: Session, project_id: int) -> Project:
     return project
 
 
+def list_unbound_projects(session: Session) -> list[Project]:
+    return list(
+        session.exec(
+            select(Project)
+            .where(Project.workspace_binding_status == WorkspaceBindingStatus.UNBOUND)
+            .order_by(Project.id)
+        ).all()
+    )
+
+
+def bind_project_workspace(session: Session, project_id: int, workspace_id: int) -> Project:
+    from backend.models import Workspace
+
+    project = get_project_or_404(session, project_id)
+    if session.get(Workspace, workspace_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="workspace not found",
+        )
+    project.workspace_id = workspace_id
+    project.workspace_binding_status = WorkspaceBindingStatus.BOUND
+    project.updated_at = utc_now()
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return project
+
+
 def to_project_read(project: Project):
     from backend.schemas import ProjectRead
 
@@ -116,6 +144,8 @@ def to_project_read(project: Project):
         default_branch=project.default_branch,
         require_clean_worktree=project.require_clean_worktree,
         default_runner_id=project.default_runner_id,
+        workspace_id=project.workspace_id,
+        workspace_binding_status=project.workspace_binding_status,
         default_model=project.default_model,
         default_reasoning_effort=project.default_reasoning_effort,
         default_sandbox=project.default_sandbox,

@@ -35,6 +35,11 @@ class DeviceStatus(str, Enum):
     DISABLED = "DISABLED"
 
 
+class WorkspaceBindingStatus(str, Enum):
+    UNBOUND = "UNBOUND"
+    BOUND = "BOUND"
+
+
 class Project(SQLModel, table=True):
     __tablename__ = "projects"
 
@@ -47,6 +52,11 @@ class Project(SQLModel, table=True):
     default_branch: Optional[str] = None
     require_clean_worktree: Optional[bool] = None
     default_runner_id: Optional[str] = Field(default=None, index=True)
+    workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
+    workspace_binding_status: WorkspaceBindingStatus = Field(
+        default=WorkspaceBindingStatus.UNBOUND,
+        index=True,
+    )
     default_model: Optional[str] = None
     default_reasoning_effort: Optional[str] = None
     default_sandbox: Optional[str] = None

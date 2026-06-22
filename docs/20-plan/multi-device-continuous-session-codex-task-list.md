@@ -107,7 +107,7 @@ Codex 执行本清单时必须遵守：
 - [x] B04 新增 Workspace 数据模型和迁移
 - [x] B05 实现 Agent 本地 Workspace Registry
 - [x] B06 实现 Workspace 同步接口
-- [ ] B07 兼容迁移现有 Project
+- [x] B07 兼容迁移现有 Project
 - [ ] B08 手机端增加设备和 Workspace 选择
 
 ### C. Agent 命令通道
@@ -924,7 +924,7 @@ tests/test_workspace_sync_api.py
 
 ---
 
-### [ ] B07 兼容迁移现有 Project
+### [x] B07 兼容迁移现有 Project
 
 **目标**
 
@@ -958,6 +958,26 @@ tests/test_project_workspace_migration.py
 - 旧数据库升级后 Project、Task、AppThread 数量不减少。
 - 无法绑定的 Project 有明确状态，不被错误路由。
 - 旧模式关闭新功能开关后仍可运行。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/services/project_service.py`
+  - `scripts/migrate_projects_to_workspaces.py`
+  - `tests/test_project_workspace_migration.py`
+  - `tests/test_db_migrations.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0004 project_workspace_binding`，为 `projects` 增加 `workspace_id` 和 `workspace_binding_status`，默认 `UNBOUND`
+- 自动化测试：
+  - `pytest -q tests/test_project_workspace_migration.py tests/test_db_migrations.py tests/test_tasks_api.py`：通过，21 passed
+  - `python -m compileall backend scripts`：通过
+  - `pytest -q`：通过，212 passed, 1 skipped
+- 人工验证：不涉及
+- 回归影响：旧 Project API 保留；未绑定 Project 仍可在旧模式创建 Task，不会被自动路由到新 Agent Workspace
+- 风险与未完成项：迁移脚本当前仅输出诊断，不自动绑定；人工绑定或 UI 绑定由后续任务完善
 
 ---
 

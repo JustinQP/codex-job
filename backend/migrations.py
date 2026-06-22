@@ -19,7 +19,7 @@ class Migration:
 
 
 LEGACY_COLUMN_SPECS: dict[str, dict[str, str]] = {
-    "projects": {
+        "projects": {
         "test_command": "TEXT",
         "smoke_check_command": "TEXT",
         "default_branch": "TEXT",
@@ -27,8 +27,8 @@ LEGACY_COLUMN_SPECS: dict[str, dict[str, str]] = {
         "default_runner_id": "TEXT",
         "default_model": "TEXT",
         "default_reasoning_effort": "TEXT",
-        "default_sandbox": "TEXT",
-    },
+            "default_sandbox": "TEXT",
+        },
     "tasks": {
         "task_type": "VARCHAR DEFAULT 'IMPLEMENT'",
         "model": "TEXT",
@@ -193,6 +193,41 @@ def create_workspaces_table(engine: Engine) -> None:
         )
 
 
+def add_project_workspace_binding(engine: Engine) -> None:
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(projects)")
+        }
+        if not existing:
+            return
+        if "workspace_id" not in existing:
+            connection.execute(text("ALTER TABLE projects ADD COLUMN workspace_id INTEGER"))
+        if "workspace_binding_status" not in existing:
+            connection.execute(
+                text(
+                    "ALTER TABLE projects "
+                    "ADD COLUMN workspace_binding_status TEXT DEFAULT 'UNBOUND'"
+                )
+            )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_projects_workspace_id
+                ON projects (workspace_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_projects_workspace_binding_status
+                ON projects (workspace_binding_status)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -208,6 +243,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0003",
         name="workspaces",
         apply=create_workspaces_table,
+    ),
+    Migration(
+        version="0004",
+        name="project_workspace_binding",
+        apply=add_project_workspace_binding,
     ),
 )
 
