@@ -102,7 +102,7 @@ Codex 执行本清单时必须遵守：
 ### B. Device 与 Workspace
 
 - [x] B01 新增 Device 数据模型和迁移
-- [ ] B02 实现 Agent 稳定设备身份
+- [x] B02 实现 Agent 稳定设备身份
 - [ ] B03 实现 Agent 注册、心跳和认证接口
 - [ ] B04 新增 Workspace 数据模型和迁移
 - [ ] B05 实现 Agent 本地 Workspace Registry
@@ -571,7 +571,7 @@ tests/test_device_service.py
 
 ---
 
-### [ ] B02 实现 Agent 稳定设备身份
+### [x] B02 实现 Agent 稳定设备身份
 
 **目标**
 
@@ -613,6 +613,26 @@ tests/test_agent_identity.py
 - 同一数据目录连续启动得到相同 device_id。
 - 不同数据目录得到不同 device_id。
 - 损坏 identity 有明确诊断。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `agent/__init__.py`
+  - `agent/config.py`
+  - `agent/identity.py`
+  - `agent/main.py`
+  - `tests/test_agent_identity.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_agent_identity.py`：通过，7 passed
+  - `python -m compileall agent backend`：通过
+  - `pytest -q`：通过，189 passed
+- 人工验证：
+  - 执行 `$env:CODEX_AGENT_DATA_DIR='data\agent-test-b02'; $env:CODEX_AGENT_DISPLAY_NAME='Test Agent'; python -m agent.main --print-identity`
+  - 结果：成功输出包含 `device_id`、`display_name`、`created_at`、`identity_path` 的 JSON
+- 回归影响：新增正式 `agent/` 包，不改动旧 Runner 逻辑
+- 风险与未完成项：本任务只实现本地稳定身份；注册、心跳和后端 Agent API 由 B03 接入
 
 ---
 
