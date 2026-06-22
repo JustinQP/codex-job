@@ -949,7 +949,7 @@ B04、B06。
 backend/migrations/
 backend/services/project_service.py
 backend/services/workspace_service.py
-scripts/migrate_projects_to_workspaces.py
+scripts/verify_data_migration.py
 tests/test_project_workspace_migration.py
 ```
 
@@ -966,7 +966,6 @@ tests/test_project_workspace_migration.py
   - `backend/migrations.py`
   - `backend/schemas.py`
   - `backend/services/project_service.py`
-  - `scripts/migrate_projects_to_workspaces.py`
   - `tests/test_project_workspace_migration.py`
   - `tests/test_db_migrations.py`
   - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
@@ -977,7 +976,7 @@ tests/test_project_workspace_migration.py
   - `pytest -q`：通过，212 passed, 1 skipped
 - 人工验证：不涉及
 - 回归影响：旧 Project API 保留；未绑定 Project 仍可在旧模式创建 Task，不会被自动路由到新 Agent Workspace
-- 风险与未完成项：迁移脚本当前仅输出诊断，不自动绑定；人工绑定或 UI 绑定由后续任务完善
+- 风险与未完成项：迁移诊断不自动绑定；人工绑定或 UI 绑定由后续任务完善；完整数据升级验证由 F04 的数据迁移验证脚本承担
 
 ---
 
