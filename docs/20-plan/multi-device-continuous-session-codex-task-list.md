@@ -146,7 +146,7 @@ Codex 执行本清单时必须遵守：
 
 ### F. 验收与交付
 
-- [ ] F01 增加双 Fake Agent 集成测试
+- [x] F01 增加双 Fake Agent 集成测试
 - [ ] F02 增加本机双 Agent 模拟脚本
 - [ ] F03 增加 Windows Agent 安装和自启动脚本
 - [ ] F04 完成已有数据升级和回滚验证
@@ -2570,7 +2570,7 @@ E06、E11。
 
 ## F. 验收与交付
 
-### [ ] F01 增加双 Fake Agent 集成测试
+### [x] F01 增加双 Fake Agent 集成测试
 
 **目标**
 
@@ -2604,6 +2604,24 @@ Fake Agent B -> Workspace B
 
 - 测试可在 GitHub Actions 运行。
 - 不需要真实设备和 Codex Token。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `tests/test_multi_fake_agent_integration.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_multi_fake_agent_integration.py -o cache_dir=data/pytest-cache-f01-target2 -o addopts=--basetemp=data/pytest-tmp-f01-target2`：1 passed
+  - `pytest -q tests/test_multi_fake_agent_integration.py tests/test_agent_command_api.py tests/test_agent_command_events.py tests/test_agent_reconciliation.py tests/test_app_threads_api.py -o cache_dir=data/pytest-cache-f01-related -o addopts=--basetemp=data/pytest-tmp-f01-related`：41 passed
+  - `python -m compileall backend runner agent scripts poc/app_server tests/test_multi_fake_agent_integration.py`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-f01-full -o addopts=--basetemp=data/pytest-tmp-f01-full`：307 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及；新增集成测试以 FastAPI TestClient 和内存 SQLite 模拟双 Agent，不依赖真实设备、Codex Token 或外部网络
+- 回归影响：仅新增测试覆盖；未修改产品逻辑
+- 风险与未完成项：测试覆盖命令/事件/恢复链路，不替代后续真实多设备 smoke
 
 ---
 
