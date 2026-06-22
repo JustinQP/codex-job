@@ -147,7 +147,7 @@ Codex 执行本清单时必须遵守：
 ### F. 验收与交付
 
 - [x] F01 增加双 Fake Agent 集成测试
-- [ ] F02 增加本机双 Agent 模拟脚本
+- [x] F02 增加本机双 Agent 模拟脚本
 - [ ] F03 增加 Windows Agent 安装和自启动脚本
 - [ ] F04 完成已有数据升级和回滚验证
 - [ ] F05 完成真实多设备 smoke 验收
@@ -2625,7 +2625,7 @@ Fake Agent B -> Workspace B
 
 ---
 
-### [ ] F02 增加本机双 Agent 模拟脚本
+### [x] F02 增加本机双 Agent 模拟脚本
 
 **目标**
 
@@ -2650,6 +2650,32 @@ F01、B02、C04。
 
 - 控制端显示两个设备。
 - 两个 Workspace 可独立创建 Run/Session。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `scripts/start_dual_fake_agents.ps1`
+  - `tests/test_dual_fake_agent_script.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_dual_fake_agent_script.py -o cache_dir=data/pytest-cache-f02-target -o addopts=--basetemp=data/pytest-tmp-f02-target`：1 passed
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_dual_fake_agents.ps1 -Action Prepare`：通过，生成隔离目录 `data/dual-fake-agents`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_dual_fake_agents.ps1 -Action Clean`：通过，清理隔离目录
+  - `pytest -q tests/test_dual_fake_agent_script.py tests/test_agent_identity.py tests/test_workspace_registry.py -o cache_dir=data/pytest-cache-f02-related -o addopts=--basetemp=data/pytest-tmp-f02-related`：13 passed, 1 skipped
+  - `python -m compileall backend runner agent scripts poc/app_server tests/test_dual_fake_agent_script.py`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-f02-full -o addopts=--basetemp=data/pytest-tmp-f02-full`：308 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：
+  - 准备：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_dual_fake_agents.ps1 -Action Prepare`
+  - 启动并同步：`$env:AGENT_TOKEN="<token>"; powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_dual_fake_agents.ps1 -Register -SyncWorkspaces`
+  - 预期输出：控制端出现 `fake-agent-a`、`fake-agent-b` 两个 ONLINE 设备，以及 `Fake Workspace A`、`Fake Workspace B` 两个独立 Workspace
+  - 停止：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_dual_fake_agents.ps1 -Action Stop`
+  - 清理：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_dual_fake_agents.ps1 -Action Clean`
+- 回归影响：仅新增本机模拟脚本和静态测试；默认数据目录为 `data/dual-fake-agents`，不覆盖正式 `data/agent`
+- 风险与未完成项：脚本负责启动双 Agent；真实 Run/Session 成功仍依赖本机后端、AGENT_TOKEN 和 Codex/App Server 可用性
 
 ---
 
