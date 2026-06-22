@@ -77,6 +77,14 @@ export type Task = {
   runner_id?: string | null;
   runner_pid?: number | null;
   lease_expires_at?: string | null;
+  device_id?: string | null;
+  device_display_name?: string | null;
+  device_status?: string | null;
+  workspace_id?: number | null;
+  workspace_name?: string | null;
+  workspace_path_label?: string | null;
+  command_id?: string | null;
+  client_request_id?: string | null;
   log_url: string;
   result_url: string;
   diff_url: string;

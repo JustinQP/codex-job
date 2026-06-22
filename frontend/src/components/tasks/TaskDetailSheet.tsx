@@ -14,6 +14,8 @@ export function TaskDetailSheet({
   onCancel,
   onRerun
 }: TaskDetailSheetProps) {
+  const cancelLabel = task.cancel_requested && task.status !== "CANCELLED" ? "取消中" : "取消";
+
   return (
     <div className="task-detail-grid">
       <div className="detail-card">
@@ -27,6 +29,10 @@ export function TaskDetailSheet({
         <Meta label="reasoning" value={task.reasoning_effort || ""} />
         <Meta label="sandbox" value={task.sandbox || ""} />
         <Meta label="timeout" value={String(task.timeout_seconds)} />
+        <Meta label="device" value={task.device_display_name || task.device_id || ""} />
+        <Meta label="workspace" value={task.workspace_name || task.workspace_path_label || ""} />
+        <Meta label="device_status" value={task.device_status || ""} />
+        <Meta label="cancel" value={task.cancel_requested ? "requested" : ""} />
       </div>
       {task.error_message ? <div className="inline-error">{task.error_message}</div> : null}
       <div className="task-actions">
@@ -52,7 +58,7 @@ export function TaskDetailSheet({
           onClick={() => onCancel(task)}
           variant="danger"
         >
-          取消
+          {cancelLabel}
         </Button>
       </div>
     </div>

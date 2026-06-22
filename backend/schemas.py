@@ -77,7 +77,11 @@ class TaskRead(BaseModel):
     runner_pid: Optional[int]
     lease_expires_at: Optional[datetime]
     device_id: Optional[str]
+    device_display_name: Optional[str]
+    device_status: Optional[DeviceStatus]
     workspace_id: Optional[int]
+    workspace_name: Optional[str]
+    workspace_path_label: Optional[str]
     command_id: Optional[str]
     client_request_id: Optional[str]
     log_url: str

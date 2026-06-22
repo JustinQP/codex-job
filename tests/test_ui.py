@@ -238,9 +238,14 @@ def test_frontend_v17_pages_are_migrated_to_react() -> None:
     runs = (root / "components/runs/RunsPage.tsx").read_text(encoding="utf-8")
     assert "listDevices()" in runs
     assert "deviceDisabledReason(currentDevice)" in runs
-    assert "listTasks({ limit: 20, projectId: effectiveProjectId })" in runs
+    assert "listWorkspaces(effectiveDevice.device_id)" in runs
+    assert "listTasks({ limit: 50, projectId: effectiveProjectId, workspaceId: workspaceFilter })" in runs
+    assert "showAllHistory" in runs
+    assert "当前 Workspace" in runs
+    assert "全部设备历史" in runs
     assert "UI_STATE_KEYS.currentProjectId" in runs
     assert "UI_STATE_KEYS.currentDeviceId" in runs
+    assert "UI_STATE_KEYS.currentWorkspaceId" in runs
     assert "cancelTask(run.id)" in runs
     assert "rerunTask(run.id)" in runs
     assert "rerunDisabledReason" in runs
@@ -369,6 +374,8 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     task_card = (root / "components/tasks/TaskCard.tsx").read_text(encoding="utf-8")
     assert 'className="task-more-actions"' in task_card
     assert "<summary>更多</summary>" in task_card
+    assert "task.device_display_name" in task_card
+    assert "task.workspace_name" in task_card
 
     readme = Path("README.md").read_text(encoding="utf-8", errors="replace")
     assert "Mobile UI 当前迭代：v1.2" not in readme

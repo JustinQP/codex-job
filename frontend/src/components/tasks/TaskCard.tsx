@@ -14,6 +14,9 @@ type TaskCardProps = {
 
 export function TaskCard({ task, rerunDisabledReason = "", onCancel, onRerun, onOpen }: TaskCardProps) {
   const runnerLabel = task.assigned_runner_id || task.runner_id || "自动分配";
+  const deviceLabel = task.device_display_name || task.device_id || runnerLabel;
+  const workspaceLabel = task.workspace_name || task.workspace_path_label || "旧任务";
+  const cancelLabel = task.cancel_requested && task.status !== "CANCELLED" ? "取消中" : "取消";
 
   return (
     <article className="task-card">
@@ -26,6 +29,9 @@ export function TaskCard({ task, rerunDisabledReason = "", onCancel, onRerun, on
           </div>
           <span className="muted">
             {task.task_type} · {runnerLabel} · {formatRelativeTime(task.updated_at)}
+          </span>
+          <span className="muted">
+            {deviceLabel} · {workspaceLabel}
           </span>
         </div>
       </button>
@@ -48,7 +54,7 @@ export function TaskCard({ task, rerunDisabledReason = "", onCancel, onRerun, on
               onClick={() => onCancel(task)}
               variant="danger"
             >
-              取消
+              {cancelLabel}
             </Button>
           </div>
         </details>

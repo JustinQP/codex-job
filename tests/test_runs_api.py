@@ -97,6 +97,10 @@ def test_create_run_binds_device_from_workspace_and_ignores_client_device_id() -
         body = response.json()
         assert body["workspace_id"] == workspace.id
         assert body["device_id"] == "device-a"
+        assert body["device_display_name"] == "device-a"
+        assert body["device_status"] == "ONLINE"
+        assert body["workspace_name"] == "Repo"
+        assert body["workspace_path_label"] == "codex-job"
         assert body["client_request_id"] == "client-1"
 
 
@@ -151,3 +155,37 @@ def test_legacy_task_history_without_binding_is_still_readable() -> None:
         assert response.json()["device_id"] is None
         assert response.json()["workspace_id"] is None
         assert response.json()["command_id"] is None
+
+
+def test_list_tasks_can_filter_runs_by_workspace() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        add_device(session, "device-b")
+        workspace_a = add_workspace(session, "device-a")
+        workspace_b = add_workspace(session, "device-b")
+        run_a = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace_a.id,
+                "prompt": "run a",
+                "client_request_id": "workspace-filter-a",
+            },
+        ).json()
+        run_b = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace_b.id,
+                "prompt": "run b",
+                "client_request_id": "workspace-filter-b",
+            },
+        ).json()
+
+        filtered = client.get(f"/tasks?workspace_id={workspace_a.id}&limit=20")
+        all_runs = client.get("/tasks?limit=20")
+
+        assert filtered.status_code == 200
+        assert [item["id"] for item in filtered.json()] == [run_a["id"]]
+        assert {item["id"] for item in all_runs.json()} >= {run_a["id"], run_b["id"]}

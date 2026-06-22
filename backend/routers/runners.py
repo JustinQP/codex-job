@@ -104,7 +104,7 @@ def runner_finish_task(
     _: None = Depends(require_api_token),
 ):
     task = runner_service.finish_task(session, task_id, payload)
-    return task_service.to_task_read(task)
+    return task_service.to_task_read(task, session)
 
 
 @router.get("/runner/tasks/{task_id}/cancel-state", response_model=RunnerTaskCancelState)

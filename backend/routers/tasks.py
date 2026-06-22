@@ -24,7 +24,7 @@ def create_task(
     _: None = Depends(require_api_token),
 ):
     task = task_service.create_task(session, payload)
-    return task_service.to_task_read(task)
+    return task_service.to_task_read(task, session)
 
 
 @router.post("/runs", response_model=TaskRead)
@@ -34,12 +34,13 @@ def create_run(
     _: None = Depends(require_api_token),
 ):
     task = task_service.create_run(session, payload)
-    return task_service.to_task_read(task)
+    return task_service.to_task_read(task, session)
 
 
 @router.get("/tasks", response_model=list[TaskRead])
 def list_tasks(
     project_id: int | None = None,
+    workspace_id: int | None = None,
     status: TaskStatus | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     session: Session = Depends(get_session),
@@ -48,10 +49,11 @@ def list_tasks(
     tasks = task_service.list_tasks(
         session,
         project_id=project_id,
+        workspace_id=workspace_id,
         task_status=status,
         limit=limit,
     )
-    return [task_service.to_task_read(task) for task in tasks]
+    return [task_service.to_task_read(task, session) for task in tasks]
 
 
 @router.get("/tasks/{task_id}", response_model=TaskRead)
@@ -61,7 +63,7 @@ def get_task(
     _: None = Depends(require_api_token),
 ):
     task = task_service.get_task_or_404(session, task_id)
-    return task_service.to_task_read(task)
+    return task_service.to_task_read(task, session)
 
 
 @router.post("/tasks/{task_id}/rerun", response_model=TaskRead)
@@ -71,7 +73,7 @@ def rerun_task(
     _: None = Depends(require_api_token),
 ):
     task = task_service.rerun_task(session, task_id)
-    return task_service.to_task_read(task)
+    return task_service.to_task_read(task, session)
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=TaskRead)
@@ -81,7 +83,7 @@ def cancel_task(
     _: None = Depends(require_api_token),
 ):
     task = task_service.request_cancel(session, task_id)
-    return task_service.to_task_read(task)
+    return task_service.to_task_read(task, session)
 
 
 @router.get("/tasks/{task_id}/artifacts", response_model=TaskArtifactsRead)

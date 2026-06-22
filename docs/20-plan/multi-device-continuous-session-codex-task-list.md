@@ -126,7 +126,7 @@ Codex 执行本清单时必须遵守：
 - [x] D03 实现增量日志上传
 - [x] D04 实现产物 manifest 和大小限制
 - [x] D05 实现真实 Run 取消
-- [ ] D06 手机端运行页显示设备和 Workspace
+- [x] D06 手机端运行页显示设备和 Workspace
 - [ ] D07 兼容并逐步废弃旧 Runner 认领接口
 
 ### E. 多设备连续 Session
@@ -1801,7 +1801,7 @@ D02、C06。
 
 ---
 
-### [ ] D06 手机端运行页显示设备和 Workspace
+### [x] D06 手机端运行页显示设备和 Workspace
 
 **目标**
 
@@ -1825,6 +1825,36 @@ D01、D03、D05、B08。
 - 用户不会误判执行设备。
 - 切换 Workspace 后列表筛选正确。
 - 前端 build 通过。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/schemas.py`
+  - `backend/routers/tasks.py`
+  - `backend/routers/runners.py`
+  - `backend/services/task_service.py`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/api/tasks.ts`
+  - `frontend/src/components/runs/RunsPage.tsx`
+  - `frontend/src/components/tasks/TaskCard.tsx`
+  - `frontend/src/components/tasks/TaskDetailSheet.tsx`
+  - `frontend/src/styles/tasks.css`
+  - `tests/test_runs_api.py`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 后端：`TaskRead` 增加 Device/Workspace 展示字段；`GET /tasks` 增加 `workspace_id` 过滤，支持运行页默认按当前 Workspace 查询
+- 前端：运行页显示当前设备、Workspace 路径和历史范围；默认查询当前 Workspace，可切换查看全部设备历史；Run 卡片和详情显示 Device、Workspace、设备状态和取消请求状态
+- 交互：新建 Run 入口未在运行页保留；重跑继续受当前设备在线状态约束，离线或停用时按钮禁用并显示原因；日志仍通过单一 artifact URL 打开，不在页面内重复拼接文本
+- 自动化测试：
+  - `pytest -q tests/test_runs_api.py tests/test_ui.py`：通过，20 passed
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，265 passed, 1 skipped
+- 人工验证：不涉及
+- 回归影响：旧任务没有 Device/Workspace 绑定时仍可读取，前端显示为旧任务；Runner finish 返回结构补齐新字段但不改变已有字段含义
+- 风险与未完成项：运行页当前只做轮询刷新，不新增日志增量阅读 UI；D03 后端增量日志接口仍保留给后续实时日志体验使用
 
 ---
 

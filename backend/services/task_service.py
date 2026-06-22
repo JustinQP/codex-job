@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from backend.db import JOBS_DIR
-from backend.models import AgentCommandStatus, DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
+from backend.models import AgentCommandStatus, Device, DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
 from backend.schemas import RunCreate, TaskCreate
 from backend.services import agent_command_service
 
@@ -182,12 +182,15 @@ def list_tasks(
     session: Session,
     *,
     project_id: int | None = None,
+    workspace_id: int | None = None,
     task_status: TaskStatus | None = None,
     limit: int = 50,
 ) -> list[Task]:
     statement = select(Task)
     if project_id is not None:
         statement = statement.where(Task.project_id == project_id)
+    if workspace_id is not None:
+        statement = statement.where(Task.workspace_id == workspace_id)
     if task_status is not None:
         statement = statement.where(Task.status == task_status)
     statement = statement.order_by(Task.id.desc()).limit(limit)
@@ -264,11 +267,16 @@ def request_cancel(session: Session, task_id: int) -> Task:
     return task
 
 
-def to_task_read(task: Task):
+def to_task_read(task: Task, session: Session | None = None):
     from backend.schemas import TaskRead
 
     if task.id is None:
         raise ValueError("task id is required")
+    device = None
+    workspace = None
+    if session is not None:
+        device = session.get(Device, task.device_id) if task.device_id else None
+        workspace = session.get(Workspace, task.workspace_id) if task.workspace_id else None
     return TaskRead(
         id=task.id,
         project_id=task.project_id,
@@ -287,7 +295,11 @@ def to_task_read(task: Task):
         runner_pid=task.runner_pid,
         lease_expires_at=task.lease_expires_at,
         device_id=task.device_id,
+        device_display_name=device.display_name if device else None,
+        device_status=device.status if device else None,
         workspace_id=task.workspace_id,
+        workspace_name=workspace.name if workspace else None,
+        workspace_path_label=workspace.path_label if workspace else None,
         command_id=task.command_id,
         client_request_id=task.client_request_id,
         log_url=f"/tasks/{task.id}/log",

@@ -15,12 +15,14 @@ export type CreateTaskPayload = {
 export type ListTasksOptions = {
   limit?: number;
   projectId?: number | null;
+  workspaceId?: number | null;
 };
 
 export function listTasks(options: number | ListTasksOptions = 20) {
   const normalized = typeof options === "number" ? { limit: options } : options;
   const params = new URLSearchParams({ limit: String(normalized.limit ?? 20) });
   if (normalized.projectId) params.set("project_id", String(normalized.projectId));
+  if (normalized.workspaceId) params.set("workspace_id", String(normalized.workspaceId));
   return apiRequest<Task[]>(`/tasks?${params.toString()}`);
 }
 

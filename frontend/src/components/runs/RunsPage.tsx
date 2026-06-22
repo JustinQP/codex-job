@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
 import { cancelTask, listTasks, rerunTask } from "../../api/tasks";
-import type { Device, Project, Task, TaskStatus } from "../../api/types";
+import type { Device, Project, Task, TaskStatus, Workspace } from "../../api/types";
+import { listWorkspaces } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePolling } from "../../hooks/usePolling";
 import { UI_STATE_KEYS } from "../../state/storage";
@@ -21,17 +22,21 @@ export function RunsPage({ showToast }: PageProps) {
   const [runs, setRuns] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [currentProjectIdText, setCurrentProjectIdText] = useLocalStorage(
     UI_STATE_KEYS.currentProjectId,
     ""
   );
   const [currentDeviceIdText] = useLocalStorage(UI_STATE_KEYS.currentDeviceId, "");
+  const [currentWorkspaceIdText] = useLocalStorage(UI_STATE_KEYS.currentWorkspaceId, "");
   const [statusFilter, setStatusFilter] = useLocalStorage(UI_STATE_KEYS.taskStatusFilter, "");
   const [selectedRun, setSelectedRun] = useState<Task | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const currentProjectId = currentProjectIdText ? Number(currentProjectIdText) : null;
+  const currentWorkspaceId = currentWorkspaceIdText ? Number(currentWorkspaceIdText) : null;
   const currentDevice = useMemo(() => {
     return devices.find((device) => device.device_id === currentDeviceIdText)
       || devices.find((device) => device.status === "ONLINE")
@@ -39,6 +44,12 @@ export function RunsPage({ showToast }: PageProps) {
       || null;
   }, [currentDeviceIdText, devices]);
   const rerunDisabledReason = devices.length ? deviceDisabledReason(currentDevice) : "";
+  const currentWorkspace = useMemo(() => {
+    return workspaces.find((workspace) => workspace.id === currentWorkspaceId)
+      || workspaces.find((workspace) => workspace.enabled)
+      || workspaces[0]
+      || null;
+  }, [currentWorkspaceId, workspaces]);
   const currentProject = useMemo(() => {
     return projects.find((project) => project.id === currentProjectId)
       || projects.find((project) => project.enabled)
@@ -54,6 +65,17 @@ export function RunsPage({ showToast }: PageProps) {
         listDevices().catch(() => [] as Device[]),
         listProjects()
       ]);
+      const selectedDevice = currentDeviceIdText
+        ? deviceData.find((device) => device.device_id === currentDeviceIdText)
+        : null;
+      const fallbackDevice = deviceData.find((device) => device.status === "ONLINE") || deviceData[0] || null;
+      const effectiveDevice = selectedDevice || fallbackDevice;
+      const workspaceData = effectiveDevice ? await listWorkspaces(effectiveDevice.device_id) : [];
+      const selectedWorkspace = currentWorkspaceId
+        ? workspaceData.find((workspace) => workspace.id === currentWorkspaceId)
+        : null;
+      const fallbackWorkspace = workspaceData.find((workspace) => workspace.enabled) || workspaceData[0] || null;
+      const effectiveWorkspaceId = selectedWorkspace?.id || fallbackWorkspace?.id || null;
       const effectiveProject = currentProjectId
         ? projectData.find((project) => project.id === currentProjectId)
         : null;
@@ -61,16 +83,29 @@ export function RunsPage({ showToast }: PageProps) {
       const effectiveProjectId = effectiveProject?.id || fallbackProject?.id || null;
       setDevices(deviceData);
       setProjects(projectData);
+      setWorkspaces(workspaceData);
       if (!currentProjectIdText && effectiveProjectId) {
         setCurrentProjectIdText(String(effectiveProjectId));
       }
-      setRuns(effectiveProjectId ? await listTasks({ limit: 20, projectId: effectiveProjectId }) : []);
+      const workspaceFilter = showAllHistory ? null : effectiveWorkspaceId;
+      setRuns(
+        effectiveProjectId
+          ? await listTasks({ limit: 50, projectId: effectiveProjectId, workspaceId: workspaceFilter })
+          : []
+      );
     } catch (err) {
       setError(errorText(err));
     } finally {
       setLoading(false);
     }
-  }, [currentDeviceIdText, currentProjectId, currentProjectIdText, setCurrentProjectIdText]);
+  }, [
+    currentDeviceIdText,
+    currentProjectId,
+    currentProjectIdText,
+    currentWorkspaceId,
+    setCurrentProjectIdText,
+    showAllHistory,
+  ]);
 
   useEffect(() => {
     void loadRuns();
@@ -118,12 +153,26 @@ export function RunsPage({ showToast }: PageProps) {
           <span>
             {loading
               ? "刷新中"
-              : `${currentProject?.name || "未选择工作空间"} · 运行中 ${runningCount} · 失败 ${failedCount} · 共 ${runs.length} 条`}
+              : `${currentWorkspace?.name || currentProject?.name || "未选择 Workspace"} · 运行中 ${runningCount} · 失败 ${failedCount} · 共 ${runs.length} 条`}
           </span>
         </div>
       </div>
 
       <div className="wechat-section">
+        <div className="context-strip">
+          <span>{currentDevice?.display_name || "未选择设备"}</span>
+          <span>{currentWorkspace?.path_label || "未选择目录"}</span>
+          <span>{showAllHistory ? "全部历史" : "当前 Workspace"}</span>
+        </div>
+        {rerunDisabledReason ? <div className="inline-error">{rerunDisabledReason}</div> : null}
+        <div className="segmented-control" aria-label="运行历史范围">
+          <button className={!showAllHistory ? "active" : ""} onClick={() => setShowAllHistory(false)} type="button">
+            当前 Workspace
+          </button>
+          <button className={showAllHistory ? "active" : ""} onClick={() => setShowAllHistory(true)} type="button">
+            全部设备历史
+          </button>
+        </div>
         <div className="segmented-control" aria-label="运行状态筛选">
           {statuses.map((status) => (
             <button
