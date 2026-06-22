@@ -10,6 +10,7 @@ from agent.command_handlers import CommandHandlerRegistry
 from agent.heartbeat import register_agent, send_heartbeat
 from agent.identity import AgentIdentity
 from agent.local_state import AgentLocalState, CurrentCommandState
+from agent.reconciliation import reconcile_local_state
 from agent.workspace_registry import WorkspaceRegistry
 from backend.models import AgentCommandStatus
 from backend.schemas import (
@@ -42,6 +43,12 @@ class AgentCommandLoop:
 
     def bootstrap(self) -> None:
         register_agent(self.client, self.identity)
+        reconcile_local_state(
+            client=self.client,
+            identity=self.identity,
+            local_state=self.local_state,
+            process_status="STARTING",
+        )
         if self.workspace_registry is not None:
             self.client.sync_workspaces(
                 WorkspaceSyncRequest(

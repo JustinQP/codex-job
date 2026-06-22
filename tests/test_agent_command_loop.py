@@ -37,6 +37,10 @@ class FakeClient:
         self.calls.append("sync")
         return {"synced_count": len(payload.workspaces)}
 
+    def reconcile(self, payload):
+        self.calls.append("reconcile")
+        return {"action": "IDLE"}
+
     def claim_command(self, payload):
         self.calls.append(f"claim:{payload.claim_request_id}")
         return self.command

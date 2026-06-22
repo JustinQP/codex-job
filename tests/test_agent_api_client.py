@@ -16,6 +16,7 @@ from backend.schemas import (
     AgentCommandEventUploadItem,
     AgentCommandEventsUploadRequest,
     AgentCommandLeaseRequest,
+    AgentReconcileRequest,
     DeviceHeartbeat,
     DeviceRegister,
     WorkspaceSyncItem,
@@ -112,6 +113,13 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
                 ],
             ),
         )
+        reconcile = client.reconcile(
+            AgentReconcileRequest(
+                device_id="device-a",
+                command_id="cmd-1",
+                process_status="STARTING",
+            )
+        )
 
         assert registered == {"ok": True, "path": "/agent/register"}
         assert heartbeat == {"ok": True, "path": "/agent/heartbeat"}
@@ -121,6 +129,7 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert renew == {"ok": True, "path": "/agent/commands/cmd-1/renew"}
         assert complete == {"ok": True, "path": "/agent/commands/cmd-1/complete"}
         assert events == {"ok": True, "path": "/agent/commands/cmd-1/events"}
+        assert reconcile == {"ok": True, "path": "/agent/reconcile"}
         assert AgentClientHandler.calls[0][0] == "/agent/register"
         assert AgentClientHandler.calls[0][1] == "secret"
         assert AgentClientHandler.calls[0][2]["device_id"] == "device-a"
@@ -135,6 +144,8 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert AgentClientHandler.calls[6][0] == "/agent/commands/cmd-1/complete"
         assert AgentClientHandler.calls[7][0] == "/agent/commands/cmd-1/events"
         assert AgentClientHandler.calls[7][2]["events"][0]["sequence"] == 1
+        assert AgentClientHandler.calls[8][0] == "/agent/reconcile"
+        assert AgentClientHandler.calls[8][2]["command_id"] == "cmd-1"
     finally:
         server.shutdown()
 

@@ -311,6 +311,22 @@ class AgentCommandEventsUploadRead(BaseModel):
     latest_sequence: Optional[int]
 
 
+class AgentReconcileRequest(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    command_id: Optional[str] = None
+    process_status: str = Field(default="IDLE", min_length=1, max_length=80)
+    last_uploaded_sequence: Optional[int] = Field(default=None, ge=0)
+
+
+class AgentReconcileRead(BaseModel):
+    action: str
+    command_id: Optional[str] = None
+    server_status: Optional[AgentCommandStatus] = None
+    latest_sequence: Optional[int] = None
+    upload_from_sequence: Optional[int] = None
+    reason: str
+
+
 class AppThreadCreate(BaseModel):
     project_id: int
     title: Optional[str] = None

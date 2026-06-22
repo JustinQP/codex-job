@@ -11,6 +11,8 @@ from backend.schemas import (
     AgentCommandEventsUploadRead,
     AgentCommandEventsUploadRequest,
     AgentCommandLeaseRequest,
+    AgentReconcileRead,
+    AgentReconcileRequest,
     AgentCommandRead,
     DeviceHeartbeat,
     DeviceRead,
@@ -21,6 +23,7 @@ from backend.schemas import (
 from backend.services import (
     agent_command_event_service,
     agent_command_service,
+    agent_reconciliation_service,
     device_service,
     workspace_service,
 )
@@ -174,5 +177,17 @@ def upload_agent_command_events(
             device_id=payload.device_id,
             payload=payload,
         )
+    except agent_command_service.AgentCommandServiceError as exc:
+        raise_agent_command_error(exc)
+
+
+@router.post("/agent/reconcile", response_model=AgentReconcileRead)
+def reconcile_agent(
+    payload: AgentReconcileRequest,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_agent_token),
+):
+    try:
+        return agent_reconciliation_service.reconcile_agent(session, payload)
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)

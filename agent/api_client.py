@@ -10,6 +10,7 @@ from backend.schemas import (
     AgentCommandCompleteRequest,
     AgentCommandEventsUploadRequest,
     AgentCommandLeaseRequest,
+    AgentReconcileRequest,
     DeviceHeartbeat,
     DeviceRegister,
     WorkspaceSyncRequest,
@@ -66,6 +67,9 @@ class AgentApiClient:
             f"/agent/commands/{command_id}/events",
             payload.model_dump(mode="json", exclude_none=True),
         )
+
+    def reconcile(self, payload: AgentReconcileRequest) -> dict[str, Any]:
+        return self._json_request("/agent/reconcile", payload.model_dump(exclude_none=True))
 
     def _json_request(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._json_request_or_none(path, payload)

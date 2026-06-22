@@ -117,7 +117,7 @@ Codex 执行本清单时必须遵守：
 - [x] C03 实现命令 claim、续租和完成接口
 - [x] C04 实现 Agent 命令循环
 - [x] C05 实现命令事件增量上传
-- [ ] C06 实现 Agent 重连 reconciliation
+- [x] C06 实现 Agent 重连 reconciliation
 
 ### D. 多设备 Run
 
@@ -1426,7 +1426,7 @@ tests/test_command_events.py
 
 ---
 
-### [ ] C06 实现 Agent 重连 reconciliation
+### [x] C06 实现 Agent 重连 reconciliation
 
 **目标**
 
@@ -1472,6 +1472,34 @@ tests/test_agent_reconciliation.py
 - Agent 重启后不重复执行已成功命令。
 - 未确认事件可以补传。
 - 服务端已取消的命令不会在 Agent 重连后继续执行。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/schemas.py`
+  - `backend/routers/agent.py`
+  - `backend/services/agent_reconciliation_service.py`
+  - `agent/api_client.py`
+  - `agent/reconciliation.py`
+  - `agent/command_loop.py`
+  - `tests/test_agent_reconciliation.py`
+  - `tests/test_agent_command_loop.py`
+  - `tests/test_agent_api_client.py`
+  - `tests/test_api_contract.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- API：新增 `POST /agent/reconcile`，Agent 上报本地 `command_id`、`process_status`、`last_uploaded_sequence`
+- Reconciliation：服务端按命令状态返回 `CONTINUE`、`STOP`、`UPLOAD_EVENTS`、`MARK_FAILED` 或 `IDLE`；SUCCESS/CANCELLED 等终态不会被重复执行
+- Agent：启动循环时先执行 reconcile；服务端要求 STOP 时清理本地 current command
+- 事件补传：当 Agent 本地认为已上传 sequence 高于服务端最新 sequence 时，返回 `UPLOAD_EVENTS` 和 `upload_from_sequence`
+- 自动化测试：
+  - `pytest -q tests/test_agent_reconciliation.py tests/test_agent_command_loop.py tests/test_agent_api_client.py tests/test_api_contract.py`：通过，12 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，240 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：新增重连核对接口和 Agent 启动前核对，不改变旧 Runner/Task 路径；无本地 command 时不会丢弃服务端 PENDING 命令
+- 风险与未完成项：当前 reconciliation 仍基于 fake handler 和通用命令事件；真实进程/session 状态将在 D/E 阶段接入
 
 ---
 
