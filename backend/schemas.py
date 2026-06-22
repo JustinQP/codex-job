@@ -425,6 +425,7 @@ class AppTurnCreate(BaseModel):
 class AppTurnRead(BaseModel):
     id: int
     app_thread_id: int
+    command_id: Optional[str] = None
     user_message: str
     assistant_final: Optional[str]
     status: str

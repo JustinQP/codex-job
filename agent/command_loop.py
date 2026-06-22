@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from agent.api_client import AgentApiClient, AgentApiError
 from agent.command_handlers import CommandHandlerRegistry
+from agent.event_uploader import CommandEventUploader
 from agent.heartbeat import register_agent, send_heartbeat
 from agent.identity import AgentIdentity
 from agent.local_state import AgentLocalState, CurrentCommandState
@@ -33,6 +34,7 @@ class AgentCommandLoop:
         handlers: CommandHandlerRegistry | None = None,
         process_registry: ProcessRegistry | None = None,
         app_session_manager=None,
+        event_uploader: CommandEventUploader | None = None,
         poll_interval_seconds: float = 2.0,
         max_retries: int = 3,
     ) -> None:
@@ -41,12 +43,17 @@ class AgentCommandLoop:
         self.local_state = local_state
         self.workspace_registry = workspace_registry
         self.process_registry = process_registry or ProcessRegistry()
+        self.event_uploader = event_uploader or CommandEventUploader(
+            client=client,
+            local_state=local_state,
+        )
         self.handlers = handlers or CommandHandlerRegistry(
             workspace_registry,
             client=client,
             device_id=identity.device_id,
             process_registry=self.process_registry,
             app_session_manager=app_session_manager,
+            event_uploader=self.event_uploader,
         )
         self.poll_interval_seconds = poll_interval_seconds
         self.max_retries = max_retries

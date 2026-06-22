@@ -271,6 +271,160 @@ def test_session_open_complete_updates_app_thread(monkeypatch) -> None:
         assert detail.json()["app_thread_id"] == "codex-thread-1"
 
 
+def test_create_async_app_turn_in_agent_mode_creates_turn_start_command(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    for client, session, fake in make_client(monkeypatch):
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Agent chat",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="agent-session-1",
+            app_thread_id="codex-thread-1",
+            status="ACTIVE",
+            sandbox="workspace-write",
+            approval_policy="never",
+            network_access=False,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+
+        response = client.post(f"/app-threads/{app_thread.id}/turns/async", json={"message": "hello"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "PENDING"
+        assert body["command_id"] is not None
+        assert fake.created_cwds == []
+        commands = agent_command_service.list_commands_for_device(session, "device-a")
+        assert [command.command_type for command in commands] == ["TURN_START"]
+        command = commands[0]
+        assert command.aggregate_type == "app_turn"
+        assert command.aggregate_id == str(body["id"])
+        assert body["command_id"] == command.id
+        payload = command.payload_json
+        assert "cwd" not in payload
+        assert "project_path" not in payload
+        assert '"agent_session_id":"agent-session-1"' in payload
+        assert f'"app_turn_id":{body["id"]}' in payload
+
+
+def test_turn_start_ack_and_complete_updates_app_turn(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Agent chat",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="agent-session-1",
+            app_thread_id="codex-thread-1",
+            status="ACTIVE",
+            sandbox="read-only",
+            approval_policy="never",
+            network_access=False,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        created = client.post(f"/app-threads/{app_thread.id}/turns/async", json={"message": "hello"}).json()
+        command_id = created["command_id"]
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-turn-start"},
+        ).json()
+
+        ack = client.post(
+            f"/agent/commands/{command_id}/ack",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "lease_token": claim["lease_token"]},
+        )
+        running = client.get(f"/app-turns/{created['id']}")
+        complete = client.post(
+            f"/agent/commands/{command_id}/complete",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={
+                "device_id": "device-a",
+                "lease_token": claim["lease_token"],
+                "status": AgentCommandStatus.SUCCESS.value,
+                "result_payload": {
+                    "app_turn_id": created["id"],
+                    "agent_session_id": "agent-session-1",
+                    "codex_turn_id": "codex-turn-1",
+                    "assistant_final": "hello back",
+                    "event_summary": {"total_events": 3, "assistant_text_preview": "hello back"},
+                },
+            },
+        )
+        finished = client.get(f"/app-turns/{created['id']}")
+
+        assert ack.status_code == 200
+        assert running.json()["status"] == "RUNNING"
+        assert running.json()["started_at"] is not None
+        assert complete.status_code == 200
+        assert finished.json()["status"] == "SUCCESS"
+        assert finished.json()["assistant_final"] == "hello back"
+        assert finished.json()["bridge_turn_id"] == "codex-turn-1"
+        assert finished.json()["duration_seconds"] is not None
+        assert finished.json()["event_summary"]["total_events"] == 3
+
+
+def test_turn_start_complete_from_wrong_device_is_rejected(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        add_device(session, "device-a")
+        add_device(session, "device-b")
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Agent chat",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="agent-session-1",
+            app_thread_id="codex-thread-1",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        created = client.post(f"/app-threads/{app_thread.id}/turns/async", json={"message": "hello"}).json()
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-device-a"},
+        ).json()
+
+        response = client.post(
+            f"/agent/commands/{created['command_id']}/complete",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={
+                "device_id": "device-b",
+                "lease_token": claim["lease_token"],
+                "status": AgentCommandStatus.SUCCESS.value,
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "agent_command_device_mismatch"
+
+
 def test_app_threads_api_token_protection(monkeypatch) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
     monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)

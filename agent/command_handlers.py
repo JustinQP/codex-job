@@ -48,6 +48,7 @@ class CommandHandlerRegistry:
         device_id: str | None = None,
         process_registry: ProcessRegistry | None = None,
         app_session_manager: Any | None = None,
+        event_uploader: Any | None = None,
     ) -> None:
         self._handlers: dict[str, CommandHandler] = {
             "fake.echo": FakeCommandHandler(),
@@ -62,9 +63,10 @@ class CommandHandlerRegistry:
                 process_registry=process_registry,
             )
         if app_session_manager is not None:
-            from agent.session_handlers import SessionOpenHandler
+            from agent.session_handlers import SessionOpenHandler, TurnStartHandler
 
             self._handlers["SESSION_OPEN"] = SessionOpenHandler(app_session_manager)
+            self._handlers["TURN_START"] = TurnStartHandler(app_session_manager, event_uploader)
         self._fallback = UnsupportedCommandHandler()
 
     def handle(self, command: dict[str, Any]) -> CommandResult:

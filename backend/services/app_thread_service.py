@@ -194,6 +194,90 @@ def complete_agent_session_open(
     return app_thread
 
 
+def complete_agent_turn_start(
+    session: Session,
+    *,
+    command_id: str,
+    result_payload: dict[str, Any] | None = None,
+) -> AppTurn | None:
+    command = session.get(AgentCommand, command_id)
+    if command is None or command.aggregate_type != "app_turn":
+        return None
+    try:
+        app_turn_id = int(command.aggregate_id or "0")
+    except ValueError:
+        return None
+    app_turn = session.get(AppTurn, app_turn_id)
+    if app_turn is None:
+        return None
+    app_thread = session.get(AppThread, app_turn.app_thread_id)
+    now = utc_now()
+    payload = result_payload or {}
+
+    if command.status == AgentCommandStatus.SUCCESS:
+        app_turn.status = APP_TURN_SUCCESS
+        app_turn.error_message = None
+        app_turn.assistant_final = _string_or_none(payload.get("assistant_final"))
+        app_turn.bridge_turn_id = _string_or_none(payload.get("codex_turn_id")) or _string_or_none(payload.get("turn_id"))
+        app_turn.event_summary_json = _summary_json(_dict_or_empty(payload.get("event_summary")))
+        if app_turn.started_at is None:
+            app_turn.started_at = command.claimed_at or now
+        app_turn.completed_at = now
+        if app_thread is not None:
+            app_thread.status = APP_THREAD_ACTIVE
+            app_thread.last_error = None
+            app_thread.updated_at = now
+            session.add(app_thread)
+    elif command.status in {AgentCommandStatus.FAILED, AgentCommandStatus.CANCELLED, AgentCommandStatus.EXPIRED}:
+        if command.status == AgentCommandStatus.CANCELLED:
+            app_turn.status = APP_TURN_CANCELLED
+        else:
+            app_turn.status = APP_TURN_FAILED
+        app_turn.error_message = command.last_error or _string_or_none(payload.get("error")) or f"TURN_START ended with {command.status}"
+        if app_turn.started_at is None:
+            app_turn.started_at = command.claimed_at
+        app_turn.completed_at = now
+        if app_thread is not None:
+            app_thread.status = APP_THREAD_ERROR if app_turn.status == APP_TURN_FAILED else APP_THREAD_ACTIVE
+            app_thread.last_error = app_turn.error_message if app_turn.status == APP_TURN_FAILED else None
+            app_thread.updated_at = now
+            session.add(app_thread)
+
+    session.add(app_turn)
+    session.commit()
+    session.refresh(app_turn)
+    return app_turn
+
+
+def mark_agent_turn_running(
+    session: Session,
+    *,
+    command_id: str,
+) -> AppTurn | None:
+    command = session.get(AgentCommand, command_id)
+    if command is None or command.aggregate_type != "app_turn":
+        return None
+    try:
+        app_turn_id = int(command.aggregate_id or "0")
+    except ValueError:
+        return None
+    app_turn = session.get(AppTurn, app_turn_id)
+    if app_turn is None or app_turn.status != APP_TURN_PENDING:
+        return app_turn
+    now = utc_now()
+    app_turn.status = APP_TURN_RUNNING
+    app_turn.started_at = now
+    app_thread = session.get(AppThread, app_turn.app_thread_id)
+    if app_thread is not None:
+        app_thread.status = APP_THREAD_ACTIVE
+        app_thread.updated_at = now
+        session.add(app_thread)
+    session.add(app_turn)
+    session.commit()
+    session.refresh(app_turn)
+    return app_turn
+
+
 def list_app_threads(
     session: Session,
     project_id: int | None = None,
@@ -409,6 +493,8 @@ def create_async_app_turn(
     app_thread = get_app_thread_or_404(session, app_thread_id)
     if app_thread.status == APP_THREAD_CLOSED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread is closed")
+    if get_settings().agent_command_mode:
+        return create_agent_async_app_turn(session, app_thread, message, payload)
     if not app_thread.bridge_thread_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread has no bridge thread id")
     active_turn = _get_active_app_turn(session, app_thread.id)
@@ -437,6 +523,84 @@ def create_async_app_turn(
     from backend.services.app_turn_executor import submit_app_turn
 
     submit_app_turn(app_turn.id)
+    return app_turn
+
+
+def create_agent_async_app_turn(
+    session: Session,
+    app_thread: AppThread,
+    message: str,
+    payload: AppTurnCreate,
+) -> AppTurn:
+    if app_thread.id is None:
+        raise ValueError("app thread id is required")
+    if app_thread.status != APP_THREAD_ACTIVE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="app thread is not active")
+    if not app_thread.device_id or app_thread.workspace_id is None or not app_thread.agent_session_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="app thread is not bound to an agent session")
+    workspace = session.get(Workspace, app_thread.workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workspace not found")
+    if not workspace.enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace is disabled")
+    if workspace.device_id != app_thread.device_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workspace device mismatch")
+    device = session.get(Device, app_thread.device_id)
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="device not found")
+    if device.status == DeviceStatus.DISABLED:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device is disabled")
+    if device.status != DeviceStatus.ONLINE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device is offline")
+    active_turn = _get_active_app_turn(session, app_thread.id)
+    if active_turn is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "app_turn_conflict",
+                "message": "app thread already has a pending or running app turn",
+                "app_turn_id": active_turn.id,
+            },
+        )
+
+    app_turn = AppTurn(
+        app_thread_id=app_thread.id,
+        user_message=message,
+        status=APP_TURN_PENDING,
+        created_at=utc_now(),
+    )
+    session.add(app_turn)
+    session.commit()
+    session.refresh(app_turn)
+    if app_turn.id is None:
+        raise ValueError("app turn id is required")
+
+    command = agent_command_service.create_command(
+        session,
+        device_id=app_thread.device_id,
+        command_type="TURN_START",
+        aggregate_type="app_turn",
+        aggregate_id=str(app_turn.id),
+        idempotency_key=f"turn-start:{app_turn.id}",
+        workspace_id=workspace.id,
+        payload={
+            "app_thread_id": app_thread.id,
+            "app_turn_id": app_turn.id,
+            "agent_session_id": app_thread.agent_session_id,
+            "codex_thread_id": app_thread.app_thread_id,
+            "workspace_id": workspace.id,
+            "workspace_key": workspace.workspace_key,
+            "generation": app_thread.generation,
+            "message": message,
+            "sandbox": app_thread.sandbox,
+            "approval_policy": app_thread.approval_policy,
+            "network_access": app_thread.network_access,
+        },
+    )
+    app_turn.command_id = command.id
+    session.add(app_turn)
+    session.commit()
+    session.refresh(app_turn)
     return app_turn
 
 
@@ -682,6 +846,7 @@ def to_app_turn_read(app_turn: AppTurn) -> AppTurnRead:
     return AppTurnRead(
         id=app_turn.id,
         app_thread_id=app_turn.app_thread_id,
+        command_id=app_turn.command_id,
         user_message=app_turn.user_message,
         assistant_final=app_turn.assistant_final,
         status=app_turn.status,

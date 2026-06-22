@@ -117,6 +117,7 @@ export type AppThread = {
 export type AppTurn = {
   id: number;
   app_thread_id: number;
+  command_id?: string | null;
   user_message: string;
   assistant_final?: string | null;
   status: string;

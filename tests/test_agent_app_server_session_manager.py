@@ -27,10 +27,34 @@ class FakeJsonlRpcClient:
         self.requests: list[dict[str, Any]] = []
         self.closed = False
         self.thread_id = f"codex-thread-{len(self.instances) + 1}"
+        self.turn_id = f"codex-turn-{len(self.instances) + 1}"
+        self._messages: list[dict[str, Any]] = []
+        self._condition = _NoopCondition(self)
         self.instances.append(self)
+
+    @property
+    def message_count(self) -> int:
+        return len(self._messages)
 
     def request(self, request_id: str, method: str, params: dict[str, Any] | None = None) -> None:
         self.requests.append({"id": request_id, "method": method, "params": params or {}})
+        if method == "turn/start":
+            self._messages.extend(
+                [
+                    {
+                        "id": request_id,
+                        "result": {"turn": {"id": self.turn_id}},
+                    },
+                    {
+                        "method": "agent/message_delta",
+                        "params": {"turnId": self.turn_id, "itemId": "a", "delta": "hello"},
+                    },
+                    {
+                        "method": "turn/completed",
+                        "params": {"turnId": self.turn_id},
+                    },
+                ]
+            )
 
     def wait_for_response(self, request_id: str, timeout: float) -> dict[str, Any]:
         del timeout
@@ -38,10 +62,56 @@ class FakeJsonlRpcClient:
             return {"id": request_id, "result": {"ok": True}}
         if request_id.endswith("-thread-start"):
             return {"id": request_id, "result": {"thread": {"id": self.thread_id}}}
+        if "-turn-" in request_id:
+            return {"id": request_id, "result": {"turn": {"id": self.turn_id}}}
         raise AssertionError(f"unexpected request id: {request_id}")
+
+    def wait_for_match(self, predicate, timeout: float, start_index: int = 0):
+        del timeout
+        for index, message in enumerate(self._messages[start_index:], start=start_index):
+            if predicate(message):
+                return index, message
+        raise AssertionError("no matching message")
 
     def close(self) -> None:
         self.closed = True
+
+
+class _NoopCondition:
+    def __init__(self, client: FakeJsonlRpcClient) -> None:
+        self.client = client
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class FakeUploader:
+    def __init__(self) -> None:
+        self.cached: list[dict[str, Any]] = []
+        self.flushed: list[dict[str, str]] = []
+
+    def cache_event(self, *, command_id: str, sequence: int, kind: str, payload: dict[str, Any]) -> None:
+        self.cached.append(
+            {
+                "command_id": command_id,
+                "sequence": sequence,
+                "kind": kind,
+                "payload": payload,
+            }
+        )
+
+    def flush(self, *, command_id: str, device_id: str, lease_token: str) -> dict[str, Any]:
+        self.flushed.append(
+            {
+                "command_id": command_id,
+                "device_id": device_id,
+                "lease_token": lease_token,
+            }
+        )
+        return {"latest_sequence": self.cached[-1]["sequence"]}
 
 
 def test_session_manager_opens_isolated_sessions_per_workspace(tmp_path: Path) -> None:
@@ -146,6 +216,136 @@ def test_session_open_handler_rejects_cwd_in_payload(tmp_path: Path) -> None:
 
     assert result.success is False
     assert result.message == "session open payload must not specify cwd"
+
+
+def test_session_manager_runs_turn_on_existing_session_and_uploads_events(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+    uploader = FakeUploader()
+
+    result = manager.run_turn(
+        agent_session_id=session.agent_session_id,
+        message="hello",
+        command_id="cmd-1",
+        uploader=uploader,
+        device_id="device-a",
+        lease_token="lease-a",
+    )
+
+    client = FakeJsonlRpcClient.instances[0]
+    assert result.codex_turn_id == "codex-turn-1"
+    assert result.assistant_final == "hello"
+    assert result.event_summary["total_events"] == 3
+    assert session.turn_count == 1
+    assert client.requests[2]["method"] == "turn/start"
+    assert client.requests[2]["params"]["threadId"] == session.codex_thread_id
+    assert client.requests[2]["params"]["cwd"] == str(repo_a.resolve())
+    assert [event["kind"] for event in uploader.cached] == [
+        "status",
+        "response",
+        "agent/message_delta",
+        "turn/completed",
+        "final",
+    ]
+    assert all(flush["device_id"] == "device-a" for flush in uploader.flushed)
+
+
+def test_turn_start_handler_returns_final_payload(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+    uploader = FakeUploader()
+
+    result = SessionOpenHandler(manager).handle(
+        {
+            "id": "cmd-open",
+            "command_type": "SESSION_OPEN",
+            "payload_json": json.dumps({"workspace_key": "repo-b"}),
+        }
+    )
+    assert result.success is True
+
+    from agent.session_handlers import TurnStartHandler
+
+    turn_result = TurnStartHandler(manager, uploader).handle(
+        {
+            "id": "cmd-turn",
+            "device_id": "device-a",
+            "lease_token": "lease-a",
+            "command_type": "TURN_START",
+            "payload_json": json.dumps(
+                {
+                    "app_thread_id": 1,
+                    "app_turn_id": 10,
+                    "agent_session_id": session.agent_session_id,
+                    "workspace_id": 1,
+                    "workspace_key": "repo-a",
+                    "message": "hello",
+                }
+            ),
+        }
+    )
+
+    assert turn_result.success is True
+    assert turn_result.result_payload is not None
+    assert turn_result.result_payload["app_turn_id"] == 10
+    assert turn_result.result_payload["agent_session_id"] == session.agent_session_id
+    assert turn_result.result_payload["codex_turn_id"] == "codex-turn-1"
+    assert turn_result.result_payload["assistant_final"] == "hello"
+    assert "cwd" not in json.dumps(turn_result.result_payload)
+
+
+def test_turn_start_handler_rejects_wrong_workspace(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+
+    from agent.session_handlers import TurnStartHandler
+
+    result = TurnStartHandler(manager).handle(
+        {
+            "id": "cmd-turn",
+            "device_id": "device-a",
+            "lease_token": "lease-a",
+            "command_type": "TURN_START",
+            "payload_json": json.dumps(
+                {
+                    "app_turn_id": 10,
+                    "agent_session_id": session.agent_session_id,
+                    "workspace_key": "repo-b",
+                    "message": "hello",
+                }
+            ),
+        }
+    )
+
+    assert result.success is False
+    assert result.message == "turn workspace does not match agent session"
 
 
 def _registry(tmp_path: Path, repo_a: Path, repo_b: Path) -> Path:

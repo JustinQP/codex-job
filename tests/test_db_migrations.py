@@ -104,6 +104,25 @@ def create_legacy_schema(engine) -> None:
                 """
             )
         )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE app_turns (
+                    id INTEGER PRIMARY KEY,
+                    app_thread_id INTEGER NOT NULL,
+                    user_message TEXT NOT NULL,
+                    assistant_final TEXT,
+                    status TEXT NOT NULL,
+                    error_message TEXT,
+                    bridge_turn_id TEXT,
+                    event_summary_json TEXT,
+                    created_at TIMESTAMP NOT NULL,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP
+                )
+                """
+            )
+        )
 
 
 def test_empty_database_initializes_to_latest_migration() -> None:
@@ -112,7 +131,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010"]
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
         ("0002", "devices"),
@@ -123,6 +142,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
         ("0007", "agent_command_events"),
         ("0008", "task_run_bindings"),
         ("0009", "app_thread_agent_session_bindings"),
+        ("0010", "app_turn_command_binding"),
     ]
 
 
@@ -132,7 +152,7 @@ def test_legacy_database_upgrades_missing_columns() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010"]
     assert "default_runner_id" in table_columns(engine, "projects")
     assert "task_type" in table_columns(engine, "tasks")
     assert "lease_expires_at" in table_columns(engine, "runner_records")
@@ -153,6 +173,7 @@ def test_legacy_database_upgrades_missing_columns() -> None:
     assert "workspace_id" in table_columns(engine, "app_threads")
     assert "agent_session_id" in table_columns(engine, "app_threads")
     assert "command_id" in table_columns(engine, "app_threads")
+    assert "command_id" in table_columns(engine, "app_turns")
     assert "result_payload_json" in table_columns(engine, "agent_commands")
 
 
@@ -163,7 +184,7 @@ def test_migrations_are_idempotent() -> None:
     first = run_migrations(engine, backup=False)
     second = run_migrations(engine, backup=False)
 
-    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009"]
+    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010"]
     assert second == []
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
@@ -175,6 +196,7 @@ def test_migrations_are_idempotent() -> None:
         ("0007", "agent_command_events"),
         ("0008", "task_run_bindings"),
         ("0009", "app_thread_agent_session_bindings"),
+        ("0010", "app_turn_command_binding"),
     ]
 
 

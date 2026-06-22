@@ -4,6 +4,7 @@ import argparse
 import json
 
 from agent.api_client import AgentApiClient
+from agent.app_server.session_manager import AgentAppSessionManager
 from agent.command_loop import AgentCommandLoop
 from agent.config import load_agent_config
 from agent.heartbeat import register_agent, send_heartbeat
@@ -76,11 +77,18 @@ def main() -> None:
         registry = None
         if config.workspace_config_path.exists():
             registry = WorkspaceRegistry.load(config.workspace_config_path)
+        app_session_manager = None
+        if registry is not None:
+            app_session_manager = AgentAppSessionManager(
+                workspace_registry=registry,
+                data_dir=config.app_server_data_dir,
+            )
         loop = AgentCommandLoop(
             client=client,
             identity=identity,
             local_state=AgentLocalState(config.state_path),
             workspace_registry=registry,
+            app_session_manager=app_session_manager,
         )
         if args.run_once:
             loop.bootstrap()

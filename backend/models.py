@@ -224,6 +224,7 @@ class AppTurn(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     app_thread_id: int = Field(foreign_key="app_threads.id", index=True)
+    command_id: Optional[str] = Field(default=None, foreign_key="agent_commands.id", index=True)
     user_message: str
     assistant_final: Optional[str] = None
     status: str = Field(default="PENDING", index=True)

@@ -2012,7 +2012,7 @@ command_id
 
 ---
 
-### [ ] E03 通过命令通道执行 Turn
+### [x] E03 通过命令通道执行 Turn
 
 **目标**
 
@@ -2036,6 +2036,40 @@ E02、C05。
 - 一条 Turn 完整经过 PENDING、RUNNING、SUCCESS/FAILED。
 - 事件和 final 对应正确 turn_id。
 - 非目标设备不能执行。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/routers/agent.py`
+  - `backend/services/app_thread_service.py`
+  - `agent/app_server/session_manager.py`
+  - `agent/session_handlers.py`
+  - `agent/command_handlers.py`
+  - `agent/command_loop.py`
+  - `agent/config.py`
+  - `agent/main.py`
+  - `frontend/src/api/types.ts`
+  - `tests/test_db_migrations.py`
+  - `tests/test_app_threads_api.py`
+  - `tests/test_agent_app_server_session_manager.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0010 app_turn_command_binding`，为 `app_turns` 增加 `command_id` 并创建索引，用于 TURN_START 命令回写对应 AppTurn
+- 控制端：`AGENT_COMMAND_MODE=true` 时异步创建 AppTurn 会生成 `TURN_START` 命令，payload 只包含 app_thread/app_turn/agent_session/workspace 标识和策略，不包含任意 cwd 或 project_path；Agent ack 后 AppTurn 进入 RUNNING，complete 后回写 SUCCESS/FAILED/CANCELLED、final、error、duration 和 event_summary
+- Agent：新增 `TurnStartHandler`，通过 `agent_session_id` 查找既有 App Server process/thread 执行 turn，并通过 C05 `CommandEventUploader` 上传 status、turn/completed、final 等命令事件；Agent CLI 启动时按本地 Workspace Registry 初始化 `AgentAppSessionManager`
+- 兼容：`AGENT_COMMAND_MODE=false` 时旧 Bridge async executor 和 sync turn 路径保持不变
+- 自动化测试：
+  - `pytest -q tests/test_db_migrations.py tests/test_app_threads_api.py tests/test_agent_app_server_session_manager.py tests/test_agent_command_loop.py`：通过，38 passed
+  - `pytest -q tests/test_app_thread_service.py tests/test_app_turn_executor.py tests/test_agent_api_client.py tests/test_agent_command_service.py tests/test_agent_command_events.py tests/test_app_server_bridge.py tests/test_app_server_bridge_client.py`：通过，71 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，277 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及真实 Codex App Server 和真实多设备；本任务使用 Fake App Server/Agent API 自动化覆盖命令路由、事件上传和回写闭环
+- 回归影响：新增字段为可空字段；旧 AppThread/AppTurn 数据可继续读取；旧 Bridge 模式未切换
+- 风险与未完成项：E03 只完成命令通道执行 Turn；TurnEvent 持久化、SSE 可重放、原子并发保护、取消/超时回收和 5 Turn 连续复用验证仍由 E04-E08 后续任务处理
 
 ---
 

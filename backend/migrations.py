@@ -415,6 +415,26 @@ def add_app_thread_agent_session_columns(engine: Engine) -> None:
             )
 
 
+def add_app_turn_command_binding_column(engine: Engine) -> None:
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(app_turns)")
+        }
+        if not existing:
+            return
+        if "command_id" not in existing:
+            connection.execute(text("ALTER TABLE app_turns ADD COLUMN command_id TEXT"))
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_app_turns_command_id
+                ON app_turns (command_id)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -460,6 +480,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0009",
         name="app_thread_agent_session_bindings",
         apply=add_app_thread_agent_session_columns,
+    ),
+    Migration(
+        version="0010",
+        name="app_turn_command_binding",
+        apply=add_app_turn_command_binding_column,
     ),
 )
 

@@ -116,12 +116,16 @@ def ack_agent_command(
     _: None = Depends(require_agent_token),
 ):
     try:
-        return agent_command_service.ack_command(
+        command = agent_command_service.ack_command(
             session,
             command_id=command_id,
             device_id=payload.device_id,
             lease_token=payload.lease_token,
         )
+        if command.command_type == "TURN_START":
+            app_thread_service.mark_agent_turn_running(session, command_id=command.id)
+            session.refresh(command)
+        return command
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)
 
@@ -163,6 +167,13 @@ def complete_agent_command(
         )
         if command.command_type == "SESSION_OPEN" and payload.result_payload is not None:
             app_thread_service.complete_agent_session_open(
+                session,
+                command_id=command.id,
+                result_payload=payload.result_payload,
+            )
+            session.refresh(command)
+        elif command.command_type == "TURN_START":
+            app_thread_service.complete_agent_turn_start(
                 session,
                 command_id=command.id,
                 result_payload=payload.result_payload,
