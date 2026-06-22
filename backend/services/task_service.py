@@ -6,8 +6,8 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from backend.db import JOBS_DIR
-from backend.models import Project, RunnerRecord, Task, TaskStatus, TaskType, utc_now
-from backend.schemas import TaskCreate
+from backend.models import DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
+from backend.schemas import RunCreate, TaskCreate
 
 
 TASK_TEMPLATES: dict[TaskType, tuple[str, str]] = {
@@ -96,6 +96,7 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
         sandbox=payload.sandbox or project.default_sandbox or DEFAULT_SANDBOX,
         status=TaskStatus.PENDING,
         assigned_runner_id=assigned_runner_id,
+        client_request_id=payload.client_request_id,
         created_at=now,
         updated_at=now,
     )
@@ -104,6 +105,47 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
     session.refresh(task)
 
     _assign_artifact_paths(task)
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
+def create_run(session: Session, payload: RunCreate) -> Task:
+    workspace = session.get(Workspace, payload.workspace_id)
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="workspace not found",
+        )
+    if not workspace.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="workspace is disabled",
+        )
+    from backend.models import Device
+
+    device = session.get(Device, workspace.device_id)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="device not found",
+        )
+    if device.status == DeviceStatus.DISABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="device is disabled",
+        )
+    if device.status != DeviceStatus.ONLINE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="device is offline",
+        )
+
+    task = create_task(session, payload)
+    task.workspace_id = workspace.id
+    task.device_id = workspace.device_id
+    task.client_request_id = payload.client_request_id
     session.add(task)
     session.commit()
     session.refresh(task)
@@ -147,7 +189,22 @@ def rerun_task(session: Session, task_id: int) -> Task:
         model=original.model,
         reasoning_effort=original.reasoning_effort,
         sandbox=original.sandbox,
+        workspace_id=original.workspace_id,
+        client_request_id=None,
     )
+    if original.workspace_id is not None:
+        run_payload = RunCreate(
+            project_id=payload.project_id,
+            prompt=payload.prompt,
+            timeout_seconds=payload.timeout_seconds,
+            task_type=payload.task_type,
+            assigned_runner_id=payload.assigned_runner_id,
+            workspace_id=original.workspace_id,
+            model=payload.model,
+            reasoning_effort=payload.reasoning_effort,
+            sandbox=payload.sandbox,
+        )
+        return create_run(session, run_payload)
     return create_task(session, payload)
 
 
@@ -191,6 +248,10 @@ def to_task_read(task: Task):
         runner_id=task.runner_id,
         runner_pid=task.runner_pid,
         lease_expires_at=task.lease_expires_at,
+        device_id=task.device_id,
+        workspace_id=task.workspace_id,
+        command_id=task.command_id,
+        client_request_id=task.client_request_id,
         log_url=f"/tasks/{task.id}/log",
         result_url=f"/tasks/{task.id}/result",
         diff_url=f"/tasks/{task.id}/diff",

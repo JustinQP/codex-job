@@ -10,7 +10,7 @@ from backend import db
 from backend.db import get_session
 from backend.dependencies import require_api_token
 from backend.models import TaskStatus
-from backend.schemas import TaskArtifactsRead, TaskCreate, TaskRead, TaskTemplateRead
+from backend.schemas import RunCreate, TaskArtifactsRead, TaskCreate, TaskRead, TaskTemplateRead
 from backend.services import task_service
 
 
@@ -24,6 +24,16 @@ def create_task(
     _: None = Depends(require_api_token),
 ):
     task = task_service.create_task(session, payload)
+    return task_service.to_task_read(task)
+
+
+@router.post("/runs", response_model=TaskRead)
+def create_run(
+    payload: RunCreate,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    task = task_service.create_run(session, payload)
     return task_service.to_task_read(task)
 
 

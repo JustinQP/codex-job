@@ -11,6 +11,7 @@ def test_openapi_keeps_core_routes_after_router_split() -> None:
         "/health",
         "/projects",
         "/tasks",
+        "/runs",
         "/tasks/{task_id}",
         "/tasks/{task_id}/rerun",
         "/tasks/{task_id}/cancel",

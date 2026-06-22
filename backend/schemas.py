@@ -47,9 +47,16 @@ class TaskCreate(BaseModel):
     timeout_seconds: int = Field(default=7200, ge=30, le=21600)
     task_type: TaskType = TaskType.IMPLEMENT
     assigned_runner_id: Optional[str] = None
+    workspace_id: Optional[int] = None
+    device_id: Optional[str] = None
+    client_request_id: Optional[str] = None
     model: Optional[str] = None
     reasoning_effort: Optional[str] = None
     sandbox: Optional[str] = None
+
+
+class RunCreate(TaskCreate):
+    workspace_id: int
 
 
 class TaskRead(BaseModel):
@@ -69,6 +76,10 @@ class TaskRead(BaseModel):
     runner_id: Optional[str]
     runner_pid: Optional[int]
     lease_expires_at: Optional[datetime]
+    device_id: Optional[str]
+    workspace_id: Optional[int]
+    command_id: Optional[str]
+    client_request_id: Optional[str]
     log_url: str
     result_url: str
     diff_url: str

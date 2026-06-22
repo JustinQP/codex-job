@@ -348,6 +348,35 @@ def create_agent_command_events_table(engine: Engine) -> None:
         )
 
 
+def add_task_run_binding_columns(engine: Engine) -> None:
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(tasks)")
+        }
+        if not existing:
+            return
+        columns = {
+            "device_id": "TEXT",
+            "workspace_id": "INTEGER",
+            "command_id": "TEXT",
+            "client_request_id": "TEXT",
+        }
+        for column_name, column_type in columns.items():
+            if column_name not in existing:
+                connection.execute(
+                    text(f"ALTER TABLE tasks ADD COLUMN {column_name} {column_type}")
+                )
+            connection.execute(
+                text(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS ix_tasks_{column_name}
+                    ON tasks ({column_name})
+                    """
+                )
+            )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -383,6 +412,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0007",
         name="agent_command_events",
         apply=create_agent_command_events_table,
+    ),
+    Migration(
+        version="0008",
+        name="task_run_bindings",
+        apply=add_task_run_binding_columns,
     ),
 )
 

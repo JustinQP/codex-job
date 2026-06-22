@@ -121,7 +121,7 @@ Codex 执行本清单时必须遵守：
 
 ### D. 多设备 Run
 
-- [ ] D01 将 Run/Task 绑定 Device 和 Workspace
+- [x] D01 将 Run/Task 绑定 Device 和 Workspace
 - [ ] D02 通过 AgentCommand 下发 `codex exec`
 - [ ] D03 实现增量日志上传
 - [ ] D04 实现产物 manifest 和大小限制
@@ -1505,7 +1505,7 @@ tests/test_agent_reconciliation.py
 
 ## D. 多设备 Run
 
-### [ ] D01 将 Run/Task 绑定 Device 和 Workspace
+### [x] D01 将 Run/Task 绑定 Device 和 Workspace
 
 **目标**
 
@@ -1537,6 +1537,32 @@ client_request_id
 - Run 的 device_id 与 Workspace 所属设备一致。
 - 客户端不能伪造另一 device_id。
 - 旧 Task 历史仍可读取。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/services/task_service.py`
+  - `backend/routers/tasks.py`
+  - `tests/test_runs_api.py`
+  - `tests/test_tasks_api.py`
+  - `tests/test_db_migrations.py`
+  - `tests/test_api_contract.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0008 task_run_bindings`，为 `tasks` 增加 `device_id`、`workspace_id`、`command_id`、`client_request_id` 可选字段和索引
+- API：新增 `POST /runs`，新模式要求 `workspace_id`；旧 `/tasks` API 继续兼容
+- 绑定规则：Run 创建时从 Workspace 推导 `device_id`，忽略客户端传入的 `device_id`；Workspace disabled、Device disabled/offline 返回明确错误
+- 自动化测试：
+  - `pytest -q tests/test_runs_api.py tests/test_tasks_api.py tests/test_db_migrations.py tests/test_api_contract.py`：通过，22 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，243 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：旧 Task 历史记录没有绑定字段时仍可读取，返回字段为 `null`
+- 风险与未完成项：本任务只完成 Run/Task 绑定，不生成 AgentCommand；命令下发由 D02 完成
 
 ---
 

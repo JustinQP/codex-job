@@ -94,6 +94,10 @@ class Task(SQLModel, table=True):
     runner_id: Optional[str] = Field(default=None, index=True)
     runner_pid: Optional[int] = None
     lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+    device_id: Optional[str] = Field(default=None, foreign_key="devices.device_id", index=True)
+    workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
+    command_id: Optional[str] = Field(default=None, foreign_key="agent_commands.id", index=True)
+    client_request_id: Optional[str] = Field(default=None, index=True)
     log_file: Optional[str] = None
     result_file: Optional[str] = None
     diff_file: Optional[str] = None

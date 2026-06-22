@@ -95,7 +95,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008"]
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
         ("0002", "devices"),
@@ -104,6 +104,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
         ("0005", "agent_commands"),
         ("0006", "agent_command_claim_request_id"),
         ("0007", "agent_command_events"),
+        ("0008", "task_run_bindings"),
     ]
 
 
@@ -113,7 +114,7 @@ def test_legacy_database_upgrades_missing_columns() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008"]
     assert "default_runner_id" in table_columns(engine, "projects")
     assert "task_type" in table_columns(engine, "tasks")
     assert "lease_expires_at" in table_columns(engine, "runner_records")
@@ -126,6 +127,10 @@ def test_legacy_database_upgrades_missing_columns() -> None:
     assert "lease_token" in table_columns(engine, "agent_commands")
     assert "sequence" in table_columns(engine, "agent_command_events")
     assert "payload_json" in table_columns(engine, "agent_command_events")
+    assert "device_id" in table_columns(engine, "tasks")
+    assert "workspace_id" in table_columns(engine, "tasks")
+    assert "command_id" in table_columns(engine, "tasks")
+    assert "client_request_id" in table_columns(engine, "tasks")
 
 
 def test_migrations_are_idempotent() -> None:
@@ -135,7 +140,7 @@ def test_migrations_are_idempotent() -> None:
     first = run_migrations(engine, backup=False)
     second = run_migrations(engine, backup=False)
 
-    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]
+    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008"]
     assert second == []
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
@@ -145,6 +150,7 @@ def test_migrations_are_idempotent() -> None:
         ("0005", "agent_commands"),
         ("0006", "agent_command_claim_request_id"),
         ("0007", "agent_command_events"),
+        ("0008", "task_run_bindings"),
     ]
 
 
