@@ -35,6 +35,14 @@ def migration_rows(engine) -> list[tuple[str, str]]:
         return [(str(row[0]), str(row[1])) for row in rows]
 
 
+def table_indexes(engine, table_name: str) -> set[str]:
+    with engine.begin() as connection:
+        return {
+            row[1]
+            for row in connection.exec_driver_sql(f"PRAGMA index_list({table_name})")
+        }
+
+
 def create_legacy_schema(engine) -> None:
     with engine.begin() as connection:
         connection.execute(
@@ -131,7 +139,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
         ("0002", "devices"),
@@ -144,6 +152,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
         ("0009", "app_thread_agent_session_bindings"),
         ("0010", "app_turn_command_binding"),
         ("0011", "turn_events"),
+        ("0012", "active_app_turn_unique_index"),
     ]
 
 
@@ -153,7 +162,7 @@ def test_legacy_database_upgrades_missing_columns() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]
     assert "default_runner_id" in table_columns(engine, "projects")
     assert "task_type" in table_columns(engine, "tasks")
     assert "lease_expires_at" in table_columns(engine, "runner_records")
@@ -178,6 +187,7 @@ def test_legacy_database_upgrades_missing_columns() -> None:
     assert "sequence" in table_columns(engine, "turn_events")
     assert "payload_json" in table_columns(engine, "turn_events")
     assert "result_payload_json" in table_columns(engine, "agent_commands")
+    assert "ux_app_turns_one_active_per_thread" in table_indexes(engine, "app_turns")
 
 
 def test_migrations_are_idempotent() -> None:
@@ -187,7 +197,7 @@ def test_migrations_are_idempotent() -> None:
     first = run_migrations(engine, backup=False)
     second = run_migrations(engine, backup=False)
 
-    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011"]
+    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]
     assert second == []
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
@@ -201,6 +211,7 @@ def test_migrations_are_idempotent() -> None:
         ("0009", "app_thread_agent_session_bindings"),
         ("0010", "app_turn_command_binding"),
         ("0011", "turn_events"),
+        ("0012", "active_app_turn_unique_index"),
     ]
 
 

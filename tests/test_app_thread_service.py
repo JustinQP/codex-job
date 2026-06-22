@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from threading import Barrier, Lock
 from typing import Any
 
 import pytest
@@ -515,6 +518,159 @@ def test_create_async_app_turn_conflicts_with_pending_or_running_turn(monkeypatc
             assert exc.value.status_code == 409
             assert exc.value.detail["code"] == "app_turn_conflict"
             assert exc.value.detail["app_turn_id"] == active_turn.id
+
+
+def test_create_async_app_turn_database_constraint_returns_active_turn(monkeypatch) -> None:
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", lambda app_turn_id: None)
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        active_turn = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="active",
+            status="PENDING",
+            created_at=utc_now(),
+        )
+        session.add(active_turn)
+        session.commit()
+        session.refresh(active_turn)
+        real_get_active = app_thread_service._get_active_app_turn
+        calls = 0
+
+        def hide_active_once(_session, _app_thread_id):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return None
+            return real_get_active(_session, _app_thread_id)
+
+        monkeypatch.setattr(app_thread_service, "_get_active_app_turn", hide_active_once)
+
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.create_async_app_turn(
+                session,
+                app_thread.id,
+                AppTurnCreate(message="hello"),
+            )
+
+        assert exc.value.status_code == 409
+        assert exc.value.detail["code"] == "app_turn_conflict"
+        assert exc.value.detail["app_turn_id"] == active_turn.id
+
+
+def test_send_app_turn_conflicts_with_active_turn(monkeypatch) -> None:
+    for session in make_session():
+        project = add_project(session)
+        fake = FakeBridgeClient()
+        app_thread = app_thread_service.create_app_thread(
+            session,
+            AppThreadCreate(project_id=project.id),
+            fake,
+        )
+        active_turn = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="active",
+            status="RUNNING",
+            created_at=utc_now(),
+            started_at=utc_now(),
+        )
+        session.add(active_turn)
+        session.commit()
+        session.refresh(active_turn)
+
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.send_app_turn(
+                session,
+                app_thread.id,
+                AppTurnCreate(message="hello"),
+                fake,
+            )
+
+        assert exc.value.status_code == 409
+        assert exc.value.detail["code"] == "app_turn_conflict"
+        assert exc.value.detail["app_turn_id"] == active_turn.id
+
+
+def test_concurrent_async_app_turn_allows_only_one_active_turn(monkeypatch, tmp_path: Path) -> None:
+    submitted: list[int] = []
+    submitted_lock = Lock()
+
+    def record_submission(app_turn_id: int) -> None:
+        with submitted_lock:
+            submitted.append(app_turn_id)
+
+    monkeypatch.setattr("backend.services.app_turn_executor.submit_app_turn", record_submission)
+    db_path = tmp_path / "app-turns.db"
+    engine = create_engine(
+        f"sqlite:///{db_path.as_posix()}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = add_project(session)
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Chat",
+            bridge_thread_id="bridge-1",
+            app_thread_id="app-1",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_thread_id = app_thread.id
+
+    barrier = Barrier(2)
+    calls_lock = Lock()
+    precheck_calls = 0
+    real_get_active = app_thread_service._get_active_app_turn
+
+    def race_past_precheck(session: Session, checked_thread_id: int) -> AppTurn | None:
+        nonlocal precheck_calls
+        with calls_lock:
+            precheck_calls += 1
+            call_number = precheck_calls
+        if checked_thread_id == app_thread_id and call_number <= 2:
+            barrier.wait(timeout=5)
+            return None
+        return real_get_active(session, checked_thread_id)
+
+    monkeypatch.setattr(app_thread_service, "_get_active_app_turn", race_past_precheck)
+
+    def create_turn(message: str) -> dict[str, Any]:
+        with Session(engine) as thread_session:
+            try:
+                app_turn = app_thread_service.create_async_app_turn(
+                    thread_session,
+                    app_thread_id,
+                    AppTurnCreate(message=message),
+                )
+                return {"status_code": 200, "app_turn_id": app_turn.id}
+            except HTTPException as exc:
+                return {"status_code": exc.status_code, "detail": exc.detail}
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(create_turn, ["first", "second"]))
+
+    success = [result for result in results if result["status_code"] == 200]
+    conflicts = [result for result in results if result["status_code"] == 409]
+    with Session(engine) as session:
+        active_turns = session.exec(
+            select(AppTurn).where(AppTurn.app_thread_id == app_thread_id, AppTurn.status.in_(["PENDING", "RUNNING"]))
+        ).all()
+
+    assert len(success) == 1
+    assert len(conflicts) == 1
+    assert len(active_turns) == 1
+    assert conflicts[0]["detail"]["code"] == "app_turn_conflict"
+    assert conflicts[0]["detail"]["app_turn_id"] == active_turns[0].id
 
 
 def test_create_async_app_turn_allows_terminal_history(monkeypatch) -> None:

@@ -486,6 +486,25 @@ def create_turn_events_table(engine: Engine) -> None:
         )
 
 
+def add_active_app_turn_unique_index(engine: Engine) -> None:
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(app_turns)")
+        }
+        if not existing:
+            return
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_app_turns_one_active_per_thread
+                ON app_turns (app_thread_id)
+                WHERE status IN ('PENDING', 'RUNNING')
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -541,6 +560,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0011",
         name="turn_events",
         apply=create_turn_events_table,
+    ),
+    Migration(
+        version="0012",
+        name="active_app_turn_unique_index",
+        apply=add_active_app_turn_unique_index,
     ),
 )
 

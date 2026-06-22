@@ -66,13 +66,15 @@ def add_turn(session: Session, app_thread_id: int, status: str) -> AppTurn:
 
 def test_recover_stale_app_turns_marks_pending_and_running_failed() -> None:
     for session in make_session():
-        app_thread = add_thread(session)
-        pending = add_turn(session, app_thread.id, "PENDING")
-        running = add_turn(session, app_thread.id, "RUNNING")
+        pending_thread = add_thread(session)
+        running_thread = add_thread(session)
+        pending = add_turn(session, pending_thread.id, "PENDING")
+        running = add_turn(session, running_thread.id, "RUNNING")
 
         result = app_thread_service.recover_stale_app_turns(session)
 
-        session.refresh(app_thread)
+        session.refresh(pending_thread)
+        session.refresh(running_thread)
         session.refresh(pending)
         session.refresh(running)
         assert result["recovered_count"] == 2
@@ -84,8 +86,10 @@ def test_recover_stale_app_turns_marks_pending_and_running_failed() -> None:
         assert running.status == "FAILED"
         assert running.started_at is not None
         assert running.error_message == app_thread_service.STALE_TURN_ERROR
-        assert app_thread.status == "ERROR"
-        assert app_thread.last_error == app_thread_service.STALE_TURN_ERROR
+        assert pending_thread.status == "ERROR"
+        assert pending_thread.last_error == app_thread_service.STALE_TURN_ERROR
+        assert running_thread.status == "ERROR"
+        assert running_thread.last_error == app_thread_service.STALE_TURN_ERROR
 
 
 def test_recover_stale_app_turns_ignores_terminal_turns_and_is_idempotent() -> None:

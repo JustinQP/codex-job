@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
 
@@ -235,6 +235,14 @@ class AppThread(SQLModel, table=True):
 
 class AppTurn(SQLModel, table=True):
     __tablename__ = "app_turns"
+    __table_args__ = (
+        Index(
+            "ux_app_turns_one_active_per_thread",
+            "app_thread_id",
+            unique=True,
+            sqlite_where=text("status IN ('PENDING', 'RUNNING')"),
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     app_thread_id: int = Field(foreign_key="app_threads.id", index=True)

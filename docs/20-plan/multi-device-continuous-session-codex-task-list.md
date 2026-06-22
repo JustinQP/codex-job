@@ -137,7 +137,7 @@ Codex 执行本清单时必须遵守：
 - [ ] E04 保证同一 Session 复用同一 Codex thread
 - [ ] E05 新增 TurnEvent 持久化和去重
 - [ ] E06 改造 SSE 为可重放事件流
-- [ ] E07 实现原子 Turn 并发保护
+- [x] E07 实现原子 Turn 并发保护
 - [ ] E08 实现 Session/Turn 取消和超时回收
 - [ ] E09 实现 Session reopen 和 generation
 - [ ] E10 实现 Workspace 写入锁
@@ -2244,7 +2244,7 @@ E05。
 
 ---
 
-### [ ] E07 实现原子 Turn 并发保护
+### [x] E07 实现原子 Turn 并发保护
 
 **目标**
 
@@ -2267,6 +2267,30 @@ E03、A03。
 - 两个并发请求只有一个创建成功。
 - 失败请求能获得当前 active turn 信息。
 - 终态后可创建下一 Turn。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/services/app_thread_service.py`
+  - `tests/test_app_thread_service.py`
+  - `tests/test_app_turn_recovery.py`
+  - `tests/test_db_migrations.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增 `0012 active_app_turn_unique_index`，为 `app_turns(app_thread_id)` 增加只覆盖 `PENDING`/`RUNNING` 的部分唯一索引
+- 后端：同步 Turn、旧异步 Turn、Agent 命令模式异步 Turn 共用 `_create_active_app_turn`；普通冲突先返回稳定 409 `app_turn_conflict`，并发竞争由数据库唯一约束兜底后返回当前 active turn 信息
+- 自动化测试：
+  - `pytest -q tests/test_db_migrations.py tests/test_app_thread_service.py tests/test_app_threads_api.py -o cache_dir=data/pytest-cache-e07 -o addopts=--basetemp=data/pytest-tmp-e07`：通过，62 passed
+  - `pytest -q tests/test_app_turn_recovery.py tests/test_app_thread_service.py tests/test_db_migrations.py tests/test_app_threads_api.py -o cache_dir=data/pytest-cache-e07-target-2 -o addopts=--basetemp=data/pytest-tmp-e07-target-2`：通过，64 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-e07-full-2 -o addopts=--basetemp=data/pytest-tmp-e07-full-2`：通过，292 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及；通过服务层文件型 SQLite 并发测试验证两个并发请求只有一个创建成功，失败请求返回当前 active turn；通过既有终态历史测试验证终态后可创建下一 Turn
+- 回归影响：新增数据库不变量后，同一 AppThread 不能再同时存在多个 `PENDING`/`RUNNING` Turn；已调整 stale recovery 测试数据为不同 AppThread 下分别覆盖 pending/running
+- 风险与未完成项：取消、超时回收和 Session 状态收口仍由 E08 继续处理
 
 ---
 

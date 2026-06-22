@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.config import get_settings
@@ -445,16 +446,14 @@ def send_app_turn(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread has no bridge thread id")
 
     now = utc_now()
-    app_turn = AppTurn(
+    app_turn = _create_active_app_turn(
+        session,
         app_thread_id=app_thread.id,
-        user_message=message,
-        status=APP_TURN_RUNNING,
+        message=message,
+        status_value=APP_TURN_RUNNING,
         created_at=now,
         started_at=now,
     )
-    session.add(app_turn)
-    session.commit()
-    session.refresh(app_turn)
 
     client = bridge_client or get_default_client()
     try:
@@ -498,26 +497,13 @@ def create_async_app_turn(
         return create_agent_async_app_turn(session, app_thread, message, payload)
     if not app_thread.bridge_thread_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread has no bridge thread id")
-    active_turn = _get_active_app_turn(session, app_thread.id)
-    if active_turn is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "app_turn_conflict",
-                "message": "app thread already has a pending or running app turn",
-                "app_turn_id": active_turn.id,
-            },
-        )
-
-    app_turn = AppTurn(
+    app_turn = _create_active_app_turn(
+        session,
         app_thread_id=app_thread.id,
-        user_message=message,
-        status=APP_TURN_PENDING,
+        message=message,
+        status_value=APP_TURN_PENDING,
         created_at=utc_now(),
     )
-    session.add(app_turn)
-    session.commit()
-    session.refresh(app_turn)
 
     if app_turn.id is None:
         raise ValueError("app turn id is required")
@@ -553,26 +539,13 @@ def create_agent_async_app_turn(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device is disabled")
     if device.status != DeviceStatus.ONLINE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device is offline")
-    active_turn = _get_active_app_turn(session, app_thread.id)
-    if active_turn is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "app_turn_conflict",
-                "message": "app thread already has a pending or running app turn",
-                "app_turn_id": active_turn.id,
-            },
-        )
-
-    app_turn = AppTurn(
+    app_turn = _create_active_app_turn(
+        session,
         app_thread_id=app_thread.id,
-        user_message=message,
-        status=APP_TURN_PENDING,
+        message=message,
+        status_value=APP_TURN_PENDING,
         created_at=utc_now(),
     )
-    session.add(app_turn)
-    session.commit()
-    session.refresh(app_turn)
     if app_turn.id is None:
         raise ValueError("app turn id is required")
 
@@ -1053,6 +1026,50 @@ def _latest_success_turn(session: Session, app_thread_id: int) -> AppTurn | None
         .where(AppTurn.app_thread_id == app_thread_id, AppTurn.status == APP_TURN_SUCCESS)
         .order_by(AppTurn.id.desc())
     ).first()
+
+
+def _create_active_app_turn(
+    session: Session,
+    *,
+    app_thread_id: int,
+    message: str,
+    status_value: str,
+    created_at,
+    started_at=None,
+) -> AppTurn:
+    active_turn = _get_active_app_turn(session, app_thread_id)
+    if active_turn is not None:
+        _raise_app_turn_conflict(active_turn)
+
+    app_turn = AppTurn(
+        app_thread_id=app_thread_id,
+        user_message=message,
+        status=status_value,
+        created_at=created_at,
+        started_at=started_at,
+    )
+    session.add(app_turn)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        active_turn = _get_active_app_turn(session, app_thread_id)
+        if active_turn is not None:
+            _raise_app_turn_conflict(active_turn)
+        raise
+    session.refresh(app_turn)
+    return app_turn
+
+
+def _raise_app_turn_conflict(active_turn: AppTurn) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "app_turn_conflict",
+            "message": "app thread already has a pending or running app turn",
+            "app_turn_id": active_turn.id,
+        },
+    )
 
 
 def _get_active_app_turn(session: Session, app_thread_id: int) -> AppTurn | None:
