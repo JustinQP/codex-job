@@ -77,6 +77,9 @@ def claim_task(session: Session, runner_id: str) -> RunnerTaskClaimResponse | No
         select(Task)
         .where(
             Task.status == TaskStatus.PENDING,
+            Task.workspace_id.is_(None),
+            Task.device_id.is_(None),
+            Task.command_id.is_(None),
             or_(
                 Task.assigned_runner_id.is_(None),
                 Task.assigned_runner_id == runner_id,
@@ -110,6 +113,9 @@ def claim_task(session: Session, runner_id: str) -> RunnerTaskClaimResponse | No
         .where(
             Task.id == task.id,
             Task.status == TaskStatus.PENDING,
+            Task.workspace_id.is_(None),
+            Task.device_id.is_(None),
+            Task.command_id.is_(None),
             or_(
                 Task.assigned_runner_id.is_(None),
                 Task.assigned_runner_id == runner_id,

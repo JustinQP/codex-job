@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
-from backend.models import Project, RunnerRecord, Task, TaskStatus, TaskType, utc_now
+from backend.models import Device, DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
 from backend.schemas import (
     RunnerRegister,
     RunnerTaskArtifactsUpload,
@@ -216,6 +216,63 @@ def test_claim_respects_assigned_runner_id(tmp_path: Path) -> None:
         assert right_runner.task_id == task.id
         db_task = session.get(Task, task.id)
         assert db_task.runner_id == "runner-a"
+    finally:
+        session.close()
+
+
+def test_legacy_runner_claim_skips_agent_command_run(tmp_path: Path) -> None:
+    session = make_session()
+    try:
+        legacy_task = add_project_and_task(session, tmp_path / "legacy-project")
+        project = session.get(Project, legacy_task.project_id)
+        now = utc_now()
+        device = Device(
+            device_id="device-a",
+            display_name="Device A",
+            hostname="host-a",
+            os_name="Windows",
+            agent_version="0.1.0",
+            status=DeviceStatus.ONLINE,
+            last_heartbeat_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(device)
+        session.commit()
+        workspace = Workspace(
+            workspace_key="repo-a",
+            device_id=device.device_id,
+            name="Repo A",
+            path_label="repo-a",
+            enabled=True,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(workspace)
+        session.commit()
+        session.refresh(workspace)
+        agent_run = Task(
+            project_id=project.id,
+            prompt="agent run",
+            task_type=TaskType.IMPLEMENT,
+            status=TaskStatus.PENDING,
+            timeout_seconds=120,
+            device_id=device.device_id,
+            workspace_id=workspace.id,
+            command_id="agent-command-1",
+            created_at=now - timedelta(seconds=1),
+            updated_at=now,
+        )
+        session.add(agent_run)
+        session.commit()
+        session.refresh(agent_run)
+
+        claimed = runner_service.claim_task(session, "runner-a")
+
+        assert claimed is not None
+        assert claimed.task_id == legacy_task.id
+        assert session.get(Task, agent_run.id).status == TaskStatus.PENDING
+        assert session.get(Task, agent_run.id).runner_id is None
     finally:
         session.close()
 

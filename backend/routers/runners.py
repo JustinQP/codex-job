@@ -32,7 +32,7 @@ def register_runner(
     return runner_service.register_runner(session, payload)
 
 
-@router.post("/runner/register", response_model=RunnerRead)
+@router.post("/runner/register", response_model=RunnerRead, deprecated=True)
 def runner_register(
     payload: RunnerRegister,
     session: Session = Depends(get_session),
@@ -50,7 +50,7 @@ def runner_heartbeat(
     return runner_service.heartbeat(session, payload)
 
 
-@router.post("/runner/heartbeat", response_model=RunnerRead)
+@router.post("/runner/heartbeat", response_model=RunnerRead, deprecated=True)
 def runner_http_heartbeat(
     payload: RunnerHeartbeat,
     session: Session = Depends(get_session),
@@ -67,7 +67,11 @@ def list_runners(
     return runner_service.list_runners(session)
 
 
-@router.post("/runner/tasks/claim", response_model=RunnerTaskClaimResponse | None)
+@router.post(
+    "/runner/tasks/claim",
+    response_model=RunnerTaskClaimResponse | None,
+    deprecated=True,
+)
 def runner_claim_task(
     payload: RunnerTaskClaimRequest,
     session: Session = Depends(get_session),
@@ -76,7 +80,7 @@ def runner_claim_task(
     return runner_service.claim_task(session, payload.runner_id)
 
 
-@router.post("/runner/tasks/{task_id}/log")
+@router.post("/runner/tasks/{task_id}/log", deprecated=True)
 def runner_upload_task_log(
     task_id: int,
     payload: RunnerTaskLogUpload,
@@ -86,7 +90,7 @@ def runner_upload_task_log(
     return runner_service.upload_task_log(session, task_id, payload)
 
 
-@router.post("/runner/tasks/{task_id}/artifacts")
+@router.post("/runner/tasks/{task_id}/artifacts", deprecated=True)
 def runner_upload_task_artifacts(
     task_id: int,
     payload: RunnerTaskArtifactsUpload,
@@ -96,7 +100,11 @@ def runner_upload_task_artifacts(
     return runner_service.upload_task_artifacts(session, task_id, payload)
 
 
-@router.post("/runner/tasks/{task_id}/finish", response_model=TaskRead)
+@router.post(
+    "/runner/tasks/{task_id}/finish",
+    response_model=TaskRead,
+    deprecated=True,
+)
 def runner_finish_task(
     task_id: int,
     payload: RunnerTaskFinishRequest,
@@ -107,7 +115,11 @@ def runner_finish_task(
     return task_service.to_task_read(task, session)
 
 
-@router.get("/runner/tasks/{task_id}/cancel-state", response_model=RunnerTaskCancelState)
+@router.get(
+    "/runner/tasks/{task_id}/cancel-state",
+    response_model=RunnerTaskCancelState,
+    deprecated=True,
+)
 def runner_get_cancel_state(
     task_id: int,
     runner_id: str,

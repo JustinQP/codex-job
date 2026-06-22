@@ -57,3 +57,19 @@ def test_openapi_keeps_core_routes_after_router_split() -> None:
 
     assert expected_paths <= paths
     assert len(paths) >= len(expected_paths)
+
+
+def test_legacy_runner_routes_are_marked_deprecated() -> None:
+    schema = app.openapi()
+    deprecated_operations = [
+        ("post", "/runner/register"),
+        ("post", "/runner/heartbeat"),
+        ("post", "/runner/tasks/claim"),
+        ("post", "/runner/tasks/{task_id}/log"),
+        ("post", "/runner/tasks/{task_id}/artifacts"),
+        ("post", "/runner/tasks/{task_id}/finish"),
+        ("get", "/runner/tasks/{task_id}/cancel-state"),
+    ]
+
+    for method, path in deprecated_operations:
+        assert schema["paths"][path][method]["deprecated"] is True

@@ -37,9 +37,22 @@ GET  /tasks/{id}/result
 GET  /tasks/{id}/diff
 ```
 
-用途：主线 Runner/codex exec 任务链路。
+用途：查看历史任务和创建 deprecated Runner/codex exec 回退任务。
 
-## 4. Runners
+说明：
+
+- `AGENT_COMMAND_MODE=false` 时，`POST /tasks` 可继续进入旧 Runner 队列。
+- `AGENT_COMMAND_MODE=true` 时，新的多设备执行应使用 `POST /runs`。
+
+## 4. Runs
+
+```text
+POST /runs
+```
+
+用途：在指定 Workspace 上创建 Agent Run。Run 会绑定 Workspace 所属 Device 并生成 AgentCommand，不进入旧 Runner 认领队列。
+
+## 5. Runners
 
 ```text
 POST /runner/register
@@ -51,6 +64,8 @@ POST /runner/tasks/{task_id}/finish
 GET  /runner/tasks/{task_id}/cancel-state
 ```
 
+状态：deprecated。旧接口保留用于 `AGENT_COMMAND_MODE=false` 回退和历史任务兼容，不用于新的 Workspace Agent Run。
+
 兼容入口：
 
 ```text
@@ -59,9 +74,9 @@ POST /runners/heartbeat
 GET  /runners
 ```
 
-用途：Runner 注册、心跳、认领任务和回传结果。
+用途：Runner 注册、心跳、认领旧任务和回传结果。
 
-## 5. App Server Bridge
+## 6. App Server Bridge
 
 ```text
 GET /app-server-bridge/health
@@ -69,7 +84,7 @@ GET /app-server-bridge/health
 
 用途：检查 App Server Bridge sidecar 是否可用。该接口通过主后端访问 Bridge，不直接暴露 Bridge Token。
 
-## 6. AppThreads
+## 7. AppThreads
 
 ```text
 GET    /app-threads
@@ -92,7 +107,7 @@ limit=1..200
 
 `POST /app-threads/cleanup` 只支持清理 `CLOSED` 或 `ERROR`，行为是给 title 增加 `[archived]` 前缀，不物理删除记录。
 
-## 7. AppTurns
+## 8. AppTurns
 
 ```text
 POST /app-threads/{id}/turns

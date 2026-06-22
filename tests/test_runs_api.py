@@ -8,7 +8,7 @@ from sqlmodel.pool import StaticPool
 
 from backend.db import get_session
 from backend.main import app
-from backend.models import Device, DeviceStatus, Project, Task, TaskStatus, Workspace, utc_now
+from backend.models import Device, DeviceStatus, Project, RunnerRecord, Task, TaskStatus, Workspace, utc_now
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -189,3 +189,53 @@ def test_list_tasks_can_filter_runs_by_workspace() -> None:
         assert filtered.status_code == 200
         assert [item["id"] for item in filtered.json()] == [run_a["id"]]
         assert {item["id"] for item in all_runs.json()} >= {run_a["id"], run_b["id"]}
+
+
+def test_agent_run_is_not_claimed_by_legacy_runner_when_agent_mode_enabled(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        runner = RunnerRecord(
+            runner_id="legacy-runner",
+            pid=1,
+            hostname="host",
+            status="ONLINE",
+            registered_at=utc_now(),
+            last_heartbeat_at=utc_now(),
+        )
+        session.add(runner)
+        session.commit()
+
+        agent_run = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "prompt": "agent run",
+            },
+        )
+        legacy_task = client.post(
+            "/tasks",
+            json={
+                "project_id": project.id,
+                "prompt": "legacy task",
+            },
+        )
+        claim = client.post(
+            "/runner/tasks/claim",
+            json={"runner_id": "legacy-runner"},
+        )
+
+        assert agent_run.status_code == 200
+        assert legacy_task.status_code == 200
+        assert claim.status_code == 200
+        assert claim.json()["task_id"] == legacy_task.json()["id"]
+        db_agent_run = session.get(Task, agent_run.json()["id"])
+        assert db_agent_run.status == TaskStatus.PENDING
+        assert db_agent_run.runner_id is None
+        assert db_agent_run.workspace_id == workspace.id
+        assert db_agent_run.device_id == "device-a"

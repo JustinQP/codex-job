@@ -127,7 +127,7 @@ Codex 执行本清单时必须遵守：
 - [x] D04 实现产物 manifest 和大小限制
 - [x] D05 实现真实 Run 取消
 - [x] D06 手机端运行页显示设备和 Workspace
-- [ ] D07 兼容并逐步废弃旧 Runner 认领接口
+- [x] D07 兼容并逐步废弃旧 Runner 认领接口
 
 ### E. 多设备连续 Session
 
@@ -1857,7 +1857,7 @@ D01、D03、D05、B08。
 
 ---
 
-### [ ] D07 兼容并逐步废弃旧 Runner 认领接口
+### [x] D07 兼容并逐步废弃旧 Runner 认领接口
 
 **目标**
 
@@ -1880,6 +1880,27 @@ D02-D06、F01。
 - 两种模式行为可预测。
 - 新模式不会被旧 Runner 误认领。
 - 回退开关有效。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `backend/services/task_service.py`
+  - `backend/services/runner_service.py`
+  - `backend/routers/runners.py`
+  - `tests/test_runner_service.py`
+  - `tests/test_runs_api.py`
+  - `tests/test_api_contract.py`
+  - `README.md`
+  - `docs/api-overview.md`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及；未删除旧表、历史记录或 `runner/` 代码
+- 自动化测试：
+  - `pytest -q tests/test_runner_service.py tests/test_runs_api.py tests/test_api_contract.py tests/test_tasks_api.py -o cache_dir=data/pytest-cache-d07-target -o addopts=--basetemp=data/pytest-tmp-d07-target`：通过，33 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+- 人工验证：不涉及
+- 回归影响：旧 `/runner/*` 接口在 OpenAPI 标记 deprecated 但继续可用；`/runs` 创建的新 Agent Run 创建时即绑定 Device/Workspace，旧 Runner 认领查询排除 Agent Run
+- 风险与未完成项：旧 Runner 代码仍保留为 `AGENT_COMMAND_MODE=false` 回退链路；完全删除需等后续确认不再需要历史 fallback
 
 ---
 

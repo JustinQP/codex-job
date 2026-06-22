@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -85,6 +86,28 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
         )
 
     now = utc_now()
+    task = _create_task_record(
+        session,
+        payload=payload,
+        project=project,
+        prompt=prompt,
+        assigned_runner_id=assigned_runner_id,
+        created_at=now,
+    )
+    return task
+
+
+def _create_task_record(
+    session: Session,
+    *,
+    payload: TaskCreate,
+    project: Project,
+    prompt: str,
+    assigned_runner_id: str | None,
+    created_at: datetime,
+    workspace_id: int | None = None,
+    device_id: str | None = None,
+) -> Task:
     task = Task(
         project_id=payload.project_id,
         prompt=prompt,
@@ -97,9 +120,11 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
         sandbox=payload.sandbox or project.default_sandbox or DEFAULT_SANDBOX,
         status=TaskStatus.PENDING,
         assigned_runner_id=assigned_runner_id,
+        device_id=device_id,
+        workspace_id=workspace_id,
         client_request_id=payload.client_request_id,
-        created_at=now,
-        updated_at=now,
+        created_at=created_at,
+        updated_at=created_at,
     )
     session.add(task)
     session.commit()
@@ -155,13 +180,22 @@ def create_run(session: Session, payload: RunCreate) -> Task:
         sandbox=requested_sandbox,
     )
 
-    task = create_task(session, payload)
-    task.workspace_id = workspace.id
-    task.device_id = workspace.device_id
-    task.client_request_id = payload.client_request_id
-    session.add(task)
-    session.commit()
-    session.refresh(task)
+    prompt = payload.prompt.strip()
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="prompt cannot be empty",
+        )
+    task = _create_task_record(
+        session,
+        payload=payload,
+        project=project,
+        prompt=prompt,
+        assigned_runner_id=None,
+        created_at=utc_now(),
+        workspace_id=workspace.id,
+        device_id=workspace.device_id,
+    )
     if task.id is None:
         raise ValueError("task id is required")
     workspace_lock_service.acquire_workspace_lock(
