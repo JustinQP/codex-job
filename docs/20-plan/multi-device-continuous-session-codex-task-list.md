@@ -131,7 +131,7 @@ Codex 执行本清单时必须遵守：
 
 ### E. 多设备连续 Session
 
-- [ ] E01 将 App Server POC 整理为正式 Agent 模块
+- [x] E01 将 App Server POC 整理为正式 Agent 模块
 - [ ] E02 通过命令通道创建 Session
 - [ ] E03 通过命令通道执行 Turn
 - [ ] E04 保证同一 Session 复用同一 Codex thread
@@ -1886,7 +1886,7 @@ D02-D06、F01。
 
 ## E. 多设备连续 Session
 
-### [ ] E01 将 App Server POC 整理为正式 Agent 模块
+### [x] E01 将 App Server POC 整理为正式 Agent 模块
 
 **目标**
 
@@ -1914,6 +1914,29 @@ B05、C04、A01。
 - Fake/stdin App Server 测试可在 Agent 模块运行。
 - Session Manager 能在两个不同临时 Workspace 创建隔离会话。
 - 原 POC 测试暂时仍通过。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `agent/app_server/__init__.py`
+  - `agent/app_server/client.py`
+  - `agent/app_server/event_parser.py`
+  - `agent/app_server/session_manager.py`
+  - `tests/test_agent_app_server_session_manager.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- Agent 模块：新增正式 `agent/app_server/` 包，包含 JSONL RPC client、事件解析入口和 `AgentAppSessionManager`
+- Session Manager：通过 `WorkspaceRegistry.resolve(workspace_key)` 获取 cwd；每个 workspace/session 启动独立 `codex app-server --listen stdio://`，执行 initialize 和 thread/start，并保存 `agent_session_id`、`codex_thread_id`、cwd、run_dir 和 client
+- 兼容策略：当前 `poc/app_server` 保留不移动；`agent.app_server.event_parser` 复用已验证 POC parser 行为，避免一次性分叉
+- 自动化测试：
+  - `pytest -q tests/test_agent_app_server_session_manager.py tests/test_app_server_event_parser.py tests/test_app_server_bridge.py tests/test_app_server_bridge_client.py`：通过，17 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，267 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：原 POC HTTP Bridge 和旧 AppThread Bridge 调用未切换；E02 起再通过命令通道接入正式 Agent SessionManager
+- 风险与未完成项：本任务只完成正式 Agent 模块承接和隔离会话能力，尚未改变控制端 Session 创建路径
 
 ---
 
