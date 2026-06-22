@@ -18,10 +18,11 @@ from backend.schemas import (
     AppThreadRead,
     AppThreadUpdate,
     AppTurnCreate,
+    TurnEventListRead,
     AppTurnRead,
     AppTurnRecoveryRead,
 )
-from backend.services import app_thread_service
+from backend.services import app_thread_service, turn_event_service
 
 
 router = APIRouter()
@@ -150,6 +151,23 @@ def get_app_turn(
 ):
     app_turn = app_thread_service.get_app_turn_or_404(session, app_turn_id)
     return app_thread_service.to_app_turn_read(app_turn)
+
+
+@router.get("/app-turns/{app_turn_id}/events", response_model=TurnEventListRead)
+def list_app_turn_events(
+    app_turn_id: int,
+    since: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    app_thread_service.get_app_turn_or_404(session, app_turn_id)
+    return turn_event_service.list_turn_events(
+        session,
+        turn_id=app_turn_id,
+        since=since,
+        limit=limit,
+    )
 
 
 @router.get("/app-turns/{app_turn_id}/stream")

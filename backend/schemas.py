@@ -438,6 +438,21 @@ class AppTurnRead(BaseModel):
     event_summary: Optional[dict] = None
 
 
+class TurnEventRead(BaseModel):
+    id: int
+    turn_id: int
+    sequence: int
+    kind: str
+    payload: dict
+    created_at: datetime
+
+
+class TurnEventListRead(BaseModel):
+    turn_id: int
+    events: list[TurnEventRead]
+    next_sequence: Optional[int] = None
+
+
 class AppTurnRecoveryRead(BaseModel):
     recovered_count: int
     recovered_turn_ids: list[int]

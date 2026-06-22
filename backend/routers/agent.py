@@ -54,6 +54,8 @@ ERROR_STATUS = {
     "duplicate_event_sequence_in_batch": status.HTTP_409_CONFLICT,
     "out_of_order_command_events": status.HTTP_409_CONFLICT,
     "command_event_sequence_conflict": status.HTTP_409_CONFLICT,
+    "app_turn_not_found": status.HTTP_404_NOT_FOUND,
+    "turn_event_sequence_conflict": status.HTTP_409_CONFLICT,
 }
 
 

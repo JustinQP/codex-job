@@ -435,6 +435,57 @@ def add_app_turn_command_binding_column(engine: Engine) -> None:
         )
 
 
+def create_turn_events_table(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS turn_events (
+                    id INTEGER PRIMARY KEY,
+                    turn_id INTEGER NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL,
+                    FOREIGN KEY(turn_id) REFERENCES app_turns(id)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_turn_events_sequence
+                ON turn_events (turn_id, sequence)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_turn_events_turn_id
+                ON turn_events (turn_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_turn_events_kind
+                ON turn_events (kind)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_turn_events_created_at
+                ON turn_events (created_at)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -485,6 +536,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0010",
         name="app_turn_command_binding",
         apply=add_app_turn_command_binding_column,
+    ),
+    Migration(
+        version="0011",
+        name="turn_events",
+        apply=create_turn_events_table,
     ),
 )
 

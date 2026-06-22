@@ -139,6 +139,21 @@ export type AppTurnStreamEvent = {
   turn?: AppTurn;
 };
 
+export type TurnEvent = {
+  id: number;
+  turn_id: number;
+  sequence: number;
+  kind: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type TurnEventList = {
+  turn_id: number;
+  events: TurnEvent[];
+  next_sequence?: number | null;
+};
+
 export type Health = {
   status: string;
   agent_command_mode: boolean;

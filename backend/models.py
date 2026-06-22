@@ -197,6 +197,20 @@ class AgentCommandEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
 
+class TurnEvent(SQLModel, table=True):
+    __tablename__ = "turn_events"
+    __table_args__ = (
+        UniqueConstraint("turn_id", "sequence", name="ux_turn_events_sequence"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    turn_id: int = Field(foreign_key="app_turns.id", index=True)
+    sequence: int = Field(index=True)
+    kind: str = Field(index=True)
+    payload_json: str
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class AppThread(SQLModel, table=True):
     __tablename__ = "app_threads"
 

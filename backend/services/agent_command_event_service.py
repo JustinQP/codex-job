@@ -7,6 +7,7 @@ from sqlmodel import Session, func, select
 from backend.models import AgentCommand, AgentCommandEvent
 from backend.schemas import AgentCommandEventsUploadRead, AgentCommandEventsUploadRequest
 from backend.services.agent_command_service import AgentCommandServiceError
+from backend.services import turn_event_service
 
 
 MAX_EVENTS_PER_BATCH = 100
@@ -91,6 +92,14 @@ def upload_command_events(
             created_at=item.created_at,
         )
         session.add(event)
+        turn_event_service.record_from_command_event(
+            session,
+            command=command,
+            sequence=item.sequence,
+            kind=item.kind,
+            payload=item.payload,
+            created_at=item.created_at,
+        )
         accepted_count += 1
         latest_sequence = item.sequence
 

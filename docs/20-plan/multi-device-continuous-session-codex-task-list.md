@@ -2122,7 +2122,7 @@ E03。
 
 ---
 
-### [ ] E05 新增 TurnEvent 持久化和去重
+### [x] E05 新增 TurnEvent 持久化和去重
 
 **目标**
 
@@ -2159,6 +2159,35 @@ created_at
 - 控制端重启后事件仍存在。
 - 事件重传不会重复 assistant 文本。
 - final 必须可以从事件和 AppTurn 两处交叉验证。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/routers/agent.py`
+  - `backend/routers/app_threads.py`
+  - `backend/services/agent_command_event_service.py`
+  - `backend/services/turn_event_service.py`
+  - `frontend/src/api/appThreads.ts`
+  - `frontend/src/api/types.ts`
+  - `tests/test_db_migrations.py`
+  - `tests/test_agent_command_events.py`
+  - `tests/test_api_contract.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0011 turn_events`，创建 `turn_events` 表，包含唯一索引 `(turn_id, sequence)` 以及 turn_id、kind、created_at 索引
+- 控制端：`TURN_START` 的 Agent CommandEvent 上传后同步转换为 TurnEvent；重复相同 sequence/kind/payload 幂等，同 sequence 不同内容返回冲突；新增 `GET /app-turns/{app_turn_id}/events?since=&limit=` 按 sequence 分页查询
+- 前端：新增 `TurnEvent`/`TurnEventList` 类型和 `listAppTurnEvents` API 封装，暂不改 UI
+- 自动化测试：
+  - `pytest -q tests/test_agent_command_events.py tests/test_db_migrations.py tests/test_api_contract.py`：通过，14 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，284 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及；通过自动化测试覆盖事件持久化、重放去重、内容冲突、分页查询、final 与 AppTurn 交叉验证
+- 回归影响：新增表和只读查询接口；旧 Bridge 模式和旧内存式 stream 路径暂不切换
+- 风险与未完成项：E05 只完成 TurnEvent 持久化和查询；SSE 从数据库重放、客户端断线续传由 E06/E12 继续处理
 
 ---
 

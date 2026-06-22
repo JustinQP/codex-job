@@ -50,6 +50,7 @@ def test_openapi_keeps_core_routes_after_router_split() -> None:
         "/app-threads/{app_thread_id}/turns",
         "/app-threads/{app_thread_id}/turns/async",
         "/app-turns/{app_turn_id}",
+        "/app-turns/{app_turn_id}/events",
         "/app-turns/{app_turn_id}/stream",
         "/app-turns/{app_turn_id}/cancel",
     }

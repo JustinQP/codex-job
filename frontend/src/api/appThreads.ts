@@ -5,6 +5,7 @@ import type {
   AppThreadEvents,
   AppThreadFinal,
   AppTurn,
+  TurnEventList,
   AppTurnStreamEvent,
   AppTurnRecovery,
   BridgeHealth
@@ -75,6 +76,14 @@ export function sendAsyncAppTurn(threadId: number, message: string) {
 
 export function getAppTurn(turnId: number) {
   return apiRequest<AppTurn>(`/app-turns/${turnId}`);
+}
+
+export function listAppTurnEvents(turnId: number, since = 0, limit = 100) {
+  const params = new URLSearchParams({
+    since: String(since),
+    limit: String(limit)
+  });
+  return apiRequest<TurnEventList>(`/app-turns/${turnId}/events?${params.toString()}`);
 }
 
 export async function streamAppTurn(
