@@ -115,7 +115,7 @@ Codex 执行本清单时必须遵守：
 - [x] C01 新增 AgentCommand 模型和状态机
 - [x] C02 实现命令创建服务和幂等键
 - [x] C03 实现命令 claim、续租和完成接口
-- [ ] C04 实现 Agent 命令循环
+- [x] C04 实现 Agent 命令循环
 - [ ] C05 实现命令事件增量上传
 - [ ] C06 实现 Agent 重连 reconciliation
 
@@ -1271,7 +1271,7 @@ tests/test_agent_command_api.py
 
 ---
 
-### [ ] C04 实现 Agent 命令循环
+### [x] C04 实现 Agent 命令循环
 
 **目标**
 
@@ -1313,6 +1313,32 @@ tests/test_agent_command_loop.py
 - Fake Command 可以完整经过 claim、ack、renew、complete。
 - 临时网络错误后 Agent 可以继续工作。
 - Ctrl+C 能正常停止循环。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `agent/api_client.py`
+  - `agent/command_loop.py`
+  - `agent/command_handlers.py`
+  - `agent/local_state.py`
+  - `agent/config.py`
+  - `agent/main.py`
+  - `tests/test_agent_command_loop.py`
+  - `tests/test_agent_api_client.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- Agent 循环：新增注册、可选 Workspace 同步、心跳、Claim、ACK、renew、handler 分发、complete 的主循环框架
+- 本地状态：新增 `state.json` 当前命令记录，保存 `command_id`、`claim_request_id`、`lease_token`，命令完成后清理
+- Handler：新增 `fake.echo` 成功 handler；未知 command type 明确 complete 为 FAILED，不静默丢弃
+- CLI：新增 `--run-once` 和 `--run-loop`；`--run-loop` 支持 Ctrl+C 正常退出
+- 自动化测试：
+  - `pytest -q tests/test_agent_command_loop.py tests/test_agent_api_client.py`：通过，7 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，231 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：Agent 新循环需要显式通过 `--run-once` 或 `--run-loop` 启动，不影响既有 register/heartbeat/sync-workspaces 单次命令
+- 风险与未完成项：当前只提供 fake handler 和短轮询；真实 Run/Session handler 由 D/E 阶段接入，命令事件上传由 C05 完成
 
 ---
 

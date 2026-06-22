@@ -9,7 +9,16 @@ import pytest
 from agent.api_client import AgentApiClient, AgentApiError
 from agent.heartbeat import build_heartbeat_payload, build_register_payload
 from agent.identity import AgentIdentity
-from backend.schemas import DeviceHeartbeat, DeviceRegister, WorkspaceSyncItem, WorkspaceSyncRequest
+from backend.models import AgentCommandStatus
+from backend.schemas import (
+    AgentCommandClaimRequest,
+    AgentCommandCompleteRequest,
+    AgentCommandLeaseRequest,
+    DeviceHeartbeat,
+    DeviceRegister,
+    WorkspaceSyncItem,
+    WorkspaceSyncRequest,
+)
 
 
 class AgentClientHandler(BaseHTTPRequestHandler):
@@ -67,10 +76,33 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
                 ],
             )
         )
+        claim = client.claim_command(
+            AgentCommandClaimRequest(device_id="device-a", claim_request_id="claim-1")
+        )
+        ack = client.ack_command(
+            "cmd-1",
+            AgentCommandLeaseRequest(device_id="device-a", lease_token="lease-a"),
+        )
+        renew = client.renew_command(
+            "cmd-1",
+            AgentCommandLeaseRequest(device_id="device-a", lease_token="lease-a"),
+        )
+        complete = client.complete_command(
+            "cmd-1",
+            AgentCommandCompleteRequest(
+                device_id="device-a",
+                lease_token="lease-a",
+                status=AgentCommandStatus.SUCCESS,
+            ),
+        )
 
         assert registered == {"ok": True, "path": "/agent/register"}
         assert heartbeat == {"ok": True, "path": "/agent/heartbeat"}
         assert synced == {"ok": True, "path": "/agent/workspaces/sync"}
+        assert claim == {"ok": True, "path": "/agent/commands/claim"}
+        assert ack == {"ok": True, "path": "/agent/commands/cmd-1/ack"}
+        assert renew == {"ok": True, "path": "/agent/commands/cmd-1/renew"}
+        assert complete == {"ok": True, "path": "/agent/commands/cmd-1/complete"}
         assert AgentClientHandler.calls[0][0] == "/agent/register"
         assert AgentClientHandler.calls[0][1] == "secret"
         assert AgentClientHandler.calls[0][2]["device_id"] == "device-a"
@@ -78,6 +110,11 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert AgentClientHandler.calls[1][2] == {"device_id": "device-a"}
         assert AgentClientHandler.calls[2][0] == "/agent/workspaces/sync"
         assert AgentClientHandler.calls[2][2]["workspaces"][0]["workspace_key"] == "repo"
+        assert AgentClientHandler.calls[3][0] == "/agent/commands/claim"
+        assert AgentClientHandler.calls[3][2]["claim_request_id"] == "claim-1"
+        assert AgentClientHandler.calls[4][0] == "/agent/commands/cmd-1/ack"
+        assert AgentClientHandler.calls[5][0] == "/agent/commands/cmd-1/renew"
+        assert AgentClientHandler.calls[6][0] == "/agent/commands/cmd-1/complete"
     finally:
         server.shutdown()
 

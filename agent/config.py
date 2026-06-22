@@ -25,6 +25,10 @@ class AgentConfig:
     def identity_path(self) -> Path:
         return self.data_dir / "identity.json"
 
+    @property
+    def state_path(self) -> Path:
+        return self.data_dir / "state.json"
+
 
 def load_agent_config() -> AgentConfig:
     data_dir = _env_path("CODEX_AGENT_DATA_DIR", ROOT_DIR / "data" / "agent")

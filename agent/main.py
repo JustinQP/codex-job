@@ -4,9 +4,11 @@ import argparse
 import json
 
 from agent.api_client import AgentApiClient
+from agent.command_loop import AgentCommandLoop
 from agent.config import load_agent_config
 from agent.heartbeat import register_agent, send_heartbeat
 from agent.identity import load_or_create_identity
+from agent.local_state import AgentLocalState
 from agent.workspace_registry import WorkspaceRegistry
 from backend.schemas import WorkspaceSyncRequest
 
@@ -25,6 +27,8 @@ def main() -> None:
         action="store_true",
         help="sync local workspace registry to the control plane and exit",
     )
+    parser.add_argument("--run-once", action="store_true", help="run one command polling iteration")
+    parser.add_argument("--run-loop", action="store_true", help="run the continuous command loop")
     args = parser.parse_args()
 
     config = load_agent_config()
@@ -64,6 +68,29 @@ def main() -> None:
             )
         )
         print(json.dumps(result, ensure_ascii=False))
+    if args.run_once or args.run_loop:
+        client = AgentApiClient(
+            base_url=config.backend_url,
+            agent_token=config.agent_token,
+        )
+        registry = None
+        if config.workspace_config_path.exists():
+            registry = WorkspaceRegistry.load(config.workspace_config_path)
+        loop = AgentCommandLoop(
+            client=client,
+            identity=identity,
+            local_state=AgentLocalState(config.state_path),
+            workspace_registry=registry,
+        )
+        if args.run_once:
+            loop.bootstrap()
+            result = loop.run_once()
+            print(json.dumps(result or {"claimed": False}, ensure_ascii=False))
+        else:
+            try:
+                loop.run_forever()
+            except KeyboardInterrupt:
+                return
 
 
 if __name__ == "__main__":

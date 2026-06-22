@@ -5,7 +5,14 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from backend.schemas import DeviceHeartbeat, DeviceRegister, WorkspaceSyncRequest
+from backend.schemas import (
+    AgentCommandClaimRequest,
+    AgentCommandCompleteRequest,
+    AgentCommandLeaseRequest,
+    DeviceHeartbeat,
+    DeviceRegister,
+    WorkspaceSyncRequest,
+)
 
 
 class AgentApiError(RuntimeError):
@@ -29,7 +36,37 @@ class AgentApiClient:
     def sync_workspaces(self, payload: WorkspaceSyncRequest) -> dict[str, Any]:
         return self._json_request("/agent/workspaces/sync", payload.model_dump(exclude_none=True))
 
+    def claim_command(self, payload: AgentCommandClaimRequest) -> dict[str, Any] | None:
+        return self._json_request_or_none(
+            "/agent/commands/claim",
+            payload.model_dump(exclude_none=True),
+        )
+
+    def ack_command(self, command_id: str, payload: AgentCommandLeaseRequest) -> dict[str, Any]:
+        return self._json_request(
+            f"/agent/commands/{command_id}/ack",
+            payload.model_dump(exclude_none=True),
+        )
+
+    def renew_command(self, command_id: str, payload: AgentCommandLeaseRequest) -> dict[str, Any]:
+        return self._json_request(
+            f"/agent/commands/{command_id}/renew",
+            payload.model_dump(exclude_none=True),
+        )
+
+    def complete_command(self, command_id: str, payload: AgentCommandCompleteRequest) -> dict[str, Any]:
+        return self._json_request(
+            f"/agent/commands/{command_id}/complete",
+            payload.model_dump(exclude_none=True),
+        )
+
     def _json_request(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._json_request_or_none(path, payload)
+        if not isinstance(data, dict):
+            raise AgentApiError(f"agent API {path} returned non-object JSON")
+        return data
+
+    def _json_request_or_none(self, path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         body = json.dumps(payload).encode("utf-8")
         request = Request(
             f"{self.base_url}{path}",
@@ -53,6 +90,8 @@ class AgentApiClient:
             data = json.loads(raw) if raw else {}
         except json.JSONDecodeError as exc:
             raise AgentApiError(f"agent API {path} returned invalid JSON") from exc
+        if data is None:
+            return None
         if not isinstance(data, dict):
             raise AgentApiError(f"agent API {path} returned non-object JSON")
         return data
