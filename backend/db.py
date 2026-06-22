@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 from typing import Generator
 
-from sqlalchemy import text
 from sqlmodel import SQLModel, Session, create_engine
+
+from backend.migrations import run_migrations
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -34,57 +35,12 @@ def init_db() -> None:
     from backend import models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
-    _ensure_sqlite_columns()
-
-
-def _ensure_sqlite_columns() -> None:
-    column_specs = {
-        "projects": {
-            "test_command": "TEXT",
-            "smoke_check_command": "TEXT",
-            "default_branch": "TEXT",
-            "require_clean_worktree": "BOOLEAN",
-            "default_runner_id": "TEXT",
-            "default_model": "TEXT",
-            "default_reasoning_effort": "TEXT",
-            "default_sandbox": "TEXT",
-        },
-        "tasks": {
-            "task_type": "VARCHAR DEFAULT 'IMPLEMENT'",
-            "model": "TEXT",
-            "reasoning_effort": "TEXT",
-            "sandbox": "TEXT",
-            "cancel_requested": "BOOLEAN DEFAULT 0",
-            "assigned_runner_id": "TEXT",
-            "runner_id": "TEXT",
-            "runner_pid": "INTEGER",
-            "lease_expires_at": "TIMESTAMP",
-        },
-        "runner_records": {
-            "lease_expires_at": "TIMESTAMP",
-            "supported_models": "TEXT",
-        },
+    backup_enabled = os.environ.get("CODEX_RUNNER_DB_BACKUP", "true").lower() not in {
+        "0",
+        "false",
+        "no",
     }
-
-    with engine.begin() as connection:
-        for table_name, columns in column_specs.items():
-            existing = {
-                row[1]
-                for row in connection.exec_driver_sql(
-                    f"PRAGMA table_info({table_name})"
-                )
-            }
-            if not existing:
-                continue
-            for column_name, column_type in columns.items():
-                if column_name in existing:
-                    continue
-                connection.execute(
-                    text(
-                        f"ALTER TABLE {table_name} "
-                        f"ADD COLUMN {column_name} {column_type}"
-                    )
-                )
+    run_migrations(engine, db_path=DB_PATH, backup=backup_enabled)
 
 
 def get_session() -> Generator[Session, None, None]:

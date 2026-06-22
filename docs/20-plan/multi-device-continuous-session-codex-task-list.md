@@ -95,7 +95,7 @@ Codex 执行本清单时必须遵守：
 
 - [x] A01 建立重构前回归基线
 - [x] A02 增加最小 GitHub Actions CI
-- [ ] A03 引入轻量数据库版本迁移机制
+- [x] A03 引入轻量数据库版本迁移机制
 - [ ] A04 拆分 FastAPI 路由装配层
 - [ ] A05 增加新旧执行模式功能开关
 
@@ -298,7 +298,7 @@ npm run build
 
 ---
 
-### [ ] A03 引入轻量数据库版本迁移机制
+### [x] A03 引入轻量数据库版本迁移机制
 
 **目标**
 
@@ -340,6 +340,21 @@ tests/test_db_migrations.py
 pytest -q tests/test_db_migrations.py
 pytest -q
 ```
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/db.py`
+  - `backend/migrations.py`
+  - `tests/test_db_migrations.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增 `schema_migrations` 表；新增版本 `0001 legacy_sqlite_columns`，纳入原有 SQLite 兼容列补丁；默认对存在的 SQLite 数据库文件创建 `.bak-YYYYMMDDHHMMSS` 备份，可通过 `CODEX_RUNNER_DB_BACKUP=false` 关闭
+- 自动化测试：
+  - `pytest -q tests/test_db_migrations.py`：通过，5 passed
+  - `pytest -q`：通过，162 passed
+- 人工验证：不涉及
+- 回归影响：`init_db()` 仍先执行 `SQLModel.metadata.create_all()`，再按版本执行未完成 migration；重复执行不会重复改表
+- 风险与未完成项：当前仅提供轻量迁移机制，未引入 Alembic；后续新表需要继续按版本追加 migration
 
 ---
 
