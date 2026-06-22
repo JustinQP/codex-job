@@ -13,6 +13,7 @@ from agent.workspace_registry import WorkspaceRegistry
 class CommandResult:
     success: bool
     message: str | None = None
+    result_payload: dict[str, Any] | None = None
 
 
 class CommandHandler(Protocol):
@@ -46,6 +47,7 @@ class CommandHandlerRegistry:
         client: AgentApiClient | None = None,
         device_id: str | None = None,
         process_registry: ProcessRegistry | None = None,
+        app_session_manager: Any | None = None,
     ) -> None:
         self._handlers: dict[str, CommandHandler] = {
             "fake.echo": FakeCommandHandler(),
@@ -59,6 +61,10 @@ class CommandHandlerRegistry:
                 device_id=device_id,
                 process_registry=process_registry,
             )
+        if app_session_manager is not None:
+            from agent.session_handlers import SessionOpenHandler
+
+            self._handlers["SESSION_OPEN"] = SessionOpenHandler(app_session_manager)
         self._fallback = UnsupportedCommandHandler()
 
     def handle(self, command: dict[str, Any]) -> CommandResult:

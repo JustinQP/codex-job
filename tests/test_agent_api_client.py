@@ -98,6 +98,7 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
                 device_id="device-a",
                 lease_token="lease-a",
                 status=AgentCommandStatus.SUCCESS,
+                result_payload={"ok": True},
             ),
         )
         events = client.upload_command_events(
@@ -168,6 +169,7 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
         assert AgentClientHandler.calls[4][0] == "/agent/commands/cmd-1/ack"
         assert AgentClientHandler.calls[5][0] == "/agent/commands/cmd-1/renew"
         assert AgentClientHandler.calls[6][0] == "/agent/commands/cmd-1/complete"
+        assert AgentClientHandler.calls[6][2]["result_payload"] == {"ok": True}
         assert AgentClientHandler.calls[7][0] == "/agent/commands/cmd-1/events"
         assert AgentClientHandler.calls[7][2]["events"][0]["sequence"] == 1
         assert AgentClientHandler.calls[8][0] == "/agent/reconcile"

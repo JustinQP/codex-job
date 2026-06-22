@@ -28,6 +28,7 @@ from backend.services import (
     agent_command_event_service,
     agent_command_service,
     agent_reconciliation_service,
+    app_thread_service,
     device_service,
     run_artifact_service,
     run_log_service,
@@ -151,14 +152,23 @@ def complete_agent_command(
     _: None = Depends(require_agent_token),
 ):
     try:
-        return agent_command_service.complete_command(
+        command = agent_command_service.complete_command(
             session,
             command_id=command_id,
             device_id=payload.device_id,
             lease_token=payload.lease_token,
             status=payload.status,
             error_message=payload.error_message,
+            result_payload=payload.result_payload,
         )
+        if command.command_type == "SESSION_OPEN" and payload.result_payload is not None:
+            app_thread_service.complete_agent_session_open(
+                session,
+                command_id=command.id,
+                result_payload=payload.result_payload,
+            )
+            session.refresh(command)
+        return command
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)
 

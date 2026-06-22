@@ -170,6 +170,7 @@ class AgentCommand(SQLModel, table=True):
     aggregate_id: Optional[str] = Field(default=None, index=True)
     idempotency_key: str
     payload_json: str = "{}"
+    result_payload_json: Optional[str] = None
     status: AgentCommandStatus = Field(default=AgentCommandStatus.PENDING, index=True)
     claim_request_id: Optional[str] = Field(default=None, index=True)
     lease_token: Optional[str] = Field(default=None, index=True)
@@ -202,6 +203,14 @@ class AppThread(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="projects.id", index=True)
     title: str
+    device_id: Optional[str] = Field(default=None, foreign_key="devices.device_id", index=True)
+    workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
+    agent_session_id: Optional[str] = Field(default=None, index=True)
+    generation: int = Field(default=1)
+    sandbox: Optional[str] = None
+    approval_policy: Optional[str] = None
+    network_access: bool = Field(default=False)
+    command_id: Optional[str] = Field(default=None, foreign_key="agent_commands.id", index=True)
     bridge_thread_id: Optional[str] = Field(default=None, index=True)
     app_thread_id: Optional[str] = None
     status: str = Field(default="CREATED", index=True)

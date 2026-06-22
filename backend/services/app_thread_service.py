@@ -7,7 +7,8 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from backend.models import AppThread, AppTurn, Project, utc_now
+from backend.config import get_settings
+from backend.models import AgentCommand, AgentCommandStatus, AppThread, AppTurn, Device, DeviceStatus, Project, Workspace, utc_now
 from backend.schemas import (
     AppThreadCreate,
     AppThreadEventsRead,
@@ -22,9 +23,11 @@ from backend.services.app_server_bridge_client import (
     AppServerBridgeError,
     get_default_client,
 )
+from backend.services import agent_command_service
 
 
 APP_THREAD_CREATED = "CREATED"
+APP_THREAD_OPENING = "OPENING"
 APP_THREAD_ACTIVE = "ACTIVE"
 APP_THREAD_ERROR = "ERROR"
 APP_THREAD_CLOSED = "CLOSED"
@@ -40,6 +43,7 @@ ARCHIVED_PREFIX = "[archived] "
 
 APP_THREAD_STATUSES = {
     APP_THREAD_CREATED,
+    APP_THREAD_OPENING,
     APP_THREAD_ACTIVE,
     APP_THREAD_ERROR,
     APP_THREAD_CLOSED,
@@ -65,6 +69,9 @@ def create_app_thread(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project is disabled")
 
     title = _clean_title(payload.title) or _default_title()
+    if get_settings().agent_command_mode:
+        return create_agent_app_thread(session, project, payload, title)
+
     client = bridge_client or get_default_client()
     try:
         bridge_thread = client.create_thread(title, cwd=project.path)
@@ -82,6 +89,105 @@ def create_app_thread(
         created_at=now,
         updated_at=now,
     )
+    session.add(app_thread)
+    session.commit()
+    session.refresh(app_thread)
+    return app_thread
+
+
+def create_agent_app_thread(
+    session: Session,
+    project: Project,
+    payload: AppThreadCreate,
+    title: str,
+) -> AppThread:
+    workspace_id = payload.workspace_id or project.workspace_id
+    if workspace_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace is required")
+    workspace = session.get(Workspace, workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workspace not found")
+    if not workspace.enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace is disabled")
+    device = session.get(Device, workspace.device_id)
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="device not found")
+    if device.status == DeviceStatus.DISABLED:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device is disabled")
+    if device.status != DeviceStatus.ONLINE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device is offline")
+
+    sandbox = payload.sandbox or workspace.default_sandbox or project.default_sandbox or "read-only"
+    approval_policy = payload.approval_policy or workspace.default_approval_policy or "never"
+    app_thread = AppThread(
+        project_id=project.id,
+        title=title,
+        device_id=workspace.device_id,
+        workspace_id=workspace.id,
+        generation=1,
+        sandbox=sandbox,
+        approval_policy=approval_policy,
+        network_access=payload.network_access,
+        status=APP_THREAD_OPENING,
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+    session.add(app_thread)
+    session.commit()
+    session.refresh(app_thread)
+    command = agent_command_service.create_command(
+        session,
+        device_id=workspace.device_id,
+        command_type="SESSION_OPEN",
+        aggregate_type="app_thread",
+        aggregate_id=str(app_thread.id),
+        idempotency_key=payload.client_request_id or f"session-open:{app_thread.id}:1",
+        workspace_id=workspace.id,
+        payload={
+            "app_thread_id": app_thread.id,
+            "workspace_id": workspace.id,
+            "workspace_key": workspace.workspace_key,
+            "title": title,
+            "sandbox": sandbox,
+            "approval_policy": approval_policy,
+            "network_access": payload.network_access,
+            "generation": app_thread.generation,
+        },
+    )
+    app_thread.command_id = command.id
+    session.add(app_thread)
+    session.commit()
+    session.refresh(app_thread)
+    return app_thread
+
+
+def complete_agent_session_open(
+    session: Session,
+    *,
+    command_id: str,
+    result_payload: dict[str, Any],
+) -> AppThread | None:
+    command = session.get(AgentCommand, command_id)
+    if command is None or command.aggregate_type != "app_thread":
+        return None
+    try:
+        app_thread_id = int(command.aggregate_id or "0")
+    except ValueError:
+        return None
+    app_thread = session.get(AppThread, app_thread_id)
+    if app_thread is None:
+        return None
+    agent_session_id = _string_or_none(result_payload.get("agent_session_id"))
+    codex_thread_id = _string_or_none(result_payload.get("codex_thread_id"))
+    if command.status == AgentCommandStatus.SUCCESS and agent_session_id and codex_thread_id:
+        app_thread.agent_session_id = agent_session_id
+        app_thread.app_thread_id = codex_thread_id
+        app_thread.status = APP_THREAD_ACTIVE
+        app_thread.last_error = None
+    elif command.status in {AgentCommandStatus.FAILED, AgentCommandStatus.CANCELLED, AgentCommandStatus.EXPIRED}:
+        app_thread.status = APP_THREAD_ERROR
+        app_thread.last_error = command.last_error or f"SESSION_OPEN ended with {command.status}"
+    app_thread.updated_at = utc_now()
     session.add(app_thread)
     session.commit()
     session.refresh(app_thread)
@@ -548,6 +654,14 @@ def to_app_thread_read(session: Session, app_thread: AppThread) -> AppThreadRead
         id=app_thread.id,
         project_id=app_thread.project_id,
         title=app_thread.title,
+        device_id=app_thread.device_id,
+        workspace_id=app_thread.workspace_id,
+        agent_session_id=app_thread.agent_session_id,
+        generation=app_thread.generation,
+        sandbox=app_thread.sandbox,
+        approval_policy=app_thread.approval_policy,
+        network_access=app_thread.network_access,
+        command_id=app_thread.command_id,
         bridge_thread_id=app_thread.bridge_thread_id,
         app_thread_id=app_thread.app_thread_id,
         status=app_thread.status,

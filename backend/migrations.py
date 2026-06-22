@@ -241,6 +241,7 @@ def create_agent_commands_table(engine: Engine) -> None:
                     aggregate_id TEXT,
                     idempotency_key TEXT NOT NULL,
                     payload_json TEXT NOT NULL DEFAULT '{}',
+                    result_payload_json TEXT,
                     status TEXT NOT NULL DEFAULT 'PENDING',
                     lease_token TEXT,
                     lease_expires_at TIMESTAMP,
@@ -294,6 +295,10 @@ def add_agent_command_claim_request_id(engine: Engine) -> None:
         if "claim_request_id" not in existing:
             connection.execute(
                 text("ALTER TABLE agent_commands ADD COLUMN claim_request_id TEXT")
+            )
+        if "result_payload_json" not in existing:
+            connection.execute(
+                text("ALTER TABLE agent_commands ADD COLUMN result_payload_json TEXT")
             )
         connection.execute(
             text(
@@ -377,6 +382,39 @@ def add_task_run_binding_columns(engine: Engine) -> None:
             )
 
 
+def add_app_thread_agent_session_columns(engine: Engine) -> None:
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(app_threads)")
+        }
+        if not existing:
+            return
+        columns = {
+            "device_id": "TEXT",
+            "workspace_id": "INTEGER",
+            "agent_session_id": "TEXT",
+            "generation": "INTEGER DEFAULT 1",
+            "sandbox": "TEXT",
+            "approval_policy": "TEXT",
+            "network_access": "BOOLEAN DEFAULT 0",
+            "command_id": "TEXT",
+        }
+        for column_name, column_type in columns.items():
+            if column_name not in existing:
+                connection.execute(
+                    text(f"ALTER TABLE app_threads ADD COLUMN {column_name} {column_type}")
+                )
+            connection.execute(
+                text(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS ix_app_threads_{column_name}
+                    ON app_threads ({column_name})
+                    """
+                )
+            )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -417,6 +455,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0008",
         name="task_run_bindings",
         apply=add_task_run_binding_columns,
+    ),
+    Migration(
+        version="0009",
+        name="app_thread_agent_session_bindings",
+        apply=add_app_thread_agent_session_columns,
     ),
 )
 

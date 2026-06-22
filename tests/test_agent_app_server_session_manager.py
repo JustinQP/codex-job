@@ -6,6 +6,7 @@ from typing import Any
 
 from agent.app_server.event_parser import extract_assistant_text, summarize_events
 from agent.app_server.session_manager import AgentAppSessionManager
+from agent.session_handlers import SessionOpenHandler
 from agent.workspace_registry import WorkspaceRegistry
 
 
@@ -86,6 +87,65 @@ def test_agent_event_parser_entrypoint_matches_poc_behavior() -> None:
 
     assert extract_assistant_text(events) == "hello"
     assert summarize_events(events)["assistant_text_preview"] == "hello"
+
+
+def test_session_open_handler_returns_agent_session_payload(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    handler = SessionOpenHandler(manager)
+
+    result = handler.handle(
+        {
+            "id": "cmd-1",
+            "command_type": "SESSION_OPEN",
+            "payload_json": json.dumps(
+                {
+                    "workspace_key": "repo-a",
+                    "title": "Chat",
+                    "sandbox": "workspace-write",
+                    "approval_policy": "never",
+                    "network_access": False,
+                }
+            ),
+        }
+    )
+
+    assert result.success is True
+    assert result.result_payload is not None
+    assert result.result_payload["agent_session_id"]
+    assert result.result_payload["codex_thread_id"] == "codex-thread-1"
+    assert FakeJsonlRpcClient.instances[0].requests[1]["params"]["cwd"] == str(repo_a.resolve())
+
+
+def test_session_open_handler_rejects_cwd_in_payload(tmp_path: Path) -> None:
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+
+    result = SessionOpenHandler(manager).handle(
+        {
+            "id": "cmd-1",
+            "command_type": "SESSION_OPEN",
+            "payload_json": json.dumps({"workspace_key": "repo-a", "cwd": str(repo_a)}),
+        }
+    )
+
+    assert result.success is False
+    assert result.message == "session open payload must not specify cwd"
 
 
 def _registry(tmp_path: Path, repo_a: Path, repo_b: Path) -> Path:

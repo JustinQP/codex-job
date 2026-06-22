@@ -306,6 +306,7 @@ def complete_command(
     lease_token: str,
     status: AgentCommandStatus,
     error_message: str | None = None,
+    result_payload: Mapping[str, Any] | None = None,
 ) -> AgentCommand:
     if status not in TERMINAL_STATUSES:
         raise AgentCommandServiceError(
@@ -324,6 +325,7 @@ def complete_command(
         command,
         status,
         last_error=error_message,
+        result_payload=result_payload,
     )
 
 
@@ -342,6 +344,7 @@ def transition_command(
     lease_token: str | None = None,
     lease_expires_at: datetime | None = None,
     last_error: str | None = None,
+    result_payload: Mapping[str, Any] | None = None,
 ) -> AgentCommand:
     if command.status in TERMINAL_STATUSES and command.status == target_status:
         return command
@@ -368,6 +371,13 @@ def transition_command(
         command.completed_at = now
         command.lease_token = None
         command.lease_expires_at = None
+        if result_payload is not None:
+            command.result_payload_json = json.dumps(
+                result_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
     if last_error is not None:
         command.last_error = last_error
 

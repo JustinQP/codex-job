@@ -281,6 +281,7 @@ class AgentCommandRead(BaseModel):
     aggregate_id: Optional[str]
     idempotency_key: str
     payload_json: str
+    result_payload_json: Optional[str]
     status: AgentCommandStatus
     lease_token: Optional[str]
     lease_expires_at: Optional[datetime]
@@ -307,6 +308,7 @@ class AgentCommandLeaseRequest(BaseModel):
 class AgentCommandCompleteRequest(AgentCommandLeaseRequest):
     status: AgentCommandStatus
     error_message: Optional[str] = None
+    result_payload: Optional[dict] = None
 
 
 class AgentCommandEventUploadItem(BaseModel):
@@ -383,6 +385,11 @@ class RunArtifactUploadRead(BaseModel):
 class AppThreadCreate(BaseModel):
     project_id: int
     title: Optional[str] = None
+    workspace_id: Optional[int] = None
+    sandbox: Optional[str] = None
+    approval_policy: Optional[str] = None
+    network_access: bool = False
+    client_request_id: Optional[str] = None
 
 
 class AppThreadUpdate(BaseModel):
@@ -393,6 +400,14 @@ class AppThreadRead(BaseModel):
     id: int
     project_id: int
     title: str
+    device_id: Optional[str] = None
+    workspace_id: Optional[int] = None
+    agent_session_id: Optional[str] = None
+    generation: int = 1
+    sandbox: Optional[str] = None
+    approval_policy: Optional[str] = None
+    network_access: bool = False
+    command_id: Optional[str] = None
     bridge_thread_id: Optional[str]
     app_thread_id: Optional[str]
     status: str

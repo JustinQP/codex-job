@@ -32,6 +32,7 @@ class AgentCommandLoop:
         workspace_registry: WorkspaceRegistry | None = None,
         handlers: CommandHandlerRegistry | None = None,
         process_registry: ProcessRegistry | None = None,
+        app_session_manager=None,
         poll_interval_seconds: float = 2.0,
         max_retries: int = 3,
     ) -> None:
@@ -45,6 +46,7 @@ class AgentCommandLoop:
             client=client,
             device_id=identity.device_id,
             process_registry=self.process_registry,
+            app_session_manager=app_session_manager,
         )
         self.poll_interval_seconds = poll_interval_seconds
         self.max_retries = max_retries
@@ -124,6 +126,7 @@ class AgentCommandLoop:
                 lease_token=current.lease_token,
                 status=AgentCommandStatus.SUCCESS if result.success else AgentCommandStatus.FAILED,
                 error_message=None if result.success else result.message,
+                result_payload=result.result_payload,
             ),
         )
         self.local_state.clear_current_command()

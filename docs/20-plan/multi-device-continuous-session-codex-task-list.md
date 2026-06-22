@@ -132,7 +132,7 @@ Codex 执行本清单时必须遵守：
 ### E. 多设备连续 Session
 
 - [x] E01 将 App Server POC 整理为正式 Agent 模块
-- [ ] E02 通过命令通道创建 Session
+- [x] E02 通过命令通道创建 Session
 - [ ] E03 通过命令通道执行 Turn
 - [ ] E04 保证同一 Session 复用同一 Codex thread
 - [ ] E05 新增 TurnEvent 持久化和去重
@@ -1940,7 +1940,7 @@ B05、C04、A01。
 
 ---
 
-### [ ] E02 通过命令通道创建 Session
+### [x] E02 通过命令通道创建 Session
 
 **目标**
 
@@ -1976,6 +1976,39 @@ command_id
 - Device A Workspace 的 Session 只由 Device A 创建。
 - Session cwd 与 Workspace Registry 一致。
 - Device B 无法操作 Device A 的 Session。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/routers/agent.py`
+  - `backend/services/agent_command_service.py`
+  - `backend/services/app_thread_service.py`
+  - `agent/command_handlers.py`
+  - `agent/command_loop.py`
+  - `agent/session_handlers.py`
+  - `tests/test_db_migrations.py`
+  - `tests/test_app_threads_api.py`
+  - `tests/test_agent_app_server_session_manager.py`
+  - `tests/test_agent_api_client.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0009 app_thread_agent_session_bindings`，为 `app_threads` 增加 `device_id`、`workspace_id`、`agent_session_id`、`generation`、`sandbox`、`approval_policy`、`network_access`、`command_id`；为 `agent_commands` 增加 `result_payload_json`
+- 控制端：`AGENT_COMMAND_MODE=true` 时创建 AppThread 生成 `SESSION_OPEN` AgentCommand，命令绑定 Workspace 所属 Device，payload 只包含 workspace/session 标识和策略，不包含任意 cwd
+- Agent：新增 `SessionOpenHandler`，通过 E01 `AgentAppSessionManager` 按 `workspace_key` 启动 App Server session，并在 complete 时回传 `agent_session_id` 和 `codex_thread_id`
+- 回写：`/agent/commands/{command_id}/complete` 支持 `result_payload`；SESSION_OPEN 成功后控制端将 AppThread 更新为 ACTIVE 并保存 agent session/thread id
+- 兼容：`AGENT_COMMAND_MODE=false` 时旧 Bridge 创建 Session 路径保持不变
+- 自动化测试：
+  - `pytest -q tests/test_db_migrations.py tests/test_app_threads_api.py tests/test_agent_app_server_session_manager.py tests/test_agent_api_client.py tests/test_agent_command_loop.py`：通过，35 passed
+  - `pytest -q tests/test_app_thread_service.py tests/test_app_turn_executor.py tests/test_api_contract.py`：通过，42 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，271 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：新增字段均为可空或有默认值；旧 AppThread 历史和旧 Bridge 模式继续可读可用
+- 风险与未完成项：本任务只完成 Session 创建命令通道，Turn 执行仍由 E03 接入
 
 ---
 

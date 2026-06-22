@@ -11,7 +11,9 @@ import backend.main as main_module
 import backend.routers.ui as ui_router
 from backend.db import get_session
 from backend.main import app
-from backend.models import AppThread, AppTurn, Project, utc_now
+from backend.models import AgentCommandStatus, AppThread, AppTurn, Project, utc_now
+from backend.services import agent_command_service
+from tests.test_runs_api import add_device, add_workspace
 from backend.services.app_server_bridge_client import AppServerBridgeError
 
 
@@ -183,6 +185,90 @@ def test_app_threads_crud_turns_final_and_events(monkeypatch) -> None:
         assert closed.status_code == 200
         assert closed.json()["status"] == "CLOSED"
         assert fake.deleted == ["bridge-1"]
+
+
+def test_create_app_thread_in_agent_mode_creates_session_open_command(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    for client, session, fake in make_client(monkeypatch):
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+
+        created = client.post(
+            "/app-threads",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "title": "Agent chat",
+                "sandbox": "workspace-write",
+                "approval_policy": "never",
+                "client_request_id": "session-open-api-1",
+            },
+        )
+
+        assert created.status_code == 200
+        body = created.json()
+        assert body["status"] == "OPENING"
+        assert body["device_id"] == "device-a"
+        assert body["workspace_id"] == workspace.id
+        assert body["sandbox"] == "workspace-write"
+        assert body["approval_policy"] == "never"
+        assert body["bridge_thread_id"] is None
+        assert fake.created_cwds == []
+        commands = agent_command_service.list_commands_for_device(session, "device-a")
+        assert len(commands) == 1
+        assert commands[0].command_type == "SESSION_OPEN"
+        assert body["command_id"] == commands[0].id
+        assert "cwd" not in commands[0].payload_json
+
+
+def test_session_open_complete_updates_app_thread(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/app-threads",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "title": "Agent chat",
+            },
+        ).json()
+        command_id = created["command_id"]
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-session-open"},
+        ).json()
+        ack = client.post(
+            f"/agent/commands/{command_id}/ack",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "lease_token": claim["lease_token"]},
+        )
+        complete = client.post(
+            f"/agent/commands/{command_id}/complete",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={
+                "device_id": "device-a",
+                "lease_token": claim["lease_token"],
+                "status": AgentCommandStatus.SUCCESS.value,
+                "result_payload": {
+                    "agent_session_id": "agent-session-1",
+                    "codex_thread_id": "codex-thread-1",
+                },
+            },
+        )
+        detail = client.get(f"/app-threads/{created['id']}")
+
+        assert ack.status_code == 200
+        assert complete.status_code == 200
+        assert detail.status_code == 200
+        assert detail.json()["status"] == "ACTIVE"
+        assert detail.json()["agent_session_id"] == "agent-session-1"
+        assert detail.json()["app_thread_id"] == "codex-thread-1"
 
 
 def test_app_threads_api_token_protection(monkeypatch) -> None:
