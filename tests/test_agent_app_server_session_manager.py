@@ -80,6 +80,22 @@ class FakeJsonlRpcClient:
         self.closed = True
 
 
+class HangingJsonlRpcClient(FakeJsonlRpcClient):
+    def request(self, request_id: str, method: str, params: dict[str, Any] | None = None) -> None:
+        self.requests.append({"id": request_id, "method": method, "params": params or {}})
+        if method == "turn/start":
+            self.turn_count += 1
+            self.turn_id = f"{self.thread_id}-turn-{self.turn_count}"
+            self._messages.append({"id": request_id, "result": {"turn": {"id": self.turn_id}}})
+
+    def wait_for_match(self, predicate, timeout: float, start_index: int = 0):
+        del timeout
+        for index, message in enumerate(self._messages[start_index:], start=start_index):
+            if predicate(message):
+                return index, message
+        raise TimeoutError("timed out waiting for app-server JSONL message")
+
+
 class _NoopCondition:
     def __init__(self, client: FakeJsonlRpcClient) -> None:
         self.client = client
@@ -260,6 +276,59 @@ def test_session_manager_runs_turn_on_existing_session_and_uploads_events(tmp_pa
         "final",
     ]
     assert all(flush["device_id"] == "device-a" for flush in uploader.flushed)
+
+
+def test_session_manager_closes_session_when_turn_is_cancelled(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=HangingJsonlRpcClient,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+
+    try:
+        manager.run_turn(
+            agent_session_id=session.agent_session_id,
+            message="hello",
+            timeout=5,
+            should_cancel=lambda: True,
+        )
+    except RuntimeError as exc:
+        assert "turn cancelled by server" in str(exc)
+    else:
+        raise AssertionError("expected cancelled turn to fail")
+
+    assert manager.get_session(session.agent_session_id) is None
+    assert FakeJsonlRpcClient.instances[0].closed is True
+
+
+def test_session_manager_closes_session_when_turn_times_out(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=HangingJsonlRpcClient,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+
+    try:
+        manager.run_turn(agent_session_id=session.agent_session_id, message="hello", timeout=0.1)
+    except TimeoutError as exc:
+        assert "timed out waiting for turn/completed" in str(exc)
+    else:
+        raise AssertionError("expected timed out turn to fail")
+
+    assert manager.get_session(session.agent_session_id) is None
+    assert FakeJsonlRpcClient.instances[0].closed is True
 
 
 def test_turn_start_handler_returns_final_payload(tmp_path: Path) -> None:

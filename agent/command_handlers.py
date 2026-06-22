@@ -66,7 +66,7 @@ class CommandHandlerRegistry:
             from agent.session_handlers import SessionOpenHandler, TurnStartHandler
 
             self._handlers["SESSION_OPEN"] = SessionOpenHandler(app_session_manager)
-            self._handlers["TURN_START"] = TurnStartHandler(app_session_manager, event_uploader)
+            self._handlers["TURN_START"] = TurnStartHandler(app_session_manager, event_uploader, client)
         self._fallback = UnsupportedCommandHandler()
 
     def handle(self, command: dict[str, Any]) -> CommandResult:

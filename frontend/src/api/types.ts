@@ -106,7 +106,7 @@ export type AppThread = {
   title: string;
   bridge_thread_id?: string | null;
   app_thread_id?: string | null;
-  status: string;
+  status: "CREATED" | "OPENING" | "ACTIVE" | "RECOVER_REQUIRED" | "ERROR" | "CLOSED" | string;
   last_error?: string | null;
   latest_assistant_final?: string | null;
   turn_count: number;

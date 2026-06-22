@@ -94,9 +94,13 @@ export function SessionPage({ showToast }: PageProps) {
     ? "请先新建或选择会话"
     : selectedThread.status === "CLOSED"
       ? "当前会话已关闭，请重开后继续"
-      : runningTurn
-        ? "正在等待回复，可以继续编辑，但暂时不能发送"
-        : "";
+      : selectedThread.status === "RECOVER_REQUIRED"
+        ? "当前会话需要重开后继续"
+        : selectedThread.status !== "ACTIVE"
+          ? "当前会话未就绪，暂时不能发送"
+          : runningTurn
+            ? "正在等待回复，可以继续编辑，但暂时不能发送"
+            : "";
 
   const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const target = messageListRef.current;

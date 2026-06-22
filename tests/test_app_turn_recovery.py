@@ -86,9 +86,9 @@ def test_recover_stale_app_turns_marks_pending_and_running_failed() -> None:
         assert running.status == "FAILED"
         assert running.started_at is not None
         assert running.error_message == app_thread_service.STALE_TURN_ERROR
-        assert pending_thread.status == "ERROR"
+        assert pending_thread.status == "RECOVER_REQUIRED"
         assert pending_thread.last_error == app_thread_service.STALE_TURN_ERROR
-        assert running_thread.status == "ERROR"
+        assert running_thread.status == "RECOVER_REQUIRED"
         assert running_thread.last_error == app_thread_service.STALE_TURN_ERROR
 
 

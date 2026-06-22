@@ -138,7 +138,7 @@ Codex 执行本清单时必须遵守：
 - [ ] E05 新增 TurnEvent 持久化和去重
 - [ ] E06 改造 SSE 为可重放事件流
 - [x] E07 实现原子 Turn 并发保护
-- [ ] E08 实现 Session/Turn 取消和超时回收
+- [x] E08 实现 Session/Turn 取消和超时回收
 - [ ] E09 实现 Session reopen 和 generation
 - [ ] E10 实现 Workspace 写入锁
 - [ ] E11 手机会话页显示设备、目录和执行模式
@@ -2294,7 +2294,7 @@ E03、A03。
 
 ---
 
-### [ ] E08 实现 Session/Turn 取消和超时回收
+### [x] E08 实现 Session/Turn 取消和超时回收
 
 **目标**
 
@@ -2321,6 +2321,40 @@ E03、E04、C06。
 - 取消后底层 process 不继续输出或修改目录。
 - 该 Session 在 reopen 前不能发送新 Turn。
 - 取消/完成竞争有确定终态。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `backend/services/app_thread_service.py`
+  - `agent/app_server/session_manager.py`
+  - `agent/session_handlers.py`
+  - `agent/command_handlers.py`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/components/session/SessionPage.tsx`
+  - `frontend/src/components/session/ThreadSwitcherSheet.tsx`
+  - `docs/state-machines.md`
+  - `tests/test_app_thread_service.py`
+  - `tests/test_app_threads_api.py`
+  - `tests/test_app_turn_recovery.py`
+  - `tests/test_agent_app_server_session_manager.py`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 协议验证结论：当前代码库未实现可验证的 Codex App Server `turn/cancel` 协议路径；因此 E08 按安全降级策略处理取消/超时，即关闭对应 Agent App Server session/process，并将 AppThread 标记为 `RECOVER_REQUIRED`
+- 后端：新增 `RECOVER_REQUIRED` AppThread 状态；取消 active Turn 时同步取消绑定 AgentCommand，Turn 进入 `CANCELLED`，Session 进入 `RECOVER_REQUIRED`；stale recovery 将残留 active Turn 标记 `FAILED`，Session 进入 `RECOVER_REQUIRED`；非 `ACTIVE` Session 发送新 Turn 返回 409 `app_thread_not_active`
+- Agent：`TURN_START` 执行期间通过 renew/reconcile 检测服务端取消；发现取消或等待 turn 超时时关闭对应 App Server session，避免未知状态进程继续输出或修改目录
+- 前端：会话状态类型、筛选项和 Composer 禁用原因支持 `RECOVER_REQUIRED`
+- 文档：更新 `docs/state-machines.md`，记录 `RECOVER_REQUIRED` 和当前取消策略
+- 自动化测试：
+  - `pytest -q tests/test_app_thread_service.py tests/test_app_threads_api.py tests/test_app_turn_recovery.py tests/test_agent_app_server_session_manager.py tests/test_ui.py -o cache_dir=data/pytest-cache-e08-target-3 -o addopts=--basetemp=data/pytest-tmp-e08-target-3`：通过，89 passed
+  - `pytest -q tests/test_agent_command_loop.py tests/test_agent_command_api.py tests/test_agent_api_client.py tests/test_agent_reconciliation.py tests/test_app_turn_executor.py tests/test_app_thread_service.py tests/test_app_threads_api.py tests/test_agent_app_server_session_manager.py tests/test_ui.py -o cache_dir=data/pytest-cache-e08-related -o addopts=--basetemp=data/pytest-tmp-e08-related`：通过，113 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-e08-full -o addopts=--basetemp=data/pytest-tmp-e08-full`：通过，296 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及；通过单元/API 测试覆盖取消后阻断继续发送、取消/迟到完成竞争保持 CANCELLED、取消/超时关闭 Agent App Server session
+- 回归影响：取消和 stale recovery 后 AppThread 不再恢复为 `ACTIVE` 或普通 `ERROR`，而是要求 reopen；旧 Bridge 同步发送仍通过 Bridge 超时失败路径进入 `ERROR`
+- 风险与未完成项：E08 不新增协议级 cancel；若未来 Codex App Server 暴露可靠 `turn/cancel`，可在关闭进程前优先调用并等待确认
 
 ---
 

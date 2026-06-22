@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlmodel.pool import StaticPool
 
-from backend.models import AppThread, AppTurn, Project, utc_now
+from backend.models import AgentCommand, AppThread, AppTurn, Project, utc_now
 from backend.schemas import AppThreadCreate, AppThreadUpdate, AppTurnCreate
 from backend.services.app_server_bridge_client import AppServerBridgeError
 from backend.services import app_thread_service
@@ -984,8 +984,8 @@ def test_cancel_app_turn_pending_and_running_marks_cancelled(monkeypatch) -> Non
             assert cancelled.status == "CANCELLED"
             assert cancelled.error_message == "cancelled by user"
             assert cancelled.completed_at is not None
-            assert app_thread.status == "ACTIVE"
-            assert app_thread.last_error is None
+            assert app_thread.status == "RECOVER_REQUIRED"
+            assert app_thread.last_error == "cancelled by user; reopen required before next turn"
 
 
 def test_cancel_app_turn_terminal_status_is_idempotent() -> None:
@@ -1014,6 +1014,92 @@ def test_cancel_app_turn_terminal_status_is_idempotent() -> None:
 
             assert returned.status == terminal_status
             assert returned.error_message == "existing"
+
+
+def test_cancel_agent_app_turn_cancels_command_and_blocks_next_turn(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    for session in make_session():
+        from tests.test_runs_api import add_device, add_workspace
+
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Agent chat",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="agent-session-1",
+            app_thread_id="codex-thread-1",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_turn = app_thread_service.create_async_app_turn(
+            session,
+            app_thread.id,
+            AppTurnCreate(message="hello"),
+        )
+
+        cancelled = app_thread_service.cancel_app_turn(session, app_turn.id)
+        session.refresh(app_thread)
+
+        assert cancelled.status == "CANCELLED"
+        assert app_turn.command_id is not None
+        command = session.get(AgentCommand, app_turn.command_id)
+        assert command is not None
+        assert command.status.value == "CANCELLED"
+        assert app_thread.status == "RECOVER_REQUIRED"
+        with pytest.raises(HTTPException) as exc:
+            app_thread_service.create_async_app_turn(
+                session,
+                app_thread.id,
+                AppTurnCreate(message="after cancel"),
+            )
+        assert exc.value.status_code == 409
+        assert exc.value.detail["code"] == "app_thread_not_active"
+        assert exc.value.detail["status"] == "RECOVER_REQUIRED"
+
+
+def test_cancelled_agent_turn_ignores_late_success_complete(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    for session in make_session():
+        from tests.test_runs_api import add_device, add_workspace
+
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Agent chat",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="agent-session-1",
+            app_thread_id="codex-thread-1",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_turn = app_thread_service.create_async_app_turn(session, app_thread.id, AppTurnCreate(message="hello"))
+        app_thread_service.cancel_app_turn(session, app_turn.id)
+
+        completed = app_thread_service.complete_agent_turn_start(
+            session,
+            command_id=app_turn.command_id,
+            result_payload={"assistant_final": "late success", "codex_turn_id": "late-turn"},
+        )
+        session.refresh(app_thread)
+
+        assert completed is not None
+        assert completed.status == "CANCELLED"
+        assert completed.assistant_final is None
+        assert app_thread.status == "RECOVER_REQUIRED"
 
 
 def test_cancel_app_turn_not_found() -> None:

@@ -323,6 +323,7 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     switcher = (root / "components/session/ThreadSwitcherSheet.tsx").read_text(encoding="utf-8")
     assert "AppThread 状态筛选" in switcher
     assert '"ACTIVE"' in switcher
+    assert '"RECOVER_REQUIRED"' in switcher
     assert '"ERROR"' in switcher
     assert '"CLOSED"' in switcher
     assert "includeArchived" in switcher

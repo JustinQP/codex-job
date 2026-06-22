@@ -75,7 +75,7 @@ export function ThreadSwitcherSheet({
           <Button onClick={onRefresh} variant="secondary">刷新</Button>
         </div>
         <div className="segmented-control" aria-label="AppThread 状态筛选">
-          {["", "ACTIVE", "ERROR", "CLOSED"].map((status) => (
+          {["", "ACTIVE", "RECOVER_REQUIRED", "ERROR", "CLOSED"].map((status) => (
             <button
               className={statusFilter === status ? "active" : ""}
               key={status || "all"}

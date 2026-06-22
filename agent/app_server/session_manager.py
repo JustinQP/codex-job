@@ -159,6 +159,7 @@ class AgentAppSessionManager:
         uploader=None,
         device_id: str | None = None,
         lease_token: str | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> AgentAppTurnResult:
         session = self.get_session(agent_session_id)
         if session is None:
@@ -219,6 +220,7 @@ class AgentAppSessionManager:
                 device_id=device_id,
                 lease_token=lease_token,
                 first_sequence=sequence,
+                should_cancel=should_cancel,
             )
         except Exception:
             session.active_turn_id = None
@@ -273,16 +275,26 @@ class AgentAppSessionManager:
         device_id: str | None,
         lease_token: str | None,
         first_sequence: int,
+        should_cancel: Callable[[], bool] | None,
     ) -> int:
         deadline = time.monotonic() + timeout
         next_index = start_index
         sequence = first_sequence
         while time.monotonic() < deadline:
-            message_index, event = session.client.wait_for_match(
-                lambda item: _event_turn_id(item) == codex_turn_id or item.get("id") == request_id,
-                timeout=max(0.1, deadline - time.monotonic()),
-                start_index=next_index,
-            )
+            if should_cancel is not None and should_cancel():
+                self.close_session(session.agent_session_id)
+                raise RuntimeError("turn cancelled by server; app session closed")
+            try:
+                message_index, event = session.client.wait_for_match(
+                    lambda item: _event_turn_id(item) == codex_turn_id or item.get("id") == request_id,
+                    timeout=min(1.0, max(0.1, deadline - time.monotonic())),
+                    start_index=next_index,
+                )
+            except TimeoutError as exc:
+                if time.monotonic() >= deadline:
+                    self.close_session(session.agent_session_id)
+                    raise TimeoutError(f"timed out waiting for turn/completed: {codex_turn_id}") from exc
+                continue
             next_index = message_index + 1
             if _event_turn_id(event) != codex_turn_id and event.get("id") != request_id:
                 continue
@@ -301,6 +313,7 @@ class AgentAppSessionManager:
                 sequence += 1
             if _is_turn_completed(event, codex_turn_id):
                 return message_index + 1
+        self.close_session(session.agent_session_id)
         raise TimeoutError(f"timed out waiting for turn/completed: {codex_turn_id}")
 
     def close_session(self, agent_session_id: str) -> bool:

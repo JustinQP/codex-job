@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agent.api_client import AgentApiClient, AgentApiError
 from agent.app_server.session_manager import AgentAppSessionManager
 from agent.command_handlers import CommandResult
+from backend.models import AgentCommandStatus
+from backend.schemas import AgentCommandLeaseRequest, AgentReconcileRequest
 
 
 class SessionOpenHandler:
@@ -43,9 +46,15 @@ class SessionOpenHandler:
 
 
 class TurnStartHandler:
-    def __init__(self, session_manager: AgentAppSessionManager, event_uploader=None) -> None:
+    def __init__(
+        self,
+        session_manager: AgentAppSessionManager,
+        event_uploader=None,
+        client: AgentApiClient | None = None,
+    ) -> None:
         self.session_manager = session_manager
         self.event_uploader = event_uploader
+        self.client = client
 
     def handle(self, command: dict[str, Any]) -> CommandResult:
         try:
@@ -77,6 +86,7 @@ class TurnStartHandler:
                 uploader=self.event_uploader,
                 device_id=device_id,
                 lease_token=lease_token,
+                should_cancel=self._should_cancel(command_id, device_id, lease_token),
             )
         except Exception as exc:  # noqa: BLE001
             return CommandResult(False, f"failed to run app turn: {exc}")
@@ -93,6 +103,29 @@ class TurnStartHandler:
                 "turn_count": result.turn_count,
             },
         )
+
+    def _should_cancel(self, command_id: str | None, device_id: str | None, lease_token: str | None):
+        if self.client is None or not command_id or not device_id or not lease_token:
+            return None
+
+        def should_cancel() -> bool:
+            try:
+                lease = AgentCommandLeaseRequest(device_id=device_id, lease_token=lease_token)
+                self.client.renew_command(command_id, lease)
+                reconciliation = self.client.reconcile(
+                    AgentReconcileRequest(
+                        device_id=device_id,
+                        command_id=command_id,
+                        process_status="RUNNING",
+                    )
+                )
+            except AgentApiError:
+                return False
+            if reconciliation.get("server_status") == AgentCommandStatus.CANCELLED.value:
+                return True
+            return reconciliation.get("action") == "STOP"
+
+        return should_cancel
 
 
 def _string_or_none(value: Any) -> str | None:

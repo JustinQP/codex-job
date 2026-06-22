@@ -697,6 +697,12 @@ def test_cancel_app_turn_api_success(monkeypatch) -> None:
         body = response.json()
         assert body["status"] == "CANCELLED"
         assert body["error_message"] == "cancelled by user"
+        detail = client.get(f"/app-threads/{created['id']}").json()
+        assert detail["status"] == "RECOVER_REQUIRED"
+        assert detail["last_error"] == "cancelled by user; reopen required before next turn"
+        blocked = client.post(f"/app-threads/{created['id']}/turns/async", json={"message": "after cancel"})
+        assert blocked.status_code == 409
+        assert blocked.json()["detail"]["code"] == "app_thread_not_active"
 
 
 def test_async_app_turn_conflict_api(monkeypatch) -> None:
@@ -786,7 +792,7 @@ def test_recover_stale_app_turns_api_is_idempotent(monkeypatch) -> None:
         assert second.status_code == 200
         assert second.json() == {"recovered_count": 0, "recovered_turn_ids": []}
         assert app_turn.status == "FAILED"
-        assert app_thread.status == "ERROR"
+        assert app_thread.status == "RECOVER_REQUIRED"
 
 
 def test_app_thread_and_turn_filters_and_cleanup_api(monkeypatch) -> None:

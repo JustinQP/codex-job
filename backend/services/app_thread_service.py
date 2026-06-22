@@ -31,6 +31,7 @@ from backend.services import turn_event_service
 APP_THREAD_CREATED = "CREATED"
 APP_THREAD_OPENING = "OPENING"
 APP_THREAD_ACTIVE = "ACTIVE"
+APP_THREAD_RECOVER_REQUIRED = "RECOVER_REQUIRED"
 APP_THREAD_ERROR = "ERROR"
 APP_THREAD_CLOSED = "CLOSED"
 
@@ -47,6 +48,7 @@ APP_THREAD_STATUSES = {
     APP_THREAD_CREATED,
     APP_THREAD_OPENING,
     APP_THREAD_ACTIVE,
+    APP_THREAD_RECOVER_REQUIRED,
     APP_THREAD_ERROR,
     APP_THREAD_CLOSED,
 }
@@ -216,6 +218,9 @@ def complete_agent_turn_start(
     now = utc_now()
     payload = result_payload or {}
 
+    if app_turn.status in {APP_TURN_CANCELLED, APP_TURN_FAILED, APP_TURN_SUCCESS}:
+        return app_turn
+
     if command.status == AgentCommandStatus.SUCCESS:
         app_turn.status = APP_TURN_SUCCESS
         app_turn.error_message = None
@@ -240,8 +245,12 @@ def complete_agent_turn_start(
             app_turn.started_at = command.claimed_at
         app_turn.completed_at = now
         if app_thread is not None:
-            app_thread.status = APP_THREAD_ERROR if app_turn.status == APP_TURN_FAILED else APP_THREAD_ACTIVE
-            app_thread.last_error = app_turn.error_message if app_turn.status == APP_TURN_FAILED else None
+            if app_turn.status in {APP_TURN_FAILED, APP_TURN_CANCELLED}:
+                app_thread.status = APP_THREAD_RECOVER_REQUIRED
+                app_thread.last_error = app_turn.error_message
+            else:
+                app_thread.status = APP_THREAD_ACTIVE
+                app_thread.last_error = None
             app_thread.updated_at = now
             session.add(app_thread)
 
@@ -300,7 +309,11 @@ def list_app_threads(
 
 
 def cleanup_app_threads(session: Session, status_filter: str, limit: int = 50) -> dict[str, Any]:
-    normalized_status = _normalize_status(status_filter, {APP_THREAD_CLOSED, APP_THREAD_ERROR}, "cleanup status")
+    normalized_status = _normalize_status(
+        status_filter,
+        {APP_THREAD_CLOSED, APP_THREAD_ERROR, APP_THREAD_RECOVER_REQUIRED},
+        "cleanup status",
+    )
     if normalized_status is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cleanup status is required")
 
@@ -440,8 +453,7 @@ def send_app_turn(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="message cannot be empty")
 
     app_thread = get_app_thread_or_404(session, app_thread_id)
-    if app_thread.status == APP_THREAD_CLOSED:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread is closed")
+    _ensure_app_thread_can_accept_turn(app_thread)
     if not app_thread.bridge_thread_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread has no bridge thread id")
 
@@ -491,8 +503,7 @@ def create_async_app_turn(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="message cannot be empty")
 
     app_thread = get_app_thread_or_404(session, app_thread_id)
-    if app_thread.status == APP_THREAD_CLOSED:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread is closed")
+    _ensure_app_thread_can_accept_turn(app_thread)
     if get_settings().agent_command_mode:
         return create_agent_async_app_turn(session, app_thread, message, payload)
     if not app_thread.bridge_thread_id:
@@ -521,8 +532,7 @@ def create_agent_async_app_turn(
 ) -> AppTurn:
     if app_thread.id is None:
         raise ValueError("app thread id is required")
-    if app_thread.status != APP_THREAD_ACTIVE:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="app thread is not active")
+    _ensure_app_thread_can_accept_turn(app_thread)
     if not app_thread.device_id or app_thread.workspace_id is None or not app_thread.agent_session_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="app thread is not bound to an agent session")
     workspace = session.get(Workspace, app_thread.workspace_id)
@@ -629,7 +639,7 @@ def recover_stale_app_turns(session: Session) -> dict[str, Any]:
         app_thread = session.get(AppThread, app_thread_id)
         if app_thread is None:
             continue
-        app_thread.status = APP_THREAD_ERROR
+        app_thread.status = APP_THREAD_RECOVER_REQUIRED
         app_thread.last_error = STALE_TURN_ERROR
         app_thread.updated_at = now
         session.add(app_thread)
@@ -652,20 +662,20 @@ def cancel_app_turn(session: Session, app_turn_id: int) -> AppTurn:
     if app_turn.status in {APP_TURN_SUCCESS, APP_TURN_FAILED, APP_TURN_CANCELLED}:
         return app_turn
 
-    # Local cancellation only: this marks backend state and does not guarantee
-    # interruption of an already-running Codex App Server turn.
+    if app_turn.command_id:
+        agent_command_service.request_cancel_command(session, command_id=app_turn.command_id)
+
+    now = utc_now()
     app_turn.status = APP_TURN_CANCELLED
     app_turn.error_message = "cancelled by user"
-    app_turn.completed_at = utc_now()
+    app_turn.completed_at = now
 
     app_thread = session.get(AppThread, app_turn.app_thread_id)
     if app_thread is not None:
-        latest_active_turn = _get_active_app_turn(session, app_thread.id)
-        if latest_active_turn is None or latest_active_turn.id == app_turn.id:
-            app_thread.status = APP_THREAD_ACTIVE
-            app_thread.last_error = None
-            app_thread.updated_at = app_turn.completed_at
-            session.add(app_thread)
+        app_thread.status = APP_THREAD_RECOVER_REQUIRED
+        app_thread.last_error = "cancelled by user; reopen required before next turn"
+        app_thread.updated_at = now
+        session.add(app_thread)
 
     session.add(app_turn)
     session.commit()
@@ -1018,6 +1028,20 @@ def _mark_turn_failed(
     session.add(app_thread)
     session.add(app_turn)
     session.commit()
+
+
+def _ensure_app_thread_can_accept_turn(app_thread: AppThread) -> None:
+    if app_thread.status == APP_THREAD_CLOSED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="app thread is closed")
+    if app_thread.status != APP_THREAD_ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "app_thread_not_active",
+                "message": "app thread is not active",
+                "status": app_thread.status,
+            },
+        )
 
 
 def _latest_success_turn(session: Session, app_thread_id: int) -> AppTurn | None:
