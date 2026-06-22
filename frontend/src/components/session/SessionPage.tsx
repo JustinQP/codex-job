@@ -17,11 +17,13 @@ import {
   sendAsyncAppTurn,
   streamAppTurn
 } from "../../api/appThreads";
+import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
-import type { AppThread, AppTurn, AppTurnStreamEvent, Project } from "../../api/types";
+import type { AppThread, AppTurn, AppTurnStreamEvent, Device, Project } from "../../api/types";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePolling } from "../../hooks/usePolling";
 import { UI_STATE_KEYS } from "../../state/storage";
+import { deviceDisabledReason } from "../../utils/device";
 import { errorText, isRunningStatus } from "../../utils/error";
 import { Sheet } from "../layout/Sheet";
 import type { PageProps } from "../types";
@@ -35,6 +37,7 @@ export function SessionPage({ showToast }: PageProps) {
   const [threads, setThreads] = useState<AppThread[]>([]);
   const [turns, setTurns] = useState<AppTurn[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [selectedThreadIdText, setSelectedThreadIdText] = useLocalStorage(
     UI_STATE_KEYS.selectedAppThreadId,
     ""
@@ -51,6 +54,7 @@ export function SessionPage({ showToast }: PageProps) {
     UI_STATE_KEYS.currentProjectId,
     ""
   );
+  const [currentDeviceIdText] = useLocalStorage(UI_STATE_KEYS.currentDeviceId, "");
   const [sendMode, setSendMode] = useLocalStorage(UI_STATE_KEYS.appSendMode, "async");
   const [message, setMessage] = useState("");
   const [waitingText, setWaitingText] = useState("");
@@ -65,6 +69,13 @@ export function SessionPage({ showToast }: PageProps) {
 
   const selectedThreadId = selectedThreadIdText ? Number(selectedThreadIdText) : null;
   const currentProjectId = currentProjectIdText ? Number(currentProjectIdText) : null;
+  const currentDevice = useMemo(() => {
+    return devices.find((device) => device.device_id === currentDeviceIdText)
+      || devices.find((device) => device.status === "ONLINE")
+      || devices[0]
+      || null;
+  }, [currentDeviceIdText, devices]);
+  const executionDisabledReason = devices.length ? deviceDisabledReason(currentDevice) : "";
   const includeArchived = appIncludeArchived === "true";
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
@@ -100,7 +111,10 @@ export function SessionPage({ showToast }: PageProps) {
   }, []);
 
   const loadThreads = useCallback(async () => {
-    const projectData = await listProjects();
+    const [deviceData, projectData] = await Promise.all([
+      listDevices().catch(() => [] as Device[]),
+      listProjects()
+    ]);
     const effectiveProject = currentProjectId
       ? projectData.find((project) => project.id === currentProjectId)
       : null;
@@ -134,11 +148,13 @@ export function SessionPage({ showToast }: PageProps) {
       }
     }
     setThreads(nextThreads);
+    setDevices(deviceData);
     setProjects(projectData);
   }, [
     appThreadStatusFilter,
     currentProjectId,
     currentProjectIdText,
+    currentDeviceIdText,
     includeArchived,
     selectedThreadId,
     setCurrentProjectIdText,
@@ -264,6 +280,10 @@ export function SessionPage({ showToast }: PageProps) {
   }, [handleStreamEvent, showToast]);
 
   async function handleCreateThread(projectId: number, title: string) {
+    if (executionDisabledReason) {
+      showToast(executionDisabledReason, "warning");
+      return;
+    }
     try {
       const effectiveProjectId = projectId || currentProject?.id;
       if (!effectiveProjectId) {
@@ -444,6 +464,7 @@ export function SessionPage({ showToast }: PageProps) {
       {sheet === "switch" ? (
         <Sheet onClose={() => setSheet(null)} title="切换会话">
           <ThreadSwitcherSheet
+            createDisabledReason={executionDisabledReason}
             onCreate={handleCreateThread}
             onRefresh={() => void loadAll()}
             onIncludeArchivedChange={(nextIncludeArchived) => {

@@ -6,12 +6,13 @@ import { Button } from "../common/Button";
 
 type TaskCardProps = {
   task: Task;
+  rerunDisabledReason?: string;
   onCancel: (task: Task) => void;
   onRerun: (task: Task) => void;
   onOpen: (task: Task) => void;
 };
 
-export function TaskCard({ task, onCancel, onRerun, onOpen }: TaskCardProps) {
+export function TaskCard({ task, rerunDisabledReason = "", onCancel, onRerun, onOpen }: TaskCardProps) {
   const runnerLabel = task.assigned_runner_id || task.runner_id || "自动分配";
 
   return (
@@ -34,7 +35,14 @@ export function TaskCard({ task, onCancel, onRerun, onOpen }: TaskCardProps) {
         <details className="task-more-actions">
           <summary>更多</summary>
           <div>
-            <Button onClick={() => onRerun(task)} variant="secondary">重跑</Button>
+            <Button
+              disabled={Boolean(rerunDisabledReason)}
+              onClick={() => onRerun(task)}
+              title={rerunDisabledReason}
+              variant="secondary"
+            >
+              重跑
+            </Button>
             <Button
               disabled={!["PENDING", "RUNNING"].includes(task.status)}
               onClick={() => onCancel(task)}

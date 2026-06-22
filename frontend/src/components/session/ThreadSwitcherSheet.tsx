@@ -13,6 +13,7 @@ type ThreadSwitcherSheetProps = {
   currentProjectId: number | null;
   statusFilter: string;
   includeArchived: boolean;
+  createDisabledReason?: string;
   onCreate: (projectId: number, title: string) => void;
   onIncludeArchivedChange: (includeArchived: boolean) => void;
   onSelect: (thread: AppThread) => void;
@@ -28,6 +29,7 @@ export function ThreadSwitcherSheet({
   onSelect,
   onStatusFilterChange,
   projects,
+  createDisabledReason = "",
   currentProjectId,
   selectedThreadId,
   statusFilter,
@@ -57,7 +59,13 @@ export function ThreadSwitcherSheet({
           会话标题
           <input value={title} onChange={(event) => setTitle(event.target.value)} />
         </label>
-        <Button disabled={!projectId} onClick={() => onCreate(projectId, title)} variant="primary">
+        {createDisabledReason ? <div className="inline-error">{createDisabledReason}</div> : null}
+        <Button
+          disabled={!projectId || Boolean(createDisabledReason)}
+          onClick={() => onCreate(projectId, title)}
+          title={createDisabledReason}
+          variant="primary"
+        >
           新建会话
         </Button>
       </div>

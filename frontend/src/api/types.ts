@@ -30,6 +30,36 @@ export type Runner = {
   lease_expires_at?: string | null;
 };
 
+export type Device = {
+  device_id: string;
+  display_name: string;
+  hostname: string;
+  os_name: string;
+  agent_version: string;
+  capabilities_json?: string | null;
+  status: "ONLINE" | "OFFLINE" | "DISABLED" | string;
+  last_heartbeat_at: string;
+  lease_expires_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Workspace = {
+  id: number;
+  workspace_key: string;
+  device_id: string;
+  name: string;
+  path_label: string;
+  enabled: boolean;
+  default_model?: string | null;
+  default_reasoning_effort?: string | null;
+  default_sandbox?: string | null;
+  default_approval_policy?: string | null;
+  require_clean_worktree?: boolean | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Task = {
   id: number;
   project_id: number;

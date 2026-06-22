@@ -178,6 +178,8 @@ def test_frontend_v17_api_client_and_state_exist() -> None:
     assert "export type TaskTemplate" in types
     assert "export type AppThread" in types
     assert "export type AppTurn" in types
+    assert "export type Device" in types
+    assert "export type Workspace" in types
     assert "export type BridgeHealth" in types
 
     client = (root / "api/client.ts").read_text(encoding="utf-8")
@@ -190,6 +192,12 @@ def test_frontend_v17_api_client_and_state_exist() -> None:
     assert (root / "api/appThreads.ts").exists()
     assert (root / "api/runners.ts").exists()
     assert (root / "api/projects.ts").exists()
+    assert (root / "api/devices.ts").exists()
+    assert (root / "api/workspaces.ts").exists()
+    devices_api = (root / "api/devices.ts").read_text(encoding="utf-8")
+    assert 'apiRequest<Device[]>("/devices")' in devices_api
+    workspaces_api = (root / "api/workspaces.ts").read_text(encoding="utf-8")
+    assert 'apiRequest<Workspace[]>(`/workspaces${query}`)' in workspaces_api
 
     storage = (root / "state/storage.ts").read_text(encoding="utf-8")
     assert 'API_TOKEN_KEY = "apiToken"' in storage
@@ -198,6 +206,8 @@ def test_frontend_v17_api_client_and_state_exist() -> None:
     assert 'appThreadStatusFilter: "mobile.appThreadStatusFilter"' in storage
     assert 'appIncludeArchived: "mobile.appIncludeArchived"' in storage
     assert 'currentProjectId: "mobile.currentProjectId"' in storage
+    assert 'currentDeviceId: "mobile.currentDeviceId"' in storage
+    assert 'currentWorkspaceId: "mobile.currentWorkspaceId"' in storage
     assert 'selectedAppThreadId: "mobile.selectedAppThreadId"' in storage
     assert 'appSendMode: "mobile.appSendMode"' in storage
 
@@ -209,29 +219,45 @@ def test_frontend_v17_api_client_and_state_exist() -> None:
 def test_frontend_v17_pages_are_migrated_to_react() -> None:
     root = Path("frontend/src")
     projects = (root / "components/projects/ProjectsPage.tsx").read_text(encoding="utf-8")
+    assert "listDevices()" in projects
+    assert "listWorkspaces(effectiveDevice.device_id)" in projects
     assert "listProjects()" in projects
     assert "listAppThreads({ limit: 5, projectId: effectiveProject.id })" in projects
     assert "listTasks({ limit: 5, projectId: effectiveProject.id })" in projects
     assert "UI_STATE_KEYS.currentProjectId" in projects
+    assert "UI_STATE_KEYS.currentDeviceId" in projects
+    assert "UI_STATE_KEYS.currentWorkspaceId" in projects
+    assert 'setCurrentWorkspaceIdText("")' in projects
+    assert 'setSelectedThreadIdText("")' in projects
     assert "setActiveTab(\"app\")" in projects
+    assert "设备" in projects
+    assert "Workspace" in projects
     assert "当前工作空间" in projects
     assert "Bridge cwd" in projects
 
     runs = (root / "components/runs/RunsPage.tsx").read_text(encoding="utf-8")
+    assert "listDevices()" in runs
+    assert "deviceDisabledReason(currentDevice)" in runs
     assert "listTasks({ limit: 20, projectId: effectiveProjectId })" in runs
     assert "UI_STATE_KEYS.currentProjectId" in runs
+    assert "UI_STATE_KEYS.currentDeviceId" in runs
     assert "cancelTask(run.id)" in runs
     assert "rerunTask(run.id)" in runs
+    assert "rerunDisabledReason" in runs
     assert "UI_STATE_KEYS.taskStatusFilter" in runs
     assert "usePolling(loadRuns" in runs
     assert "运行记录" in runs
     assert "新建任务" not in runs
 
     session = (root / "components/session/SessionPage.tsx").read_text(encoding="utf-8")
+    assert "listDevices()" in session
+    assert "deviceDisabledReason(currentDevice)" in session
     assert "listAppThreads({" in session
     assert "projectId: effectiveProjectId" in session
     assert "createAppThread(effectiveProjectId, title)" in session
     assert "UI_STATE_KEYS.currentProjectId" in session
+    assert "UI_STATE_KEYS.currentDeviceId" in session
+    assert "createDisabledReason={executionDisabledReason}" in session
     assert "listAppTurns(selectedThreadId)" in session
     assert "sendAsyncAppTurn" in session
     assert "sendAppTurn" in session
@@ -248,6 +274,10 @@ def test_frontend_v17_pages_are_migrated_to_react() -> None:
     assert "listRunners()" in settings
     assert "recoverStaleAppTurns()" in settings
     assert "cleanupAppThreads(status)" in settings
+
+    device_utils = (root / "utils/device.ts").read_text(encoding="utf-8")
+    assert "当前设备离线，只能查看历史，不能新建执行" in device_utils
+    assert "当前设备已停用，不能新建执行" in device_utils
 
 
 def test_frontend_v17_docs_and_scripts_are_documented() -> None:

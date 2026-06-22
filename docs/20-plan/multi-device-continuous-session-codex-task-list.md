@@ -108,7 +108,7 @@ Codex 执行本清单时必须遵守：
 - [x] B05 实现 Agent 本地 Workspace Registry
 - [x] B06 实现 Workspace 同步接口
 - [x] B07 兼容迁移现有 Project
-- [ ] B08 手机端增加设备和 Workspace 选择
+- [x] B08 手机端增加设备和 Workspace 选择
 
 ### C. Agent 命令通道
 
@@ -981,7 +981,7 @@ tests/test_project_workspace_migration.py
 
 ---
 
-### [ ] B08 手机端增加设备和 Workspace 选择
+### [x] B08 手机端增加设备和 Workspace 选择
 
 **目标**
 
@@ -1029,6 +1029,33 @@ tests/test_ui.py
 - 不会把设备 A 的 Workspace 选择保留到设备 B。
 - OFFLINE 设备的创建按钮被禁用并有明确原因。
 - 前端类型检查和构建通过。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `frontend/src/api/devices.ts`
+  - `frontend/src/api/workspaces.ts`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/state/storage.ts`
+  - `frontend/src/components/projects/ProjectsPage.tsx`
+  - `frontend/src/components/session/SessionPage.tsx`
+  - `frontend/src/components/session/ThreadSwitcherSheet.tsx`
+  - `frontend/src/components/runs/RunsPage.tsx`
+  - `frontend/src/components/tasks/TaskCard.tsx`
+  - `frontend/src/components/tasks/TaskDetailSheet.tsx`
+  - `frontend/src/utils/device.ts`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 前端行为：项目页新增设备和 Workspace 列表，保存 `mobile.currentDeviceId` 和 `mobile.currentWorkspaceId`；切换设备会清空 Workspace 和 Session 选择
+- 执行限制：会话新建和运行重跑在 OFFLINE/DISABLED 设备下禁用，并显示明确原因；历史列表仍可查看
+- 自动化测试：
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，212 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：未接入设备数据时保留旧项目/会话/运行查看路径；不新增设备管理、配对或 Token UI
+- 风险与未完成项：当前 Workspace 选择仅作为手机端上下文保存，后续 Run/Session 与 Workspace 的真实绑定由 D/E 阶段完成
 
 ---
 

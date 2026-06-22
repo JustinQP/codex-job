@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listAppThreads } from "../../api/appThreads";
+import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
 import { listTasks } from "../../api/tasks";
-import type { AppThread, Project, Task } from "../../api/types";
+import type { AppThread, Device, Project, Task, Workspace } from "../../api/types";
+import { listWorkspaces } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { UI_STATE_KEYS } from "../../state/storage";
 import { formatRelativeTime } from "../../utils/date";
@@ -19,7 +21,17 @@ export function ProjectsPage({ showToast }: PageProps) {
     UI_STATE_KEYS.currentProjectId,
     ""
   );
+  const [currentDeviceIdText, setCurrentDeviceIdText] = useLocalStorage(
+    UI_STATE_KEYS.currentDeviceId,
+    ""
+  );
+  const [currentWorkspaceIdText, setCurrentWorkspaceIdText] = useLocalStorage(
+    UI_STATE_KEYS.currentWorkspaceId,
+    ""
+  );
   const [, setSelectedThreadIdText] = useLocalStorage(UI_STATE_KEYS.selectedAppThreadId, "");
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [threads, setThreads] = useState<AppThread[]>([]);
   const [runs, setRuns] = useState<Task[]>([]);
@@ -27,6 +39,19 @@ export function ProjectsPage({ showToast }: PageProps) {
   const [error, setError] = useState("");
 
   const currentProjectId = currentProjectIdText ? Number(currentProjectIdText) : null;
+  const currentWorkspaceId = currentWorkspaceIdText ? Number(currentWorkspaceIdText) : null;
+  const currentDevice = useMemo(() => {
+    return devices.find((device) => device.device_id === currentDeviceIdText)
+      || devices.find((device) => device.status === "ONLINE")
+      || devices[0]
+      || null;
+  }, [currentDeviceIdText, devices]);
+  const currentWorkspace = useMemo(() => {
+    return workspaces.find((workspace) => workspace.id === currentWorkspaceId)
+      || workspaces.find((workspace) => workspace.enabled)
+      || workspaces[0]
+      || null;
+  }, [currentWorkspaceId, workspaces]);
   const currentProject = useMemo(() => {
     return projects.find((project) => project.id === currentProjectId)
       || projects.find((project) => project.enabled)
@@ -38,7 +63,30 @@ export function ProjectsPage({ showToast }: PageProps) {
     setLoading(true);
     setError("");
     try {
-      const projectData = await listProjects();
+      const [deviceData, projectData] = await Promise.all([
+        listDevices().catch(() => [] as Device[]),
+        listProjects()
+      ]);
+      const selectedDevice = currentDeviceIdText
+        ? deviceData.find((device) => device.device_id === currentDeviceIdText)
+        : null;
+      const fallbackDevice = deviceData.find((device) => device.status === "ONLINE") || deviceData[0] || null;
+      const effectiveDevice = selectedDevice || fallbackDevice;
+      const workspaceData = effectiveDevice ? await listWorkspaces(effectiveDevice.device_id) : [];
+      const selectedWorkspace = currentWorkspaceId
+        ? workspaceData.find((workspace) => workspace.id === currentWorkspaceId)
+        : null;
+      const fallbackWorkspace = workspaceData.find((workspace) => workspace.enabled) || workspaceData[0] || null;
+      setDevices(deviceData);
+      setWorkspaces(workspaceData);
+      if (!currentDeviceIdText && effectiveDevice) {
+        setCurrentDeviceIdText(effectiveDevice.device_id);
+      }
+      if (!selectedWorkspace && currentWorkspaceIdText) {
+        setCurrentWorkspaceIdText("");
+      } else if (!currentWorkspaceIdText && fallbackWorkspace) {
+        setCurrentWorkspaceIdText(String(fallbackWorkspace.id));
+      }
       const selectedProject = currentProjectId
         ? projectData.find((project) => project.id === currentProjectId)
         : null;
@@ -64,7 +112,16 @@ export function ProjectsPage({ showToast }: PageProps) {
     } finally {
       setLoading(false);
     }
-  }, [currentProjectId, currentProjectIdText, setCurrentProjectIdText]);
+  }, [
+    currentDeviceIdText,
+    currentProjectId,
+    currentProjectIdText,
+    currentWorkspaceId,
+    currentWorkspaceIdText,
+    setCurrentDeviceIdText,
+    setCurrentProjectIdText,
+    setCurrentWorkspaceIdText
+  ]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -78,6 +135,19 @@ export function ProjectsPage({ showToast }: PageProps) {
     setCurrentProjectIdText(String(project.id));
     setSelectedThreadIdText("");
     showToast(`当前工作空间已切换为 ${project.name}`, "success");
+  }
+
+  function handleSelectDevice(device: Device) {
+    setCurrentDeviceIdText(device.device_id);
+    setCurrentWorkspaceIdText("");
+    setSelectedThreadIdText("");
+    showToast(`当前设备已切换为 ${device.display_name}`, "success");
+  }
+
+  function handleSelectWorkspace(workspace: Workspace) {
+    setCurrentWorkspaceIdText(String(workspace.id));
+    setSelectedThreadIdText("");
+    showToast(`当前 Workspace 已切换为 ${workspace.name}`, "success");
   }
 
   function handleOpenThread(thread: AppThread) {
@@ -97,6 +167,62 @@ export function ProjectsPage({ showToast }: PageProps) {
 
       {error ? <div className="inline-error">{error}</div> : null}
 
+      <section className="wechat-section">
+        <div className="section-title-row">
+          <h2>设备</h2>
+          <span className="muted">{loading ? "刷新中" : `${devices.length} 台设备`}</span>
+        </div>
+        {devices.length ? (
+          <div className="wechat-list">
+            {devices.map((device) => (
+              <button
+                className={`wechat-row as-button ${currentDevice?.device_id === device.device_id ? "selected" : ""}`}
+                key={device.device_id}
+                onClick={() => handleSelectDevice(device)}
+                type="button"
+              >
+                <div className={`wechat-avatar ${device.status === "ONLINE" ? "online" : "closed"}`}>设</div>
+                <div className="wechat-row-main">
+                  <strong>{device.display_name}</strong>
+                  <span>{device.hostname} · {device.os_name}</span>
+                </div>
+                <Badge tone={device.status === "ONLINE" ? "online" : "closed"}>{device.status}</Badge>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="暂无设备" />
+        )}
+      </section>
+
+      <section className="wechat-section">
+        <div className="section-title-row">
+          <h2>Workspace</h2>
+          <span className="muted">{currentDevice ? currentDevice.display_name : "未选择设备"}</span>
+        </div>
+        {workspaces.length ? (
+          <div className="wechat-list">
+            {workspaces.map((workspace) => (
+              <button
+                className={`wechat-row as-button ${currentWorkspace?.id === workspace.id ? "selected" : ""}`}
+                key={workspace.id}
+                onClick={() => handleSelectWorkspace(workspace)}
+                type="button"
+              >
+                <div className={`wechat-avatar ${workspace.enabled ? "online" : "closed"}`}>目</div>
+                <div className="wechat-row-main">
+                  <strong>{workspace.name}</strong>
+                  <span>{workspace.path_label}</span>
+                </div>
+                <Badge tone={workspace.enabled ? "online" : "closed"}>{workspace.enabled ? "启用" : "停用"}</Badge>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title={currentDevice ? "当前设备暂无 Workspace" : "请选择设备"} />
+        )}
+      </section>
+
       {currentProject ? (
         <section className="wechat-form stack">
           <div className="section-title-row">
@@ -107,6 +233,8 @@ export function ProjectsPage({ showToast }: PageProps) {
           </div>
           <div className="meta-grid">
             <Meta label="路径" value={currentProject.path_label} />
+            <Meta label="设备" value={currentDevice?.display_name || "未选择"} />
+            <Meta label="Workspace" value={currentWorkspace?.name || "未选择"} />
             <Meta label="Runner" value={currentProject.default_runner_id || "项目默认"} />
             <Meta label="模型" value={currentProject.default_model || "未指定"} />
             <Meta label="sandbox" value={currentProject.default_sandbox || "workspace-write"} />

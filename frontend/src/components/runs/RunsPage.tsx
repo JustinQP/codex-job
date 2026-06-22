@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
 import { cancelTask, listTasks, rerunTask } from "../../api/tasks";
-import type { Project, Task, TaskStatus } from "../../api/types";
+import type { Device, Project, Task, TaskStatus } from "../../api/types";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePolling } from "../../hooks/usePolling";
 import { UI_STATE_KEYS } from "../../state/storage";
+import { deviceDisabledReason } from "../../utils/device";
 import { errorText, isRunningStatus } from "../../utils/error";
 import { EmptyState } from "../common/EmptyState";
 import { Sheet } from "../layout/Sheet";
@@ -18,16 +20,25 @@ const statuses: Array<"" | TaskStatus> = ["", "PENDING", "RUNNING", "SUCCESS", "
 export function RunsPage({ showToast }: PageProps) {
   const [runs, setRuns] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [currentProjectIdText, setCurrentProjectIdText] = useLocalStorage(
     UI_STATE_KEYS.currentProjectId,
     ""
   );
+  const [currentDeviceIdText] = useLocalStorage(UI_STATE_KEYS.currentDeviceId, "");
   const [statusFilter, setStatusFilter] = useLocalStorage(UI_STATE_KEYS.taskStatusFilter, "");
   const [selectedRun, setSelectedRun] = useState<Task | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const currentProjectId = currentProjectIdText ? Number(currentProjectIdText) : null;
+  const currentDevice = useMemo(() => {
+    return devices.find((device) => device.device_id === currentDeviceIdText)
+      || devices.find((device) => device.status === "ONLINE")
+      || devices[0]
+      || null;
+  }, [currentDeviceIdText, devices]);
+  const rerunDisabledReason = devices.length ? deviceDisabledReason(currentDevice) : "";
   const currentProject = useMemo(() => {
     return projects.find((project) => project.id === currentProjectId)
       || projects.find((project) => project.enabled)
@@ -39,12 +50,16 @@ export function RunsPage({ showToast }: PageProps) {
     setLoading(true);
     setError("");
     try {
-      const projectData = await listProjects();
+      const [deviceData, projectData] = await Promise.all([
+        listDevices().catch(() => [] as Device[]),
+        listProjects()
+      ]);
       const effectiveProject = currentProjectId
         ? projectData.find((project) => project.id === currentProjectId)
         : null;
       const fallbackProject = projectData.find((project) => project.enabled) || projectData[0] || null;
       const effectiveProjectId = effectiveProject?.id || fallbackProject?.id || null;
+      setDevices(deviceData);
       setProjects(projectData);
       if (!currentProjectIdText && effectiveProjectId) {
         setCurrentProjectIdText(String(effectiveProjectId));
@@ -55,7 +70,7 @@ export function RunsPage({ showToast }: PageProps) {
     } finally {
       setLoading(false);
     }
-  }, [currentProjectId, currentProjectIdText, setCurrentProjectIdText]);
+  }, [currentDeviceIdText, currentProjectId, currentProjectIdText, setCurrentProjectIdText]);
 
   useEffect(() => {
     void loadRuns();
@@ -82,6 +97,10 @@ export function RunsPage({ showToast }: PageProps) {
   }
 
   async function handleRerun(run: Task) {
+    if (rerunDisabledReason) {
+      showToast(rerunDisabledReason, "warning");
+      return;
+    }
     try {
       const newRun = await rerunTask(run.id);
       showToast(`已创建重跑运行 #${newRun.id}`, "success");
@@ -129,6 +148,7 @@ export function RunsPage({ showToast }: PageProps) {
               onCancel={handleCancel}
               onOpen={setSelectedRun}
               onRerun={handleRerun}
+              rerunDisabledReason={rerunDisabledReason}
               task={run}
             />
           ))
@@ -139,7 +159,12 @@ export function RunsPage({ showToast }: PageProps) {
 
       {selectedRun ? (
         <Sheet onClose={() => setSelectedRun(null)} title={`运行 #${selectedRun.id}`}>
-          <TaskDetailSheet onCancel={handleCancel} onRerun={handleRerun} task={selectedRun} />
+          <TaskDetailSheet
+            onCancel={handleCancel}
+            onRerun={handleRerun}
+            rerunDisabledReason={rerunDisabledReason}
+            task={selectedRun}
+          />
         </Sheet>
       ) : null}
     </section>

@@ -3,11 +3,17 @@ import { Button } from "../common/Button";
 
 type TaskDetailSheetProps = {
   task: Task;
+  rerunDisabledReason?: string;
   onCancel: (task: Task) => void;
   onRerun: (task: Task) => void;
 };
 
-export function TaskDetailSheet({ task, onCancel, onRerun }: TaskDetailSheetProps) {
+export function TaskDetailSheet({
+  task,
+  rerunDisabledReason = "",
+  onCancel,
+  onRerun
+}: TaskDetailSheetProps) {
   return (
     <div className="task-detail-grid">
       <div className="detail-card">
@@ -33,7 +39,12 @@ export function TaskDetailSheet({ task, onCancel, onRerun }: TaskDetailSheetProp
         <Button onClick={() => window.open(task.diff_url, "_blank")} variant="secondary">
           diff
         </Button>
-        <Button onClick={() => onRerun(task)} variant="secondary">
+        <Button
+          disabled={Boolean(rerunDisabledReason)}
+          onClick={() => onRerun(task)}
+          title={rerunDisabledReason}
+          variant="secondary"
+        >
           重跑
         </Button>
         <Button
