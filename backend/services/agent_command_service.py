@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Final
+import json
+import re
+from typing import Any, Final, Mapping
 
 from sqlmodel import Session, select
 
-from backend.models import AgentCommand, AgentCommandStatus, utc_now
+from backend.models import AgentCommand, AgentCommandStatus, Device, DeviceStatus, Workspace, utc_now
 
 
 TERMINAL_STATUSES: Final[set[AgentCommandStatus]] = {
@@ -43,6 +45,99 @@ ALLOWED_TRANSITIONS: Final[dict[AgentCommandStatus, set[AgentCommandStatus]]] = 
 
 class AgentCommandStateError(ValueError):
     """Raised when an AgentCommand state transition is not allowed."""
+
+
+class AgentCommandServiceError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+ABSOLUTE_PATH_PATTERN = re.compile(r"^([A-Za-z]:[\\/]|/|\\\\)")
+
+
+def _contains_absolute_path(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(ABSOLUTE_PATH_PATTERN.match(value))
+    if isinstance(value, Mapping):
+        return any(_contains_absolute_path(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_absolute_path(item) for item in value)
+    return False
+
+
+def _canonical_payload(payload: Mapping[str, Any]) -> str:
+    if _contains_absolute_path(payload):
+        raise AgentCommandServiceError(
+            "invalid_command_payload",
+            "command payload must not contain absolute paths",
+        )
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def create_command(
+    session: Session,
+    *,
+    device_id: str,
+    command_type: str,
+    idempotency_key: str,
+    payload: Mapping[str, Any],
+    aggregate_type: str | None = None,
+    aggregate_id: str | None = None,
+    workspace_id: int | None = None,
+    max_attempts: int = 3,
+) -> AgentCommand:
+    if not idempotency_key:
+        raise AgentCommandServiceError(
+            "missing_idempotency_key",
+            "idempotency_key is required",
+        )
+    payload_json = _canonical_payload(payload)
+    device = session.get(Device, device_id)
+    if device is None:
+        raise AgentCommandServiceError("device_not_found", "device not found")
+    if device.status == DeviceStatus.DISABLED:
+        raise AgentCommandServiceError("device_disabled", "device is disabled")
+    if workspace_id is not None:
+        workspace = session.get(Workspace, workspace_id)
+        if workspace is None or not workspace.enabled or workspace.device_id != device_id:
+            raise AgentCommandServiceError(
+                "workspace_unavailable",
+                "workspace is unavailable for this device",
+            )
+
+    existing = session.exec(
+        select(AgentCommand).where(AgentCommand.idempotency_key == idempotency_key)
+    ).first()
+    if existing is not None:
+        if (
+            existing.device_id == device_id
+            and existing.command_type == command_type
+            and existing.aggregate_type == aggregate_type
+            and existing.aggregate_id == aggregate_id
+            and existing.payload_json == payload_json
+            and existing.max_attempts == max_attempts
+        ):
+            return existing
+        raise AgentCommandServiceError(
+            "agent_command_idempotency_conflict",
+            "idempotency_key already exists with a different command payload",
+        )
+
+    command = AgentCommand(
+        device_id=device_id,
+        command_type=command_type,
+        aggregate_type=aggregate_type,
+        aggregate_id=aggregate_id,
+        idempotency_key=idempotency_key,
+        payload_json=payload_json,
+        max_attempts=max_attempts,
+    )
+    session.add(command)
+    session.commit()
+    session.refresh(command)
+    return command
 
 
 def is_transition_allowed(

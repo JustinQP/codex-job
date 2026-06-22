@@ -113,7 +113,7 @@ Codex 执行本清单时必须遵守：
 ### C. Agent 命令通道
 
 - [x] C01 新增 AgentCommand 模型和状态机
-- [ ] C02 实现命令创建服务和幂等键
+- [x] C02 实现命令创建服务和幂等键
 - [ ] C03 实现命令 claim、续租和完成接口
 - [ ] C04 实现 Agent 命令循环
 - [ ] C05 实现命令事件增量上传
@@ -1141,7 +1141,7 @@ tests/test_command_state_machine.py
 
 ---
 
-### [ ] C02 实现命令创建服务和幂等键
+### [x] C02 实现命令创建服务和幂等键
 
 **目标**
 
@@ -1172,6 +1172,25 @@ tests/test_command_service.py
 
 - 网络重试不会产生重复命令。
 - payload 冲突有稳定错误 code。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/services/agent_command_service.py`
+  - `tests/test_agent_command_service.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 服务能力：新增统一 `create_command(...)`，要求显式 `idempotency_key`；相同 key 和等价 payload 返回原命令，不重复创建
+- 错误处理：新增 `AgentCommandServiceError.code`；payload 冲突稳定返回 `agent_command_idempotency_conflict`，缺少幂等键、禁用设备、不可用 Workspace、绝对路径 payload 均有稳定 code
+- 安全约束：payload 规范化为稳定 JSON，仅允许业务标识和选项；检测并拒绝 Windows、Unix、UNC 绝对路径字符串
+- 自动化测试：
+  - `pytest -q tests/test_agent_command_service.py`：通过，11 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，223 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：本任务只扩展 service 层创建能力，不新增路由，不改变旧 Runner/Task 路径
+- 风险与未完成项：数据库并发下唯一索引仍是最终防线；C03 接入 API 时需将 service error code 映射为稳定 HTTP 响应
 
 ---
 

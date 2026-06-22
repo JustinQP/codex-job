@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
-from backend.models import AgentCommand, AgentCommandStatus, Device, DeviceStatus, utc_now
+from backend.models import AgentCommand, AgentCommandStatus, Device, DeviceStatus, Workspace, utc_now
 from backend.services import agent_command_service
 
 
@@ -40,6 +40,28 @@ def add_device(session: Session, device_id: str = "device-a") -> Device:
     return device
 
 
+def add_workspace(
+    session: Session,
+    *,
+    enabled: bool = True,
+    device_id: str = "device-a",
+    workspace_key: str = "repo",
+) -> Workspace:
+    workspace = Workspace(
+        device_id=device_id,
+        workspace_key=workspace_key,
+        name=f"Repo {workspace_key}",
+        path_label="codex-job",
+        enabled=enabled,
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+    return workspace
+
+
 def add_command(session: Session, idempotency_key: str = "cmd-a") -> AgentCommand:
     add_device(session)
     command = AgentCommand(
@@ -54,6 +76,129 @@ def add_command(session: Session, idempotency_key: str = "cmd-a") -> AgentComman
     session.commit()
     session.refresh(command)
     return command
+
+
+def test_create_command_reuses_same_idempotency_key_for_same_payload() -> None:
+    session = make_session()
+    try:
+        add_device(session)
+        workspace = add_workspace(session)
+
+        first = agent_command_service.create_command(
+            session,
+            device_id="device-a",
+            command_type="codex.exec",
+            aggregate_type="task",
+            aggregate_id="1",
+            idempotency_key="retry-key",
+            workspace_id=workspace.id,
+            payload={"task_id": 1, "workspace_id": workspace.id, "options": {"model": "gpt-5"}},
+        )
+        second = agent_command_service.create_command(
+            session,
+            device_id="device-a",
+            command_type="codex.exec",
+            aggregate_type="task",
+            aggregate_id="1",
+            idempotency_key="retry-key",
+            workspace_id=workspace.id,
+            payload={"options": {"model": "gpt-5"}, "workspace_id": workspace.id, "task_id": 1},
+        )
+
+        assert second.id == first.id
+        assert len(agent_command_service.list_commands_for_device(session, "device-a")) == 1
+    finally:
+        session.close()
+
+
+def test_create_command_conflicting_payload_has_stable_error_code() -> None:
+    session = make_session()
+    try:
+        add_device(session)
+        agent_command_service.create_command(
+            session,
+            device_id="device-a",
+            command_type="codex.exec",
+            idempotency_key="same-key",
+            payload={"task_id": 1},
+        )
+
+        with pytest.raises(agent_command_service.AgentCommandServiceError) as exc:
+            agent_command_service.create_command(
+                session,
+                device_id="device-a",
+                command_type="codex.exec",
+                idempotency_key="same-key",
+                payload={"task_id": 2},
+            )
+
+        assert exc.value.code == "agent_command_idempotency_conflict"
+    finally:
+        session.close()
+
+
+def test_create_command_rejects_disabled_device() -> None:
+    session = make_session()
+    try:
+        device = add_device(session)
+        device.status = DeviceStatus.DISABLED
+        session.add(device)
+        session.commit()
+
+        with pytest.raises(agent_command_service.AgentCommandServiceError) as exc:
+            agent_command_service.create_command(
+                session,
+                device_id="device-a",
+                command_type="codex.exec",
+                idempotency_key="device-disabled",
+                payload={"task_id": 1},
+            )
+
+        assert exc.value.code == "device_disabled"
+    finally:
+        session.close()
+
+
+def test_create_command_rejects_disabled_or_foreign_workspace() -> None:
+    session = make_session()
+    try:
+        add_device(session, "device-a")
+        add_device(session, "device-b")
+        disabled = add_workspace(session, enabled=False, device_id="device-a", workspace_key="disabled")
+        foreign = add_workspace(session, enabled=True, device_id="device-b", workspace_key="foreign")
+
+        for workspace in (disabled, foreign):
+            with pytest.raises(agent_command_service.AgentCommandServiceError) as exc:
+                agent_command_service.create_command(
+                    session,
+                    device_id="device-a",
+                    command_type="codex.exec",
+                    idempotency_key=f"bad-workspace-{workspace.id}",
+                    workspace_id=workspace.id,
+                    payload={"workspace_id": workspace.id},
+                )
+            assert exc.value.code == "workspace_unavailable"
+    finally:
+        session.close()
+
+
+def test_create_command_rejects_payload_with_absolute_path() -> None:
+    session = make_session()
+    try:
+        add_device(session)
+
+        with pytest.raises(agent_command_service.AgentCommandServiceError) as exc:
+            agent_command_service.create_command(
+                session,
+                device_id="device-a",
+                command_type="codex.exec",
+                idempotency_key="path-key",
+                payload={"cwd": "C:\\repo"},
+            )
+
+        assert exc.value.code == "invalid_command_payload"
+    finally:
+        session.close()
 
 
 def test_agent_command_claim_run_success_transition_sets_fields() -> None:
