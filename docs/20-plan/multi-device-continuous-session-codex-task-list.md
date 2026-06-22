@@ -148,7 +148,7 @@ Codex 执行本清单时必须遵守：
 
 - [x] F01 增加双 Fake Agent 集成测试
 - [x] F02 增加本机双 Agent 模拟脚本
-- [ ] F03 增加 Windows Agent 安装和自启动脚本
+- [x] F03 增加 Windows Agent 安装和自启动脚本
 - [ ] F04 完成已有数据升级和回滚验证
 - [ ] F05 完成真实多设备 smoke 验收
 - [ ] F06 收口文档、归档旧计划并发布 v2.0
@@ -2679,7 +2679,7 @@ F01、B02、C04。
 
 ---
 
-### [ ] F03 增加 Windows Agent 安装和自启动脚本
+### [x] F03 增加 Windows Agent 安装和自启动脚本
 
 **目标**
 
@@ -2702,6 +2702,31 @@ B02、C04、D02、E02。
 
 - 重启电脑后 Agent 使用原 device_id 自动上线。
 - 卸载不删除用户 Workspace 和项目文件。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `scripts/install_windows_agent.ps1`
+  - `tests/test_windows_agent_install_script.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_windows_agent_install_script.py -o cache_dir=data/pytest-cache-f03-target2 -o addopts=--basetemp=data/pytest-tmp-f03-target2`：1 passed
+  - PowerShell 语法解析 `PSParser::Tokenize(... scripts/install_windows_agent.ps1 ...)`：parse-ok
+  - `pytest -q tests/test_windows_agent_install_script.py tests/test_agent_identity.py tests/test_agent_api_client.py tests/test_agent_command_loop.py -o cache_dir=data/pytest-cache-f03-related -o addopts=--basetemp=data/pytest-tmp-f03-related`：16 passed
+  - `python -m compileall backend runner agent scripts poc/app_server tests/test_windows_agent_install_script.py`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-f03-full -o addopts=--basetemp=data/pytest-tmp-f03-full`：309 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：
+  - 环境检查：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows_agent.ps1 -Action Check -BackendUrl http://127.0.0.1:8000 -AgentToken <token>`
+  - 安装：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows_agent.ps1 -Action Install -BackendUrl http://127.0.0.1:8000 -AgentToken <token> -Force`
+  - 状态：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows_agent.ps1 -Action Status`
+  - 日志：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows_agent.ps1 -Action Logs`
+  - 卸载：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows_agent.ps1 -Action Uninstall`
+- 回归影响：新增脚本默认使用 `data/agent` 保存稳定 identity/state/workspaces/logs；卸载只删除 Windows Task Scheduler 启动项，不删除用户 Workspace、项目文件或 Agent data
+- 风险与未完成项：本次未在当前机器实际创建/删除计划任务，避免修改系统自启动状态；重启后自动上线需在目标 Windows 设备执行安装后进行人工 smoke
 
 ---
 
