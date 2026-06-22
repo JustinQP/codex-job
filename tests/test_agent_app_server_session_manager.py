@@ -27,7 +27,8 @@ class FakeJsonlRpcClient:
         self.requests: list[dict[str, Any]] = []
         self.closed = False
         self.thread_id = f"codex-thread-{len(self.instances) + 1}"
-        self.turn_id = f"codex-turn-{len(self.instances) + 1}"
+        self.turn_count = 0
+        self.turn_id = f"codex-turn-{len(self.instances) + 1}-0"
         self._messages: list[dict[str, Any]] = []
         self._condition = _NoopCondition(self)
         self.instances.append(self)
@@ -39,6 +40,8 @@ class FakeJsonlRpcClient:
     def request(self, request_id: str, method: str, params: dict[str, Any] | None = None) -> None:
         self.requests.append({"id": request_id, "method": method, "params": params or {}})
         if method == "turn/start":
+            self.turn_count += 1
+            self.turn_id = f"{self.thread_id}-turn-{self.turn_count}"
             self._messages.extend(
                 [
                     {
@@ -47,7 +50,7 @@ class FakeJsonlRpcClient:
                     },
                     {
                         "method": "agent/message_delta",
-                        "params": {"turnId": self.turn_id, "itemId": "a", "delta": "hello"},
+                        "params": {"turnId": self.turn_id, "itemId": "a", "delta": f"hello-{self.turn_count}"},
                     },
                     {
                         "method": "turn/completed",
@@ -242,8 +245,8 @@ def test_session_manager_runs_turn_on_existing_session_and_uploads_events(tmp_pa
     )
 
     client = FakeJsonlRpcClient.instances[0]
-    assert result.codex_turn_id == "codex-turn-1"
-    assert result.assistant_final == "hello"
+    assert result.codex_turn_id == "codex-thread-1-turn-1"
+    assert result.assistant_final == "hello-1"
     assert result.event_summary["total_events"] == 3
     assert session.turn_count == 1
     assert client.requests[2]["method"] == "turn/start"
@@ -307,8 +310,8 @@ def test_turn_start_handler_returns_final_payload(tmp_path: Path) -> None:
     assert turn_result.result_payload is not None
     assert turn_result.result_payload["app_turn_id"] == 10
     assert turn_result.result_payload["agent_session_id"] == session.agent_session_id
-    assert turn_result.result_payload["codex_turn_id"] == "codex-turn-1"
-    assert turn_result.result_payload["assistant_final"] == "hello"
+    assert turn_result.result_payload["codex_turn_id"] == "codex-thread-1-turn-1"
+    assert turn_result.result_payload["assistant_final"] == "hello-1"
     assert "cwd" not in json.dumps(turn_result.result_payload)
 
 
@@ -348,6 +351,121 @@ def test_turn_start_handler_rejects_wrong_workspace(tmp_path: Path) -> None:
     assert result.message == "turn workspace does not match agent session"
 
 
+def test_session_manager_reuses_same_codex_thread_for_five_turns(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+    created_at = session.created_at
+
+    results = [
+        manager.run_turn(
+            agent_session_id=session.agent_session_id,
+            message=f"hello {index}",
+        )
+        for index in range(5)
+    ]
+
+    client = FakeJsonlRpcClient.instances[0]
+    turn_requests = [request for request in client.requests if request["method"] == "turn/start"]
+    thread_start_requests = [request for request in client.requests if request["method"] == "thread/start"]
+    assert len(FakeJsonlRpcClient.instances) == 1
+    assert len(thread_start_requests) == 1
+    assert len(turn_requests) == 5
+    assert session.turn_count == 5
+    assert session.created_at == created_at
+    assert session.last_activity_at >= created_at
+    assert [result.turn_count for result in results] == [1, 2, 3, 4, 5]
+    assert [result.codex_turn_id for result in results] == [
+        "codex-thread-1-turn-1",
+        "codex-thread-1-turn-2",
+        "codex-thread-1-turn-3",
+        "codex-thread-1-turn-4",
+        "codex-thread-1-turn-5",
+    ]
+    assert all(request["params"]["threadId"] == session.codex_thread_id for request in turn_requests)
+    assert all(request["params"]["cwd"] == str(repo_a.resolve()) for request in turn_requests)
+
+
+def test_session_manager_keeps_sessions_isolated_when_switching(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    session_a = manager.open_session(workspace_key="repo-a", title="A")
+    session_b = manager.open_session(workspace_key="repo-b", title="B")
+
+    result_a1 = manager.run_turn(agent_session_id=session_a.agent_session_id, message="a1")
+    result_b1 = manager.run_turn(agent_session_id=session_b.agent_session_id, message="b1")
+    result_a2 = manager.run_turn(agent_session_id=session_a.agent_session_id, message="a2")
+
+    client_a = FakeJsonlRpcClient.instances[0]
+    client_b = FakeJsonlRpcClient.instances[1]
+    a_turn_requests = [request for request in client_a.requests if request["method"] == "turn/start"]
+    b_turn_requests = [request for request in client_b.requests if request["method"] == "turn/start"]
+    assert result_a1.codex_turn_id == "codex-thread-1-turn-1"
+    assert result_a2.codex_turn_id == "codex-thread-1-turn-2"
+    assert result_b1.codex_turn_id == "codex-thread-2-turn-1"
+    assert session_a.turn_count == 2
+    assert session_b.turn_count == 1
+    assert all(request["params"]["threadId"] == session_a.codex_thread_id for request in a_turn_requests)
+    assert all(request["params"]["threadId"] == session_b.codex_thread_id for request in b_turn_requests)
+    assert all(request["params"]["cwd"] == str(repo_a.resolve()) for request in a_turn_requests)
+    assert all(request["params"]["cwd"] == str(repo_b.resolve()) for request in b_turn_requests)
+
+
+def test_same_workspace_key_on_different_devices_does_not_share_sessions(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    device_a_root = tmp_path / "device-a"
+    device_b_root = tmp_path / "device-b"
+    repo_a = device_a_root / "repo"
+    repo_b = device_b_root / "repo"
+    repo_a.mkdir(parents=True)
+    repo_b.mkdir(parents=True)
+    manager_a = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_single_workspace_registry(tmp_path, "device-a", repo_a)),
+        data_dir=tmp_path / "agent-a-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    manager_b = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_single_workspace_registry(tmp_path, "device-b", repo_b)),
+        data_dir=tmp_path / "agent-b-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+
+    session_a = manager_a.open_session(workspace_key="repo", title="A")
+    session_b = manager_b.open_session(workspace_key="repo", title="B")
+    result_a = manager_a.run_turn(agent_session_id=session_a.agent_session_id, message="a")
+    result_b = manager_b.run_turn(agent_session_id=session_b.agent_session_id, message="b")
+
+    client_a = FakeJsonlRpcClient.instances[0]
+    client_b = FakeJsonlRpcClient.instances[1]
+    a_turn_request = [request for request in client_a.requests if request["method"] == "turn/start"][0]
+    b_turn_request = [request for request in client_b.requests if request["method"] == "turn/start"][0]
+    assert session_a.workspace_key == session_b.workspace_key == "repo"
+    assert session_a.agent_session_id != session_b.agent_session_id
+    assert session_a.codex_thread_id != session_b.codex_thread_id
+    assert result_a.codex_turn_id == "codex-thread-1-turn-1"
+    assert result_b.codex_turn_id == "codex-thread-2-turn-1"
+    assert a_turn_request["params"]["cwd"] == str(repo_a.resolve())
+    assert b_turn_request["params"]["cwd"] == str(repo_b.resolve())
+    assert a_turn_request["params"]["threadId"] == session_a.codex_thread_id
+    assert b_turn_request["params"]["threadId"] == session_b.codex_thread_id
+
+
 def _registry(tmp_path: Path, repo_a: Path, repo_b: Path) -> Path:
     path = tmp_path / "workspaces.json"
     path.write_text(
@@ -357,6 +475,22 @@ def _registry(tmp_path: Path, repo_a: Path, repo_b: Path) -> Path:
                 "workspaces": [
                     {"key": "repo-a", "name": "Repo A", "path": str(repo_a)},
                     {"key": "repo-b", "name": "Repo B", "path": str(repo_b)},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _single_workspace_registry(tmp_path: Path, name: str, repo: Path) -> Path:
+    path = tmp_path / f"{name}-workspaces.json"
+    path.write_text(
+        json.dumps(
+            {
+                "allowed_roots": [str(repo.parent)],
+                "workspaces": [
+                    {"key": "repo", "name": "Repo", "path": str(repo)},
                 ],
             }
         ),

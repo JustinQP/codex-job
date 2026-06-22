@@ -2073,7 +2073,7 @@ E02、C05。
 
 ---
 
-### [ ] E04 保证同一 Session 复用同一 Codex thread
+### [x] E04 保证同一 Session 复用同一 Codex thread
 
 **目标**
 
@@ -2101,6 +2101,24 @@ E03。
 - 连续 5 Turn 不创建 5 个 thread。
 - Session 切换后各自 thread 独立。
 - 两台设备同名 Workspace 不串会话。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `agent/app_server/session_manager.py`
+  - `tests/test_agent_app_server_session_manager.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- Agent Session Manager：`AgentAppSession` 明确保存 `codex_thread_id`、cwd、process client、turn_count、active/last turn、created_at 和 last_activity_at；连续 turn 复用同一个 `agent_session_id`、同一个 App Server process、同一个 `codex_thread_id`
+- 自动化测试：
+  - `pytest -q tests/test_agent_app_server_session_manager.py tests/test_app_threads_api.py tests/test_agent_command_loop.py`：通过，36 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，280 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及真实 Codex App Server；使用 Fake App Server 自动化验证连续 5 Turn、Session 切换隔离和两台设备同名 Workspace 不串线
+- 回归影响：仅增强正式 Agent SessionManager 状态记录和测试；不改变旧 Bridge 模式，不新增数据库字段
+- 风险与未完成项：真实 Codex App Server 多轮 smoke 仍留到 F05；TurnEvent 持久化和 SSE 可重放由 E05/E06 继续处理
 
 ---
 

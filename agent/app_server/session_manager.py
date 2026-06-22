@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from threading import RLock
@@ -29,6 +30,8 @@ class AgentAppSession:
     run_dir: Path
     raw_events_path: Path
     stderr_path: Path
+    created_at: str
+    last_activity_at: str
     turn_count: int = 0
     active_turn_id: str | None = None
     last_turn_id: str | None = None
@@ -70,6 +73,7 @@ class AgentAppSessionManager:
         developer_instructions: str = DEFAULT_DEVELOPER_INSTRUCTIONS,
     ) -> AgentAppSession:
         cwd = self.workspace_registry.resolve(workspace_key)
+        now = _utc_iso()
         agent_session_id = str(uuid4())
         run_dir = self.data_dir / agent_session_id
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -134,6 +138,8 @@ class AgentAppSessionManager:
             run_dir=run_dir,
             raw_events_path=raw_events_path,
             stderr_path=stderr_path,
+            created_at=now,
+            last_activity_at=now,
         )
         with self._lock:
             self._sessions[agent_session_id] = session
@@ -164,6 +170,7 @@ class AgentAppSessionManager:
         turn_number = session.turn_count + 1
         request_id = f"{agent_session_id}-turn-{turn_number}-start"
         start_index = session.client.message_count
+        session.last_activity_at = _utc_iso()
         sequence = 1
         if uploader is not None and command_id and device_id and lease_token:
             uploader.cache_event(
@@ -231,6 +238,7 @@ class AgentAppSessionManager:
         session.turn_count = turn_number
         session.active_turn_id = None
         session.last_turn_id = codex_turn_id
+        session.last_activity_at = _utc_iso()
         if uploader is not None and command_id and device_id and lease_token:
             uploader.cache_event(
                 command_id=command_id,
@@ -321,6 +329,10 @@ def _extract_turn_id(turn_start_result) -> str:
     if not isinstance(turn_id, str) or not turn_id:
         raise RuntimeError("turn/start result.turn.id is missing")
     return turn_id
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _sandbox_policy(sandbox: str, network_access: bool) -> dict:
