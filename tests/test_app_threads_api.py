@@ -271,6 +271,92 @@ def test_session_open_complete_updates_app_thread(monkeypatch) -> None:
         assert detail.json()["app_thread_id"] == "codex-thread-1"
 
 
+def test_agent_app_thread_reopen_creates_new_generation_session(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session, _fake in make_client(monkeypatch):
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Agent chat",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="old-agent-session",
+            app_thread_id="old-codex-thread",
+            generation=1,
+            status="RECOVER_REQUIRED",
+            sandbox="workspace-write",
+            approval_policy="never",
+            network_access=False,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        old_turn = AppTurn(
+            app_thread_id=app_thread.id,
+            user_message="old",
+            assistant_final="old final",
+            status="SUCCESS",
+            created_at=utc_now(),
+            completed_at=utc_now(),
+        )
+        session.add(old_turn)
+        session.commit()
+
+        reopened = client.post(f"/app-threads/{app_thread.id}/reopen")
+
+        assert reopened.status_code == 200
+        body = reopened.json()
+        assert body["id"] == app_thread.id
+        assert body["status"] == "OPENING"
+        assert body["generation"] == 2
+        assert body["agent_session_id"] is None
+        assert body["app_thread_id"] is None
+        assert body["turn_count"] == 1
+        commands = agent_command_service.list_commands_for_device(session, "device-a")
+        assert len(commands) == 1
+        command = commands[0]
+        assert command.command_type == "SESSION_OPEN"
+        assert '"generation":2' in command.payload_json
+
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-reopen"},
+        ).json()
+        client.post(
+            f"/agent/commands/{command.id}/ack",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "lease_token": claim["lease_token"]},
+        )
+        complete = client.post(
+            f"/agent/commands/{command.id}/complete",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={
+                "device_id": "device-a",
+                "lease_token": claim["lease_token"],
+                "status": AgentCommandStatus.SUCCESS.value,
+                "result_payload": {
+                    "agent_session_id": "new-agent-session",
+                    "codex_thread_id": "new-codex-thread",
+                },
+            },
+        )
+        detail = client.get(f"/app-threads/{app_thread.id}")
+        new_turn = client.post(f"/app-threads/{app_thread.id}/turns/async", json={"message": "after reopen"})
+
+        assert complete.status_code == 200
+        assert detail.json()["status"] == "ACTIVE"
+        assert detail.json()["generation"] == 2
+        assert detail.json()["agent_session_id"] == "new-agent-session"
+        assert detail.json()["app_thread_id"] == "new-codex-thread"
+        assert new_turn.status_code == 200
+
+
 def test_create_async_app_turn_in_agent_mode_creates_turn_start_command(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
     for client, session, fake in make_client(monkeypatch):

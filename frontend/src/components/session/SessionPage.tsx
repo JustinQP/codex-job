@@ -386,7 +386,7 @@ export function SessionPage({ showToast }: PageProps) {
     try {
       const thread = await reopenAppThread(selectedThreadId);
       setSelectedThreadIdText(String(thread.id));
-      showToast("会话已重开", "success");
+      showToast(`会话已重开，当前 G${thread.generation}`, "success");
       await loadAll();
     } catch (err) {
       showToast(errorText(err), "error");

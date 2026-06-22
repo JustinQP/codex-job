@@ -139,7 +139,7 @@ Codex 执行本清单时必须遵守：
 - [ ] E06 改造 SSE 为可重放事件流
 - [x] E07 实现原子 Turn 并发保护
 - [x] E08 实现 Session/Turn 取消和超时回收
-- [ ] E09 实现 Session reopen 和 generation
+- [x] E09 实现 Session reopen 和 generation
 - [ ] E10 实现 Workspace 写入锁
 - [ ] E11 手机会话页显示设备、目录和执行模式
 - [ ] E12 手机刷新后恢复当前 Turn 输出
@@ -2358,7 +2358,7 @@ E03、E04、C06。
 
 ---
 
-### [ ] E09 实现 Session reopen 和 generation
+### [x] E09 实现 Session reopen 和 generation
 
 **目标**
 
@@ -2381,6 +2381,32 @@ E08。
 - Agent 重启后旧历史仍可查看。
 - reopen 后可以继续发新 Turn。
 - 新旧 generation 事件不会串线。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `backend/services/app_thread_service.py`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/components/session/SessionHeader.tsx`
+  - `frontend/src/components/session/SessionPage.tsx`
+  - `tests/test_app_thread_service.py`
+  - `tests/test_app_threads_api.py`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 后端：Bridge reopen 和 Agent reopen 都会推进 `generation + 1`；Agent reopen 在同一 Workspace 上创建新的 `SESSION_OPEN` 命令，清空旧 `agent_session_id`/`app_thread_id`，状态进入 `OPENING`，历史 Turn 保留
+- 串线保护：`TURN_START` complete 会校验命令 payload generation，旧 generation 的迟到完成不会覆盖新 generation 的 Session/Turn 状态
+- 前端：会话 Header 显示 `G{generation}`；reopen 成功 toast 显示当前 generation；`AppThread` 类型补充 generation 字段
+- 自动化测试：
+  - `pytest -q tests/test_app_thread_service.py tests/test_app_threads_api.py tests/test_ui.py -o cache_dir=data/pytest-cache-e09-target -o addopts=--basetemp=data/pytest-tmp-e09-target`：通过，77 passed
+  - `pytest -q tests/test_agent_app_server_session_manager.py tests/test_agent_command_loop.py tests/test_agent_command_api.py tests/test_agent_command_events.py tests/test_app_thread_service.py tests/test_app_threads_api.py -o cache_dir=data/pytest-cache-e09-related -o addopts=--basetemp=data/pytest-tmp-e09-related`：通过，90 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-e09-full -o addopts=--basetemp=data/pytest-tmp-e09-full`：通过，298 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：首次失败，缺少前端 `AppThread.generation` 类型；补充后通过
+  - `cd frontend; npm.cmd run build`：首次失败，同上；补充后通过
+- 人工验证：不涉及；通过 API 测试覆盖 reopen 后旧历史仍可查看、完成新 SESSION_OPEN 后可继续发新 Turn、旧 generation complete 不串线
+- 回归影响：Bridge reopen 现在也会推进 generation；Agent reopen 不尝试恢复旧 Codex thread，而是明确创建新 generation
+- 风险与未完成项：未实现协议级 thread resume；如未来协议支持，可在 Agent reopen 中优先尝试 resume，失败再创建新 generation
 
 ---
 

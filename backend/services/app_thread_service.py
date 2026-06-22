@@ -217,6 +217,11 @@ def complete_agent_turn_start(
     app_thread = session.get(AppThread, app_turn.app_thread_id)
     now = utc_now()
     payload = result_payload or {}
+    if app_thread is not None:
+        command_payload = _json_object(command.payload_json)
+        payload_generation = _int_or_none(command_payload.get("generation"))
+        if payload_generation is not None and payload_generation != app_thread.generation:
+            return app_turn
 
     if app_turn.status in {APP_TURN_CANCELLED, APP_TURN_FAILED, APP_TURN_SUCCESS}:
         return app_turn
@@ -419,6 +424,8 @@ def reopen_app_thread(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
     if not project.enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project is disabled")
+    if app_thread.workspace_id is not None or app_thread.device_id is not None:
+        return reopen_agent_app_thread(session, app_thread)
     client = bridge_client or get_default_client()
     try:
         bridge_thread = client.create_thread(app_thread.title, cwd=project.path)
@@ -433,9 +440,69 @@ def reopen_app_thread(
     bridge_thread_id = _require_bridge_thread_id(bridge_thread)
     app_thread.bridge_thread_id = bridge_thread_id
     app_thread.app_thread_id = _string_or_none(bridge_thread.get("app_thread_id"))
+    app_thread.generation = (app_thread.generation or 1) + 1
     app_thread.status = APP_THREAD_ACTIVE
     app_thread.last_error = None
     app_thread.updated_at = utc_now()
+    session.add(app_thread)
+    session.commit()
+    session.refresh(app_thread)
+    return app_thread
+
+
+def reopen_agent_app_thread(session: Session, app_thread: AppThread) -> AppThread:
+    if app_thread.id is None:
+        raise ValueError("app thread id is required")
+    if app_thread.workspace_id is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="app thread is not bound to a workspace")
+    workspace = session.get(Workspace, app_thread.workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workspace not found")
+    if not workspace.enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace is disabled")
+    device = session.get(Device, workspace.device_id)
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="device not found")
+    if device.status == DeviceStatus.DISABLED:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device is disabled")
+    if device.status != DeviceStatus.ONLINE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device is offline")
+
+    next_generation = (app_thread.generation or 1) + 1
+    now = utc_now()
+    app_thread.device_id = workspace.device_id
+    app_thread.workspace_id = workspace.id
+    app_thread.agent_session_id = None
+    app_thread.app_thread_id = None
+    app_thread.bridge_thread_id = None
+    app_thread.generation = next_generation
+    app_thread.status = APP_THREAD_OPENING
+    app_thread.last_error = None
+    app_thread.updated_at = now
+    session.add(app_thread)
+    session.commit()
+    session.refresh(app_thread)
+
+    command = agent_command_service.create_command(
+        session,
+        device_id=workspace.device_id,
+        command_type="SESSION_OPEN",
+        aggregate_type="app_thread",
+        aggregate_id=str(app_thread.id),
+        idempotency_key=f"session-open:{app_thread.id}:{next_generation}",
+        workspace_id=workspace.id,
+        payload={
+            "app_thread_id": app_thread.id,
+            "workspace_id": workspace.id,
+            "workspace_key": workspace.workspace_key,
+            "title": app_thread.title,
+            "sandbox": app_thread.sandbox or workspace.default_sandbox or "read-only",
+            "approval_policy": app_thread.approval_policy or workspace.default_approval_policy or "never",
+            "network_access": app_thread.network_access,
+            "generation": next_generation,
+        },
+    )
+    app_thread.command_id = command.id
     session.add(app_thread)
     session.commit()
     session.refresh(app_thread)
@@ -1336,3 +1403,21 @@ def _default_title() -> str:
 
 def _string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _json_object(raw_value: str | None) -> dict[str, Any]:
+    if not raw_value:
+        return {}
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}

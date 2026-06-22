@@ -39,7 +39,7 @@ export function SessionHeader({ currentProject, onMore, onSwitch, selectedThread
           <h2 className="session-title">{selectedThread.title}</h2>
           <span className="session-subtitle">
             {currentProject ? `${currentProject.name} · ` : ""}
-            {selectedThread.status} · {selectedThread.turn_count} 轮
+            {selectedThread.status} · G{selectedThread.generation} · {selectedThread.turn_count} 轮
             {updated ? ` · 更新 ${updated}` : ""}
           </span>
         </div>

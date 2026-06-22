@@ -361,6 +361,7 @@ def test_frontend_v176_regression_fixes_exist() -> None:
 
     header = (root / "components/session/SessionHeader.tsx").read_text(encoding="utf-8")
     assert 'className="session-header-main selected"' in header
+    assert "selectedThread.generation" in header
 
     session_css = (root / "styles/session.css").read_text(encoding="utf-8")
     assert ".session-header-main.selected" in session_css

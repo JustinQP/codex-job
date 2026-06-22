@@ -379,6 +379,7 @@ def test_reopen_app_thread_updates_bridge_ids_and_keeps_turn_history() -> None:
 
         assert reopened.bridge_thread_id == "bridge-2"
         assert reopened.app_thread_id == "app-2"
+        assert reopened.generation == 2
         assert reopened.status == "ACTIVE"
         assert reopened.last_error is None
         assert [turn.id for turn in turns] == [app_turn.id]
@@ -1100,6 +1101,51 @@ def test_cancelled_agent_turn_ignores_late_success_complete(monkeypatch) -> None
         assert completed.status == "CANCELLED"
         assert completed.assistant_final is None
         assert app_thread.status == "RECOVER_REQUIRED"
+
+
+def test_agent_turn_complete_ignores_stale_generation(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+    for session in make_session():
+        from tests.test_runs_api import add_device, add_workspace
+
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Agent chat",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="agent-session-1",
+            app_thread_id="codex-thread-1",
+            generation=1,
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        app_turn = app_thread_service.create_async_app_turn(session, app_thread.id, AppTurnCreate(message="hello"))
+        app_thread.generation = 2
+        app_thread.agent_session_id = "agent-session-2"
+        app_thread.app_thread_id = "codex-thread-2"
+        app_thread.status = "ACTIVE"
+        session.add(app_thread)
+        session.commit()
+
+        completed = app_thread_service.complete_agent_turn_start(
+            session,
+            command_id=app_turn.command_id,
+            result_payload={"assistant_final": "stale final", "codex_turn_id": "stale-turn"},
+        )
+        session.refresh(app_thread)
+
+        assert completed is not None
+        assert completed.status == "PENDING"
+        assert completed.assistant_final is None
+        assert app_thread.generation == 2
+        assert app_thread.agent_session_id == "agent-session-2"
 
 
 def test_cancel_app_turn_not_found() -> None:
