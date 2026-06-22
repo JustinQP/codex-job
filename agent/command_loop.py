@@ -10,6 +10,7 @@ from agent.command_handlers import CommandHandlerRegistry
 from agent.heartbeat import register_agent, send_heartbeat
 from agent.identity import AgentIdentity
 from agent.local_state import AgentLocalState, CurrentCommandState
+from agent.process_registry import ProcessRegistry
 from agent.reconciliation import reconcile_local_state
 from agent.workspace_registry import WorkspaceRegistry
 from backend.models import AgentCommandStatus
@@ -30,6 +31,7 @@ class AgentCommandLoop:
         local_state: AgentLocalState,
         workspace_registry: WorkspaceRegistry | None = None,
         handlers: CommandHandlerRegistry | None = None,
+        process_registry: ProcessRegistry | None = None,
         poll_interval_seconds: float = 2.0,
         max_retries: int = 3,
     ) -> None:
@@ -37,7 +39,13 @@ class AgentCommandLoop:
         self.identity = identity
         self.local_state = local_state
         self.workspace_registry = workspace_registry
-        self.handlers = handlers or CommandHandlerRegistry(workspace_registry)
+        self.process_registry = process_registry or ProcessRegistry()
+        self.handlers = handlers or CommandHandlerRegistry(
+            workspace_registry,
+            client=client,
+            device_id=identity.device_id,
+            process_registry=self.process_registry,
+        )
         self.poll_interval_seconds = poll_interval_seconds
         self.max_retries = max_retries
 

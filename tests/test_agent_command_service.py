@@ -283,6 +283,55 @@ def test_agent_command_repeated_terminal_completion_is_idempotent() -> None:
         session.close()
 
 
+def test_cancelled_command_is_not_overwritten_by_late_success_completion() -> None:
+    session = make_session()
+    try:
+        command = add_command(session)
+        claimed = agent_command_service.transition_command(
+            session,
+            command,
+            AgentCommandStatus.CLAIMED,
+            lease_token="lease-a",
+            lease_expires_at=utc_now() + timedelta(seconds=30),
+        )
+        cancelled = agent_command_service.request_cancel_command(
+            session,
+            command_id=claimed.id,
+        )
+        completed = agent_command_service.complete_command(
+            session,
+            command_id=cancelled.id,
+            device_id="device-a",
+            lease_token="lease-a",
+            status=AgentCommandStatus.SUCCESS,
+        )
+
+        assert completed.status == AgentCommandStatus.CANCELLED
+        assert completed.last_error == "cancelled by user"
+    finally:
+        session.close()
+
+
+def test_cancel_command_is_idempotent_for_terminal_command() -> None:
+    session = make_session()
+    try:
+        command = add_command(session)
+        cancelled = agent_command_service.request_cancel_command(
+            session,
+            command_id=command.id,
+        )
+        repeated = agent_command_service.request_cancel_command(
+            session,
+            command_id=command.id,
+        )
+
+        assert repeated.id == cancelled.id
+        assert repeated.status == AgentCommandStatus.CANCELLED
+        assert repeated.completed_at == cancelled.completed_at
+    finally:
+        session.close()
+
+
 def test_agent_command_rejects_pending_to_success_without_claim() -> None:
     session = make_session()
     try:

@@ -8,7 +8,9 @@ from sqlmodel.pool import StaticPool
 
 from backend.main import app
 from backend.db import get_session
-from backend.models import Project, RunnerRecord, Task, TaskStatus, TaskType, utc_now
+from backend.models import AgentCommandStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, utc_now
+from backend.services import agent_command_service
+from tests.test_runs_api import add_device, add_workspace
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -396,6 +398,33 @@ def test_cancel_running_task_sets_cancel_request_without_terminal_status() -> No
         body = response.json()
         assert body["status"] == "RUNNING"
         assert body["cancel_requested"] is True
+
+
+def test_cancel_agent_run_cancels_command_and_is_idempotent() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "prompt": "cancel agent run",
+                "client_request_id": "cancel-run-1",
+            },
+        ).json()
+
+        first = client.post(f"/tasks/{created['id']}/cancel")
+        second = client.post(f"/tasks/{created['id']}/cancel")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["status"] == "CANCELLED"
+        assert second.json()["status"] == "CANCELLED"
+        assert first.json()["cancel_requested"] is True
+        command = agent_command_service.list_commands_for_device(session, "device-a")[0]
+        assert command.status == AgentCommandStatus.CANCELLED
 
 
 def test_task_templates_are_exposed() -> None:

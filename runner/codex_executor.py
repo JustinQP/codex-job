@@ -64,6 +64,8 @@ def execute_codex(
     sandbox: str = "workspace-write",
     should_cancel: Optional[Callable[[], bool]] = None,
     on_tick: Optional[Callable[[], None]] = None,
+    on_process_started: Optional[Callable[[subprocess.Popen[str]], None]] = None,
+    on_process_finished: Optional[Callable[[], None]] = None,
 ) -> CodexExecutionResult:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     result_file.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +119,21 @@ def execute_codex(
                 error_message=message,
                 codex_bin=codex_bin,
             )
+
+        if on_process_started is not None:
+            try:
+                on_process_started(process)
+            except Exception as exc:  # noqa: BLE001
+                message = f"on_process_started failed: {exc}"
+                log.write(f"ERROR: {message}\n")
+                log.flush()
+                _stop_process_tree(process, log)
+                return CodexExecutionResult(
+                    exit_code=-1,
+                    timed_out=False,
+                    error_message=message,
+                    codex_bin=codex_bin,
+                )
 
         def stream_output() -> None:
             if process.stdout is None:
@@ -185,6 +202,9 @@ def execute_codex(
         except subprocess.TimeoutExpired:
             log.write("ERROR: process did not exit cleanly after stop request\n")
             log.flush()
+        finally:
+            if on_process_finished is not None:
+                on_process_finished()
 
         stream_thread.join(timeout=5)
         log.write(f"\nCodex exit code: {exit_code}\n")

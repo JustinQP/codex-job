@@ -316,6 +316,8 @@ def complete_command(
     _ensure_device_command(command, device_id)
     if command.status in TERMINAL_STATUSES and command.status == status:
         return command
+    if command.status == AgentCommandStatus.CANCELLED:
+        return command
     _ensure_valid_lease(session, command, lease_token)
     return transition_command(
         session,
@@ -386,3 +388,19 @@ def list_commands_for_device(
         statement = statement.where(AgentCommand.status == status)
     statement = statement.order_by(AgentCommand.created_at)
     return list(session.exec(statement).all())
+
+
+def request_cancel_command(
+    session: Session,
+    *,
+    command_id: str,
+) -> AgentCommand:
+    command = _get_command_or_error(session, command_id)
+    if command.status in TERMINAL_STATUSES:
+        return command
+    return transition_command(
+        session,
+        command,
+        AgentCommandStatus.CANCELLED,
+        last_error="cancelled by user",
+    )

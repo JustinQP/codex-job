@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from sqlmodel import Session
 
+from agent.api_client import AgentApiError
 from agent.command_handlers import CommandHandlerRegistry
 from agent.run_executor import RunExecutor
 from agent.workspace_registry import WorkspaceRegistry
@@ -131,6 +133,95 @@ def test_command_registry_completes_run_execute_with_fake_handler(monkeypatch, t
     assert result.success is True
 
 
+class FakeStdout:
+    def __iter__(self):
+        return iter(())
+
+
+class FakeProcess:
+    def __init__(self) -> None:
+        self.stdout = FakeStdout()
+        self.pid = 123
+        self.terminated = False
+        self._polls = 0
+
+    def poll(self):
+        self._polls += 1
+        return None if self._polls == 1 else -1
+
+    def wait(self, timeout=None):
+        return -1
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.terminated = True
+
+
+class CancelClient:
+    def __init__(self) -> None:
+        self.renewed = 0
+        self.reconciled = 0
+
+    def renew_command(self, command_id, payload):
+        self.renewed += 1
+        return {"id": command_id}
+
+    def reconcile(self, payload):
+        self.reconciled += 1
+        return {
+            "action": "STOP",
+            "server_status": "CANCELLED",
+            "reason": "server command is cancelled",
+        }
+
+
+def test_run_executor_stops_process_when_command_is_cancelled(monkeypatch, tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    registry = WorkspaceRegistry.load(_write_registry(tmp_path, repo))
+    process = FakeProcess()
+    client = CancelClient()
+    executor = RunExecutor(registry, client=client, device_id="device-a")
+
+    monkeypatch.setattr("agent.run_executor.check_clean_worktree", lambda project_path: None)
+    monkeypatch.setattr("agent.run_executor.collect_git_artifacts", lambda project_path, job_dir: _git_artifacts(job_dir))
+    monkeypatch.setattr("runner.codex_executor.find_codex_bin", lambda: "codex")
+    monkeypatch.setattr("runner.codex_executor.subprocess.Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr("runner.codex_executor.time.sleep", lambda seconds: None)
+
+    result = executor.handle(
+        {
+            "id": "cmd-1",
+            "lease_token": "lease-a",
+            "command_type": "RUN_EXECUTE",
+            "payload_json": json.dumps(
+                {
+                    "task_id": 1,
+                    "workspace_key": "repo",
+                    "prompt": "long run",
+                }
+            ),
+        }
+    )
+
+    assert result.success is False
+    assert result.message == "task cancelled"
+    assert process.terminated is True
+    assert client.renewed == 1
+    assert client.reconciled == 1
+
+
+def test_run_executor_ignores_temporary_cancel_poll_error(monkeypatch, tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    registry = WorkspaceRegistry.load(_write_registry(tmp_path, repo))
+    executor = RunExecutor(registry, client=_FailingCancelClient(), device_id="device-a")
+
+    assert executor._should_cancel("cmd-1", "lease-a") is False
+
+
 def _write_registry(tmp_path, repo):
     registry_path = tmp_path / "workspaces.json"
     registry_path.write_text(
@@ -149,3 +240,24 @@ def _write_registry(tmp_path, repo):
         encoding="utf-8",
     )
     return registry_path
+
+
+def _git_artifacts(job_dir: Path):
+    job_dir.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "status_file": job_dir / "git-status.txt",
+        "diff_unstaged_file": job_dir / "diff-unstaged.patch",
+        "diff_staged_file": job_dir / "diff-staged.patch",
+        "untracked_files_file": job_dir / "untracked-files.txt",
+        "combined_diff_file": job_dir / "diff.patch",
+    }
+    for path in paths.values():
+        path.write_text("", encoding="utf-8")
+    from runner.codex_executor import GitArtifactsResult
+
+    return GitArtifactsResult(error_message=None, **paths)
+
+
+class _FailingCancelClient:
+    def renew_command(self, command_id, payload):
+        raise AgentApiError("temporary network")

@@ -5,14 +5,28 @@ import json
 import os
 from typing import Any
 
+from agent.api_client import AgentApiClient, AgentApiError
 from agent.command_handlers import CommandResult
+from agent.process_registry import ProcessRegistry
 from agent.workspace_registry import WorkspaceRegistry, WorkspaceRegistryError
+from backend.models import AgentCommandStatus
+from backend.schemas import AgentCommandLeaseRequest, AgentReconcileRequest
 from runner.codex_executor import check_clean_worktree, collect_git_artifacts, execute_codex
 
 
 class RunExecutor:
-    def __init__(self, workspace_registry: WorkspaceRegistry) -> None:
+    def __init__(
+        self,
+        workspace_registry: WorkspaceRegistry,
+        *,
+        client: AgentApiClient | None = None,
+        device_id: str | None = None,
+        process_registry: ProcessRegistry | None = None,
+    ) -> None:
         self.workspace_registry = workspace_registry
+        self.client = client
+        self.device_id = device_id
+        self.process_registry = process_registry or ProcessRegistry()
 
     def handle(self, command: dict[str, Any]) -> CommandResult:
         try:
@@ -24,6 +38,9 @@ class RunExecutor:
 
         if payload.get("cwd") or payload.get("project_path"):
             return CommandResult(False, "run command payload must not specify cwd")
+
+        command_id = str(command.get("id") or "")
+        lease_token = str(command.get("lease_token") or "")
 
         if os.environ.get("CODEX_AGENT_FAKE_RUN") == "1":
             return self._fake_execute(project_path, payload)
@@ -46,6 +63,9 @@ class RunExecutor:
             model=payload.get("model"),
             reasoning_effort=payload.get("reasoning_effort"),
             sandbox=str(payload.get("sandbox") or "workspace-write"),
+            should_cancel=lambda: self._should_cancel(command_id, lease_token),
+            on_process_started=lambda process: self.process_registry.register(command_id, process),
+            on_process_finished=lambda: self.process_registry.unregister(command_id),
         )
         artifacts = collect_git_artifacts(project_path, job_dir)
         if execution.error_message:
@@ -59,3 +79,25 @@ class RunExecutor:
             True,
             f"fake run executed in {project_path} for task {payload.get('task_id')}",
         )
+
+    def _should_cancel(self, command_id: str, lease_token: str) -> bool:
+        if self.client is None or not self.device_id or not command_id or not lease_token:
+            return False
+        lease = AgentCommandLeaseRequest(
+            device_id=self.device_id,
+            lease_token=lease_token,
+        )
+        try:
+            self.client.renew_command(command_id, lease)
+            reconciliation = self.client.reconcile(
+                AgentReconcileRequest(
+                    device_id=self.device_id,
+                    command_id=command_id,
+                    process_status="RUNNING",
+                )
+            )
+        except AgentApiError:
+            return False
+        if reconciliation.get("server_status") == AgentCommandStatus.CANCELLED.value:
+            return True
+        return reconciliation.get("action") == "STOP"

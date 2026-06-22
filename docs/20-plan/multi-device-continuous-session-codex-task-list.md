@@ -125,7 +125,7 @@ Codex 执行本清单时必须遵守：
 - [x] D02 通过 AgentCommand 下发 `codex exec`
 - [x] D03 实现增量日志上传
 - [x] D04 实现产物 manifest 和大小限制
-- [ ] D05 实现真实 Run 取消
+- [x] D05 实现真实 Run 取消
 - [ ] D06 手机端运行页显示设备和 Workspace
 - [ ] D07 兼容并逐步废弃旧 Runner 认领接口
 
@@ -1744,7 +1744,7 @@ D02。
 
 ---
 
-### [ ] D05 实现真实 Run 取消
+### [x] D05 实现真实 Run 取消
 
 **目标**
 
@@ -1768,6 +1768,36 @@ D02、C06。
 - 测试子进程被实际终止。
 - 重复取消不报内部错误。
 - 取消与完成竞争时终态规则有测试。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/services/agent_command_service.py`
+  - `backend/services/task_service.py`
+  - `agent/command_handlers.py`
+  - `agent/command_loop.py`
+  - `agent/process_registry.py`
+  - `agent/run_executor.py`
+  - `runner/codex_executor.py`
+  - `tests/test_agent_command_service.py`
+  - `tests/test_tasks_api.py`
+  - `tests/test_agent_run_executor.py`
+  - `tests/test_agent_command_loop.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 控制端：`/tasks/{task_id}/cancel` 对绑定 `command_id` 的 Run 会同步将 AgentCommand 标记为 `CANCELLED`，重复取消返回当前取消态，不报内部错误
+- Agent：新增 `ProcessRegistry`，RunExecutor 在 `codex exec` 进程启动和结束时登记/移除 command_id 对应进程；执行中通过 command renew + reconcile 轮询服务端取消态
+- 进程终止：发现服务端命令为 `CANCELLED` 或 reconcile 要求 `STOP` 时，RunExecutor 的 `should_cancel` 返回 true，复用 `runner.codex_executor` 现有 process tree kill 逻辑；Windows 仍使用 `taskkill /T /F`
+- 终态规则：AgentCommand 已取消后，迟到的 SUCCESS complete 不会覆盖 CANCELLED；Task 取消后保持 CANCELLED
+- 自动化测试：
+  - `pytest -q tests/test_agent_command_service.py tests/test_tasks_api.py tests/test_agent_run_executor.py tests/test_agent_command_loop.py tests/test_agent_reconciliation.py tests/test_runner_service.py tests/test_codex_executor.py`：通过，60 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，264 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：旧 Runner 取消仍使用原 `/runner/tasks/{task_id}/cancel-state` 轮询；本次只给 AgentCommand Run 增加真实取消闭环
+- 风险与未完成项：取消轮询依赖 Agent 与控制端连通；断线重连后的停止动作由既有 reconciliation 返回 `STOP` 支撑
 
 ---
 

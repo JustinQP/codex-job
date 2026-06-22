@@ -7,6 +7,8 @@ from agent.api_client import AgentApiError
 from agent.command_loop import AgentCommandLoop
 from agent.identity import AgentIdentity
 from agent.local_state import AgentLocalState
+from agent.process_registry import ProcessRegistry
+from agent.workspace_registry import WorkspaceRegistry
 
 
 class FakeClient:
@@ -141,3 +143,30 @@ def test_run_forever_stops_when_stop_event_is_set(tmp_path) -> None:
     loop.run_forever(stop_event)
 
     assert "register" in client.calls
+
+
+def test_command_loop_injects_process_registry_into_run_executor(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    registry_path = tmp_path / "workspaces.json"
+    registry_path.write_text(
+        '{"allowed_roots":["%s"],"workspaces":[{"key":"repo","name":"Repo","path":"%s"}]}'
+        % (str(tmp_path).replace("\\", "\\\\"), str(repo).replace("\\", "\\\\")),
+        encoding="utf-8",
+    )
+    process_registry = ProcessRegistry()
+
+    loop = AgentCommandLoop(
+        client=FakeClient(),
+        identity=identity(),
+        local_state=AgentLocalState(tmp_path / "state.json"),
+        workspace_registry=WorkspaceRegistry.load(registry_path),
+        process_registry=process_registry,
+        poll_interval_seconds=0,
+    )
+
+    run_executor = loop.handlers._handlers["RUN_EXECUTE"]
+
+    assert run_executor.client is loop.client
+    assert run_executor.device_id == "device-a"
+    assert run_executor.process_registry is process_registry

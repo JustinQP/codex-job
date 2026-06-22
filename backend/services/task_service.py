@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from backend.db import JOBS_DIR
-from backend.models import DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
+from backend.models import AgentCommandStatus, DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
 from backend.schemas import RunCreate, TaskCreate
 from backend.services import agent_command_service
 
@@ -236,6 +236,8 @@ def rerun_task(session: Session, task_id: int) -> Task:
 
 def request_cancel(session: Session, task_id: int) -> Task:
     task = get_task_or_404(session, task_id)
+    if task.status == TaskStatus.CANCELLED and task.cancel_requested:
+        return task
     if task.status in {TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -243,6 +245,16 @@ def request_cancel(session: Session, task_id: int) -> Task:
         )
     task.cancel_requested = True
     task.updated_at = utc_now()
+    if task.command_id:
+        command = agent_command_service.request_cancel_command(
+            session,
+            command_id=task.command_id,
+        )
+        if command.status == AgentCommandStatus.CANCELLED:
+            task.status = TaskStatus.CANCELLED
+            task.finished_at = utc_now()
+            task.lease_expires_at = None
+            task.error_message = "task cancelled"
     if task.status == TaskStatus.PENDING:
         task.status = TaskStatus.CANCELLED
         task.finished_at = utc_now()
