@@ -1,0 +1,13 @@
+{
+  "allowed_roots": [
+    "F:/JustinKing"
+  ],
+  "workspaces": [
+    {
+      "key": "codex-job",
+      "name": "Codex Job",
+      "path": "F:/JustinKing/codex-job",
+      "enabled": true
+    }
+  ]
+}

@@ -105,7 +105,7 @@ Codex 执行本清单时必须遵守：
 - [x] B02 实现 Agent 稳定设备身份
 - [x] B03 实现 Agent 注册、心跳和认证接口
 - [x] B04 新增 Workspace 数据模型和迁移
-- [ ] B05 实现 Agent 本地 Workspace Registry
+- [x] B05 实现 Agent 本地 Workspace Registry
 - [ ] B06 实现 Workspace 同步接口
 - [ ] B07 兼容迁移现有 Project
 - [ ] B08 手机端增加设备和 Workspace 选择
@@ -789,7 +789,7 @@ tests/test_workspace_service.py
 
 ---
 
-### [ ] B05 实现 Agent 本地 Workspace Registry
+### [x] B05 实现 Agent 本地 Workspace Registry
 
 **目标**
 
@@ -834,6 +834,23 @@ tests/test_workspace_registry.py
 - 合法 Workspace 可解析。
 - 不存在、越界、重复和禁用 Workspace 被拒绝。
 - Windows 路径大小写、盘符和符号链接边界有测试。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `agent/config.py`
+  - `agent/workspace_registry.py`
+  - `scripts/agent.example.json`
+  - `tests/test_workspace_registry.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_workspace_registry.py`：通过，5 passed, 1 skipped；符号链接边界测试因当前 Windows 环境不允许创建 symlink 被跳过
+  - `python -m compileall agent`：通过
+  - `pytest -q`：通过，205 passed, 1 skipped
+- 人工验证：不涉及
+- 回归影响：新增 Agent 本地 registry，不改变后端旧执行链路
+- 风险与未完成项：本任务仅本地加载和解析 Workspace；同步控制端由 B06 实现
 
 ---
 
