@@ -103,7 +103,7 @@ Codex 执行本清单时必须遵守：
 
 - [x] B01 新增 Device 数据模型和迁移
 - [x] B02 实现 Agent 稳定设备身份
-- [ ] B03 实现 Agent 注册、心跳和认证接口
+- [x] B03 实现 Agent 注册、心跳和认证接口
 - [ ] B04 新增 Workspace 数据模型和迁移
 - [ ] B05 实现 Agent 本地 Workspace Registry
 - [ ] B06 实现 Workspace 同步接口
@@ -636,7 +636,7 @@ tests/test_agent_identity.py
 
 ---
 
-### [ ] B03 实现 Agent 注册、心跳和认证接口
+### [x] B03 实现 Agent 注册、心跳和认证接口
 
 **目标**
 
@@ -687,6 +687,30 @@ tests/test_agent_auth_api.py
 - 正确 Agent Token 可注册和心跳。
 - 无 Token、错误 Token、API Token 均返回 401/403。
 - 手机 API Token 可以查看设备，但不能伪造 Agent 心跳。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/dependencies.py`
+  - `backend/main.py`
+  - `backend/routers/agent.py`
+  - `backend/routers/devices.py`
+  - `agent/config.py`
+  - `agent/api_client.py`
+  - `agent/heartbeat.py`
+  - `agent/main.py`
+  - `tests/test_agent_auth_api.py`
+  - `tests/test_agent_api_client.py`
+  - `tests/test_api_contract.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_agent_auth_api.py tests/test_agent_api_client.py tests/test_device_service.py tests/test_api_contract.py`：通过，12 passed
+  - `python -m compileall backend agent`：通过
+  - `pytest -q`：通过，195 passed
+- 人工验证：不涉及
+- 回归影响：新增 `X-Agent-Token` 写接口和 `X-API-Token` 设备读接口；旧手机 API 和旧 Runner API 认证不变
+- 风险与未完成项：Agent 目前支持单次注册/心跳 helper，持续循环和 Workspace 同步由后续任务实现
 
 ---
 

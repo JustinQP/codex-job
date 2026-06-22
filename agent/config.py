@@ -17,6 +17,8 @@ def _env_path(name: str, default: Path) -> Path:
 class AgentConfig:
     data_dir: Path
     display_name: str
+    backend_url: str
+    agent_token: str | None
 
     @property
     def identity_path(self) -> Path:
@@ -26,4 +28,11 @@ class AgentConfig:
 def load_agent_config() -> AgentConfig:
     data_dir = _env_path("CODEX_AGENT_DATA_DIR", ROOT_DIR / "data" / "agent")
     display_name = os.environ.get("CODEX_AGENT_DISPLAY_NAME") or socket.gethostname()
-    return AgentConfig(data_dir=data_dir, display_name=display_name.strip() or socket.gethostname())
+    backend_url = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+    agent_token = os.environ.get("AGENT_TOKEN")
+    return AgentConfig(
+        data_dir=data_dir,
+        display_name=display_name.strip() or socket.gethostname(),
+        backend_url=backend_url,
+        agent_token=agent_token,
+    )

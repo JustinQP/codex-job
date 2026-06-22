@@ -11,7 +11,7 @@ from sqlmodel import Session
 
 from backend.db import engine, init_db
 from backend.dependencies import require_api_token
-from backend.routers import app_threads, projects, runners, tasks, ui
+from backend.routers import agent, app_threads, devices, projects, runners, tasks, ui
 from backend.routers.app_threads import _sse_event
 from backend.routers.tasks import _read_task_artifact
 from backend.routers.ui import frontend_build_missing_page
@@ -57,7 +57,9 @@ app.mount(
 )
 
 app.include_router(ui.router)
+app.include_router(agent.router)
 app.include_router(app_threads.router)
+app.include_router(devices.router)
 app.include_router(projects.router)
 app.include_router(tasks.router)
 app.include_router(runners.router)

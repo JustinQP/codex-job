@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 
+from agent.api_client import AgentApiClient
 from agent.config import load_agent_config
+from agent.heartbeat import register_agent, send_heartbeat
 from agent.identity import load_or_create_identity
 
 
@@ -14,6 +16,8 @@ def main() -> None:
         action="store_true",
         help="print the stable local device identity and exit",
     )
+    parser.add_argument("--register", action="store_true", help="register this agent and exit")
+    parser.add_argument("--heartbeat", action="store_true", help="send one heartbeat and exit")
     args = parser.parse_args()
 
     config = load_agent_config()
@@ -33,6 +37,13 @@ def main() -> None:
                 ensure_ascii=False,
             )
         )
+    if args.register or args.heartbeat:
+        client = AgentApiClient(
+            base_url=config.backend_url,
+            agent_token=config.agent_token,
+        )
+        result = register_agent(client, identity) if args.register else send_heartbeat(client, identity)
+        print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":
