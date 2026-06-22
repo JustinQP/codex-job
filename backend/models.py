@@ -167,6 +167,7 @@ class AgentCommand(SQLModel, table=True):
     idempotency_key: str
     payload_json: str = "{}"
     status: AgentCommandStatus = Field(default=AgentCommandStatus.PENDING, index=True)
+    claim_request_id: Optional[str] = Field(default=None, index=True)
     lease_token: Optional[str] = Field(default=None, index=True)
     lease_expires_at: Optional[datetime] = Field(default=None, index=True)
     attempt_count: int = Field(default=0)

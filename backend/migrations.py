@@ -283,6 +283,28 @@ def create_agent_commands_table(engine: Engine) -> None:
             )
 
 
+def add_agent_command_claim_request_id(engine: Engine) -> None:
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(agent_commands)")
+        }
+        if not existing:
+            return
+        if "claim_request_id" not in existing:
+            connection.execute(
+                text("ALTER TABLE agent_commands ADD COLUMN claim_request_id TEXT")
+            )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_agent_commands_claim_request_id
+                ON agent_commands (claim_request_id)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -308,6 +330,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0005",
         name="agent_commands",
         apply=create_agent_commands_table,
+    ),
+    Migration(
+        version="0006",
+        name="agent_command_claim_request_id",
+        apply=add_agent_command_claim_request_id,
     ),
 )
 

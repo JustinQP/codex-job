@@ -114,7 +114,7 @@ Codex 执行本清单时必须遵守：
 
 - [x] C01 新增 AgentCommand 模型和状态机
 - [x] C02 实现命令创建服务和幂等键
-- [ ] C03 实现命令 claim、续租和完成接口
+- [x] C03 实现命令 claim、续租和完成接口
 - [ ] C04 实现 Agent 命令循环
 - [ ] C05 实现命令事件增量上传
 - [ ] C06 实现 Agent 重连 reconciliation
@@ -1194,7 +1194,7 @@ tests/test_command_service.py
 
 ---
 
-### [ ] C03 实现命令 claim、续租和完成接口
+### [x] C03 实现命令 claim、续租和完成接口
 
 **目标**
 
@@ -1241,6 +1241,33 @@ tests/test_agent_command_api.py
 - 模拟响应丢失并重复 Claim，不多领命令。
 - Agent A 永远不能认领 Agent B 命令。
 - 错误 lease token 被拒绝。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/routers/agent.py`
+  - `backend/services/agent_command_service.py`
+  - `tests/test_agent_command_api.py`
+  - `tests/test_agent_command_service.py`
+  - `tests/test_db_migrations.py`
+  - `tests/test_api_contract.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0006 agent_command_claim_request_id`，为 `agent_commands` 增加 `claim_request_id` 并建立索引
+- API：新增 `POST /agent/commands/claim`、`/ack`、`/renew`、`/complete`，均沿用 Agent Token 鉴权
+- Claim/lease：Claim 通过条件更新认领 PENDING 命令；同一 `claim_request_id` 重试返回原命令，不领取下一条；ACK/renew/complete 均校验 device 和 lease token
+- 过期处理：lease 过期后未达最大次数回到 PENDING 供后续重试；达到上限进入 EXPIRED；终态 complete 重试保持幂等
+- 自动化测试：
+  - `pytest -q tests/test_agent_command_api.py tests/test_agent_command_service.py tests/test_db_migrations.py tests/test_api_contract.py`：通过，21 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，227 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：仅新增 Agent 命令接口，不改变旧 Runner/Task 执行路径
+- 风险与未完成项：当前为短轮询接口；Agent 主循环、长轮询和本地 claim_request_id 保存由 C04 接入
 
 ---
 

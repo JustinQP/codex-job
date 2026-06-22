@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models import DeviceStatus, TaskStatus, TaskType, WorkspaceBindingStatus
+from backend.models import AgentCommandStatus, DeviceStatus, TaskStatus, TaskType, WorkspaceBindingStatus
 
 
 class ProjectCreate(BaseModel):
@@ -256,6 +256,42 @@ class WorkspaceSyncRead(BaseModel):
     synced_count: int
     disabled_count: int
     workspaces: list[WorkspaceRead]
+
+
+class AgentCommandRead(BaseModel):
+    id: str
+    device_id: str
+    command_type: str
+    aggregate_type: Optional[str]
+    aggregate_id: Optional[str]
+    idempotency_key: str
+    payload_json: str
+    status: AgentCommandStatus
+    lease_token: Optional[str]
+    lease_expires_at: Optional[datetime]
+    attempt_count: int
+    max_attempts: int
+    created_at: datetime
+    claimed_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    last_error: Optional[str]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AgentCommandClaimRequest(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    claim_request_id: str = Field(..., min_length=1, max_length=120)
+
+
+class AgentCommandLeaseRequest(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    lease_token: str = Field(..., min_length=1, max_length=200)
+
+
+class AgentCommandCompleteRequest(AgentCommandLeaseRequest):
+    status: AgentCommandStatus
+    error_message: Optional[str] = None
 
 
 class AppThreadCreate(BaseModel):
