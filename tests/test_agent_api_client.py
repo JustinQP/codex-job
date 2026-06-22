@@ -9,7 +9,7 @@ import pytest
 from agent.api_client import AgentApiClient, AgentApiError
 from agent.heartbeat import build_heartbeat_payload, build_register_payload
 from agent.identity import AgentIdentity
-from backend.schemas import DeviceHeartbeat, DeviceRegister
+from backend.schemas import DeviceHeartbeat, DeviceRegister, WorkspaceSyncItem, WorkspaceSyncRequest
 
 
 class AgentClientHandler(BaseHTTPRequestHandler):
@@ -55,14 +55,29 @@ def test_agent_api_client_sends_agent_token_and_json() -> None:
             )
         )
         heartbeat = client.heartbeat(DeviceHeartbeat(device_id="device-a"))
+        synced = client.sync_workspaces(
+            WorkspaceSyncRequest(
+                device_id="device-a",
+                workspaces=[
+                    WorkspaceSyncItem(
+                        workspace_key="repo",
+                        name="Repo",
+                        path_label="repo",
+                    )
+                ],
+            )
+        )
 
         assert registered == {"ok": True, "path": "/agent/register"}
         assert heartbeat == {"ok": True, "path": "/agent/heartbeat"}
+        assert synced == {"ok": True, "path": "/agent/workspaces/sync"}
         assert AgentClientHandler.calls[0][0] == "/agent/register"
         assert AgentClientHandler.calls[0][1] == "secret"
         assert AgentClientHandler.calls[0][2]["device_id"] == "device-a"
         assert AgentClientHandler.calls[1][0] == "/agent/heartbeat"
         assert AgentClientHandler.calls[1][2] == {"device_id": "device-a"}
+        assert AgentClientHandler.calls[2][0] == "/agent/workspaces/sync"
+        assert AgentClientHandler.calls[2][2]["workspaces"][0]["workspace_key"] == "repo"
     finally:
         server.shutdown()
 

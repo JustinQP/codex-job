@@ -5,7 +5,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from backend.schemas import DeviceHeartbeat, DeviceRegister
+from backend.schemas import DeviceHeartbeat, DeviceRegister, WorkspaceSyncRequest
 
 
 class AgentApiError(RuntimeError):
@@ -25,6 +25,9 @@ class AgentApiClient:
 
     def heartbeat(self, payload: DeviceHeartbeat) -> dict[str, Any]:
         return self._json_request("/agent/heartbeat", payload.model_dump(exclude_none=True))
+
+    def sync_workspaces(self, payload: WorkspaceSyncRequest) -> dict[str, Any]:
+        return self._json_request("/agent/workspaces/sync", payload.model_dump(exclude_none=True))
 
     def _json_request(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(payload).encode("utf-8")

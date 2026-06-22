@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from backend.schemas import WorkspaceSyncItem
+
 
 class WorkspaceRegistryError(RuntimeError):
     pass
@@ -64,6 +66,17 @@ class WorkspaceRegistry:
         if not workspace.enabled:
             raise WorkspaceRegistryError(f"workspace disabled: {workspace_key}")
         return workspace.path
+
+    def to_sync_items(self) -> list[WorkspaceSyncItem]:
+        return [
+            WorkspaceSyncItem(
+                workspace_key=workspace.key,
+                name=workspace.name,
+                path_label=workspace.path_label,
+                enabled=workspace.enabled,
+            )
+            for workspace in self.list()
+        ]
 
 
 def _parse_workspace(item: Any, allowed_roots: list[Path]) -> LocalWorkspace:

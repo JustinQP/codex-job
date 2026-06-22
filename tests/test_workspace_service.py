@@ -7,7 +7,7 @@ from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
 from backend.models import Device, Workspace, utc_now
-from backend.schemas import WorkspaceUpsert
+from backend.schemas import WorkspaceSyncItem, WorkspaceSyncRequest, WorkspaceUpsert
 from backend.services import workspace_service
 
 
@@ -165,5 +165,60 @@ def test_database_enforces_unique_device_workspace_key() -> None:
 
         with pytest.raises(IntegrityError):
             session.commit()
+    finally:
+        session.close()
+
+
+def test_sync_device_workspaces_upserts_and_disables_missing() -> None:
+    session = make_session()
+    try:
+        add_device(session, "device-a")
+        existing = workspace_service.upsert_workspace(
+            session,
+            workspace_payload(workspace_key="old"),
+        )
+
+        result = workspace_service.sync_device_workspaces(
+            session,
+            WorkspaceSyncRequest(
+                device_id="device-a",
+                workspaces=[
+                    WorkspaceSyncItem(
+                        workspace_key="repo",
+                        name="Repo",
+                        path_label="repo",
+                        enabled=True,
+                    )
+                ],
+            ),
+        )
+
+        session.refresh(existing)
+        assert result.synced_count == 1
+        assert result.disabled_count == 1
+        assert existing.enabled is False
+        assert {workspace.workspace_key for workspace in result.workspaces} == {"old", "repo"}
+    finally:
+        session.close()
+
+
+def test_sync_device_workspaces_rejects_duplicate_payload_keys() -> None:
+    session = make_session()
+    try:
+        add_device(session, "device-a")
+
+        with pytest.raises(HTTPException) as exc:
+            workspace_service.sync_device_workspaces(
+                session,
+                WorkspaceSyncRequest(
+                    device_id="device-a",
+                    workspaces=[
+                        WorkspaceSyncItem(workspace_key="repo", name="Repo", path_label="repo"),
+                        WorkspaceSyncItem(workspace_key="repo", name="Repo 2", path_label="repo2"),
+                    ],
+                ),
+            )
+
+        assert exc.value.status_code == 400
     finally:
         session.close()

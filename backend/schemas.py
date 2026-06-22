@@ -233,6 +233,29 @@ class WorkspaceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class WorkspaceSyncItem(BaseModel):
+    workspace_key: str = Field(..., min_length=1, max_length=120)
+    name: str = Field(..., min_length=1, max_length=200)
+    path_label: str = Field(..., min_length=1, max_length=300)
+    enabled: bool = True
+    default_model: Optional[str] = None
+    default_reasoning_effort: Optional[str] = None
+    default_sandbox: Optional[str] = None
+    default_approval_policy: Optional[str] = None
+    require_clean_worktree: Optional[bool] = None
+
+
+class WorkspaceSyncRequest(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    workspaces: list[WorkspaceSyncItem]
+
+
+class WorkspaceSyncRead(BaseModel):
+    synced_count: int
+    disabled_count: int
+    workspaces: list[WorkspaceRead]
+
+
 class AppThreadCreate(BaseModel):
     project_id: int
     title: Optional[str] = None

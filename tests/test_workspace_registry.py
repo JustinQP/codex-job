@@ -40,6 +40,8 @@ def test_valid_workspace_can_be_resolved(tmp_path) -> None:
 
     assert registry.resolve("repo") == workspace_dir.resolve()
     assert registry.list()[0].path_label == "repo"
+    assert registry.to_sync_items()[0].workspace_key == "repo"
+    assert registry.to_sync_items()[0].path_label == "repo"
 
 
 def test_missing_duplicate_and_disabled_workspaces_are_rejected(tmp_path) -> None:

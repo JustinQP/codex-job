@@ -114,6 +114,75 @@ def test_agent_token_cannot_call_mobile_api_and_api_token_can_read_devices(monke
         assert api_heartbeat.status_code == 401
 
 
+def test_agent_workspace_sync_and_api_workspace_reads(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    monkeypatch.setenv("API_TOKEN", "api-secret")
+
+    for client, session in make_client():
+        del session
+        registered = client.post(
+            "/agent/register",
+            headers={"X-Agent-Token": "agent-secret"},
+            json=register_payload(),
+        )
+        synced = client.post(
+            "/agent/workspaces/sync",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={
+                "device_id": "device-a",
+                "workspaces": [
+                    {
+                        "workspace_key": "repo",
+                        "name": "Repo",
+                        "path_label": "codex-job",
+                        "enabled": True,
+                    }
+                ],
+            },
+        )
+        api_list = client.get(
+            "/workspaces?device_id=device-a",
+            headers={"X-API-Token": "api-secret"},
+        )
+        api_detail = client.get(
+            f"/workspaces/{api_list.json()[0]['id']}",
+            headers={"X-API-Token": "api-secret"},
+        )
+        agent_list = client.get(
+            "/workspaces",
+            headers={"X-Agent-Token": "agent-secret"},
+        )
+        api_sync = client.post(
+            "/agent/workspaces/sync",
+            headers={"X-API-Token": "api-secret"},
+            json={"device_id": "device-a", "workspaces": []},
+        )
+
+        assert registered.status_code == 200
+        assert synced.status_code == 200
+        assert synced.json()["synced_count"] == 1
+        assert api_list.status_code == 200
+        assert api_list.json()[0]["workspace_key"] == "repo"
+        assert "path" not in api_list.json()[0]
+        assert api_detail.status_code == 200
+        assert agent_list.status_code == 401
+        assert api_sync.status_code == 401
+
+
+def test_workspace_sync_requires_existing_device(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+
+    for client, session in make_client():
+        del session
+        response = client.post(
+            "/agent/workspaces/sync",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "missing", "workspaces": []},
+        )
+
+        assert response.status_code == 404
+
+
 def test_agent_write_returns_503_when_agent_token_not_configured(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_TOKEN", raising=False)
 
