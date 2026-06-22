@@ -139,7 +139,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
         ("0002", "devices"),
@@ -153,6 +153,7 @@ def test_empty_database_initializes_to_latest_migration() -> None:
         ("0010", "app_turn_command_binding"),
         ("0011", "turn_events"),
         ("0012", "active_app_turn_unique_index"),
+        ("0013", "workspace_execution_locks"),
     ]
 
 
@@ -162,7 +163,7 @@ def test_legacy_database_upgrades_missing_columns() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]
     assert "default_runner_id" in table_columns(engine, "projects")
     assert "task_type" in table_columns(engine, "tasks")
     assert "lease_expires_at" in table_columns(engine, "runner_records")
@@ -188,6 +189,8 @@ def test_legacy_database_upgrades_missing_columns() -> None:
     assert "payload_json" in table_columns(engine, "turn_events")
     assert "result_payload_json" in table_columns(engine, "agent_commands")
     assert "ux_app_turns_one_active_per_thread" in table_indexes(engine, "app_turns")
+    assert "owner_type" in table_columns(engine, "workspace_execution_locks")
+    assert "ux_workspace_execution_locks_workspace" in table_indexes(engine, "workspace_execution_locks")
 
 
 def test_migrations_are_idempotent() -> None:
@@ -197,7 +200,7 @@ def test_migrations_are_idempotent() -> None:
     first = run_migrations(engine, backup=False)
     second = run_migrations(engine, backup=False)
 
-    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]
+    assert first == ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]
     assert second == []
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
@@ -212,6 +215,7 @@ def test_migrations_are_idempotent() -> None:
         ("0010", "app_turn_command_binding"),
         ("0011", "turn_events"),
         ("0012", "active_app_turn_unique_index"),
+        ("0013", "workspace_execution_locks"),
     ]
 
 

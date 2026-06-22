@@ -6,13 +6,15 @@ from typing import Any
 from agent.api_client import AgentApiClient, AgentApiError
 from agent.app_server.session_manager import AgentAppSessionManager
 from agent.command_handlers import CommandResult
+from agent.workspace_lock import LocalWorkspaceLock, is_write_sandbox
 from backend.models import AgentCommandStatus
 from backend.schemas import AgentCommandLeaseRequest, AgentReconcileRequest
 
 
 class SessionOpenHandler:
-    def __init__(self, session_manager: AgentAppSessionManager) -> None:
+    def __init__(self, session_manager: AgentAppSessionManager, workspace_lock: LocalWorkspaceLock | None = None) -> None:
         self.session_manager = session_manager
+        self.workspace_lock = workspace_lock or LocalWorkspaceLock()
 
     def handle(self, command: dict[str, Any]) -> CommandResult:
         try:
@@ -25,14 +27,23 @@ class SessionOpenHandler:
             return CommandResult(False, "session open payload must not specify cwd")
 
         try:
+            sandbox = str(payload.get("sandbox") or "read-only")
+            lock_owner = _string_or_none(command.get("id"))
+            workspace_path = self.session_manager.workspace_registry.resolve(workspace_key)
+            if is_write_sandbox(sandbox) and lock_owner:
+                self.workspace_lock.acquire_write(workspace_path, f"session:{lock_owner}")
             session = self.session_manager.open_session(
                 workspace_key=workspace_key,
                 title=_string_or_none(payload.get("title")),
-                sandbox=str(payload.get("sandbox") or "read-only"),
+                sandbox=sandbox,
                 approval_policy=str(payload.get("approval_policy") or "never"),
                 network_access=bool(payload.get("network_access")),
+                workspace_lock_owner=f"session:{lock_owner}" if lock_owner and is_write_sandbox(sandbox) else None,
+                workspace_lock_release=self.workspace_lock.release,
             )
         except Exception as exc:  # noqa: BLE001
+            if "lock_owner" in locals() and lock_owner and "workspace_path" in locals():
+                self.workspace_lock.release(workspace_path, f"session:{lock_owner}")
             return CommandResult(False, f"failed to open app session: {exc}")
         return CommandResult(
             True,

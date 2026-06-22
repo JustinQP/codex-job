@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from agent.api_client import AgentApiClient
 from agent.process_registry import ProcessRegistry
+from agent.workspace_lock import LocalWorkspaceLock
 from agent.workspace_registry import WorkspaceRegistry
 
 
@@ -49,7 +50,9 @@ class CommandHandlerRegistry:
         process_registry: ProcessRegistry | None = None,
         app_session_manager: Any | None = None,
         event_uploader: Any | None = None,
+        workspace_lock: LocalWorkspaceLock | None = None,
     ) -> None:
+        local_workspace_lock = workspace_lock or LocalWorkspaceLock()
         self._handlers: dict[str, CommandHandler] = {
             "fake.echo": FakeCommandHandler(),
         }
@@ -61,11 +64,12 @@ class CommandHandlerRegistry:
                 client=client,
                 device_id=device_id,
                 process_registry=process_registry,
+                workspace_lock=local_workspace_lock,
             )
         if app_session_manager is not None:
             from agent.session_handlers import SessionOpenHandler, TurnStartHandler
 
-            self._handlers["SESSION_OPEN"] = SessionOpenHandler(app_session_manager)
+            self._handlers["SESSION_OPEN"] = SessionOpenHandler(app_session_manager, local_workspace_lock)
             self._handlers["TURN_START"] = TurnStartHandler(app_session_manager, event_uploader, client)
         self._fallback = UnsupportedCommandHandler()
 

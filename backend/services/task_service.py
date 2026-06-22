@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from backend.db import JOBS_DIR
 from backend.models import AgentCommandStatus, Device, DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
 from backend.schemas import RunCreate, TaskCreate
-from backend.services import agent_command_service
+from backend.services import agent_command_service, workspace_lock_service
 
 
 TASK_TEMPLATES: dict[TaskType, tuple[str, str]] = {
@@ -142,6 +142,18 @@ def create_run(session: Session, payload: RunCreate) -> Task:
             status_code=status.HTTP_409_CONFLICT,
             detail="device is offline",
         )
+    project = session.get(Project, payload.project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="project not found",
+        )
+    requested_sandbox = payload.sandbox or project.default_sandbox or DEFAULT_SANDBOX
+    workspace_lock_service.ensure_workspace_available(
+        session,
+        workspace_id=workspace.id,
+        sandbox=requested_sandbox,
+    )
 
     task = create_task(session, payload)
     task.workspace_id = workspace.id
@@ -150,27 +162,44 @@ def create_run(session: Session, payload: RunCreate) -> Task:
     session.add(task)
     session.commit()
     session.refresh(task)
-    command = agent_command_service.create_command(
+    if task.id is None:
+        raise ValueError("task id is required")
+    workspace_lock_service.acquire_workspace_lock(
         session,
-        device_id=workspace.device_id,
-        command_type="RUN_EXECUTE",
-        aggregate_type="task",
-        aggregate_id=str(task.id),
-        idempotency_key=payload.client_request_id or f"run:{task.id}",
         workspace_id=workspace.id,
-        payload={
-            "task_id": task.id,
-            "workspace_id": workspace.id,
-            "workspace_key": workspace.workspace_key,
-            "prompt": task.prompt,
-            "timeout_seconds": task.timeout_seconds,
-            "task_type": task.task_type.value,
-            "model": task.model,
-            "reasoning_effort": task.reasoning_effort,
-            "sandbox": task.sandbox,
-            "require_clean_worktree": workspace.require_clean_worktree,
-        },
+        owner_type="run",
+        owner_id=str(task.id),
+        sandbox=task.sandbox,
     )
+    try:
+        command = agent_command_service.create_command(
+            session,
+            device_id=workspace.device_id,
+            command_type="RUN_EXECUTE",
+            aggregate_type="task",
+            aggregate_id=str(task.id),
+            idempotency_key=payload.client_request_id or f"run:{task.id}",
+            workspace_id=workspace.id,
+            payload={
+                "task_id": task.id,
+                "workspace_id": workspace.id,
+                "workspace_key": workspace.workspace_key,
+                "prompt": task.prompt,
+                "timeout_seconds": task.timeout_seconds,
+                "task_type": task.task_type.value,
+                "model": task.model,
+                "reasoning_effort": task.reasoning_effort,
+                "sandbox": task.sandbox,
+                "require_clean_worktree": workspace.require_clean_worktree,
+            },
+        )
+    except Exception:
+        workspace_lock_service.release_workspace_lock(
+            session,
+            owner_type="run",
+            owner_id=str(task.id),
+        )
+        raise
     task.command_id = command.id
     session.add(task)
     session.commit()
@@ -258,9 +287,19 @@ def request_cancel(session: Session, task_id: int) -> Task:
             task.finished_at = utc_now()
             task.lease_expires_at = None
             task.error_message = "task cancelled"
+            workspace_lock_service.release_workspace_lock(
+                session,
+                owner_type="run",
+                owner_id=str(task.id),
+            )
     if task.status == TaskStatus.PENDING:
         task.status = TaskStatus.CANCELLED
         task.finished_at = utc_now()
+        workspace_lock_service.release_workspace_lock(
+            session,
+            owner_type="run",
+            owner_id=str(task.id),
+        )
     session.add(task)
     session.commit()
     session.refresh(task)

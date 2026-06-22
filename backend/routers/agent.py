@@ -33,6 +33,7 @@ from backend.services import (
     run_artifact_service,
     run_log_service,
     workspace_service,
+    workspace_lock_service,
 )
 
 
@@ -174,6 +175,12 @@ def complete_agent_command(
                 result_payload=payload.result_payload,
             )
             session.refresh(command)
+        if command.command_type == "SESSION_OPEN" and command.status != "SUCCESS":
+            workspace_lock_service.release_workspace_lock(
+                session,
+                owner_type="app_thread",
+                owner_id=str(command.aggregate_id),
+            )
         elif command.command_type == "TURN_START":
             app_thread_service.complete_agent_turn_start(
                 session,
@@ -181,6 +188,12 @@ def complete_agent_command(
                 result_payload=payload.result_payload,
             )
             session.refresh(command)
+        elif command.command_type == "RUN_EXECUTE":
+            workspace_lock_service.release_workspace_lock(
+                session,
+                owner_type="run",
+                owner_id=str(command.aggregate_id),
+            )
         return command
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)

@@ -35,6 +35,8 @@ class AgentAppSession:
     turn_count: int = 0
     active_turn_id: str | None = None
     last_turn_id: str | None = None
+    workspace_lock_owner: str | None = None
+    workspace_lock_release: Callable[[Path, str], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,8 @@ class AgentAppSessionManager:
         approval_policy: str = "never",
         network_access: bool = False,
         developer_instructions: str = DEFAULT_DEVELOPER_INSTRUCTIONS,
+        workspace_lock_owner: str | None = None,
+        workspace_lock_release: Callable[[Path, str], None] | None = None,
     ) -> AgentAppSession:
         cwd = self.workspace_registry.resolve(workspace_key)
         now = _utc_iso()
@@ -140,6 +144,8 @@ class AgentAppSessionManager:
             stderr_path=stderr_path,
             created_at=now,
             last_activity_at=now,
+            workspace_lock_owner=workspace_lock_owner,
+            workspace_lock_release=workspace_lock_release,
         )
         with self._lock:
             self._sessions[agent_session_id] = session
@@ -322,6 +328,8 @@ class AgentAppSessionManager:
         if session is None:
             return False
         session.client.close()
+        if session.workspace_lock_owner and session.workspace_lock_release:
+            session.workspace_lock_release(session.cwd, session.workspace_lock_owner)
         return True
 
     def close_all(self) -> None:

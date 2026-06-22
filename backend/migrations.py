@@ -505,6 +505,51 @@ def add_active_app_turn_unique_index(engine: Engine) -> None:
         )
 
 
+def create_workspace_execution_locks_table(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS workspace_execution_locks (
+                    id INTEGER PRIMARY KEY,
+                    workspace_id INTEGER NOT NULL,
+                    owner_type TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    lock_type TEXT NOT NULL,
+                    lease_expires_at TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP NOT NULL,
+                    updated_at TIMESTAMP NOT NULL,
+                    FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_workspace_execution_locks_workspace
+                ON workspace_execution_locks (workspace_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_workspace_execution_locks_owner
+                ON workspace_execution_locks (owner_type, owner_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_workspace_execution_locks_lease_expires_at
+                ON workspace_execution_locks (lease_expires_at)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -565,6 +610,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0012",
         name="active_app_turn_unique_index",
         apply=add_active_app_turn_unique_index,
+    ),
+    Migration(
+        version="0013",
+        name="workspace_execution_locks",
+        apply=create_workspace_execution_locks_table,
     ),
 )
 

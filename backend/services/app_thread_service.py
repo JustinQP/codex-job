@@ -24,7 +24,7 @@ from backend.services.app_server_bridge_client import (
     AppServerBridgeError,
     get_default_client,
 )
-from backend.services import agent_command_service
+from backend.services import agent_command_service, workspace_lock_service
 from backend.services import turn_event_service
 
 
@@ -123,6 +123,11 @@ def create_agent_app_thread(
 
     sandbox = payload.sandbox or workspace.default_sandbox or project.default_sandbox or "read-only"
     approval_policy = payload.approval_policy or workspace.default_approval_policy or "never"
+    workspace_lock_service.ensure_workspace_available(
+        session,
+        workspace_id=workspace.id,
+        sandbox=sandbox,
+    )
     app_thread = AppThread(
         project_id=project.id,
         title=title,
@@ -137,27 +142,43 @@ def create_agent_app_thread(
         updated_at=utc_now(),
     )
     session.add(app_thread)
-    session.commit()
-    session.refresh(app_thread)
-    command = agent_command_service.create_command(
+    session.flush()
+    if app_thread.id is None:
+        raise ValueError("app thread id is required")
+    workspace_lock_service.acquire_workspace_lock(
         session,
-        device_id=workspace.device_id,
-        command_type="SESSION_OPEN",
-        aggregate_type="app_thread",
-        aggregate_id=str(app_thread.id),
-        idempotency_key=payload.client_request_id or f"session-open:{app_thread.id}:1",
         workspace_id=workspace.id,
-        payload={
-            "app_thread_id": app_thread.id,
-            "workspace_id": workspace.id,
-            "workspace_key": workspace.workspace_key,
-            "title": title,
-            "sandbox": sandbox,
-            "approval_policy": approval_policy,
-            "network_access": payload.network_access,
-            "generation": app_thread.generation,
-        },
+        owner_type="app_thread",
+        owner_id=str(app_thread.id),
+        sandbox=sandbox,
     )
+    try:
+        command = agent_command_service.create_command(
+            session,
+            device_id=workspace.device_id,
+            command_type="SESSION_OPEN",
+            aggregate_type="app_thread",
+            aggregate_id=str(app_thread.id),
+            idempotency_key=payload.client_request_id or f"session-open:{app_thread.id}:1",
+            workspace_id=workspace.id,
+            payload={
+                "app_thread_id": app_thread.id,
+                "workspace_id": workspace.id,
+                "workspace_key": workspace.workspace_key,
+                "title": title,
+                "sandbox": sandbox,
+                "approval_policy": approval_policy,
+                "network_access": payload.network_access,
+                "generation": app_thread.generation,
+            },
+        )
+    except Exception:
+        workspace_lock_service.release_workspace_lock(
+            session,
+            owner_type="app_thread",
+            owner_id=str(app_thread.id),
+        )
+        raise
     app_thread.command_id = command.id
     session.add(app_thread)
     session.commit()
@@ -408,6 +429,12 @@ def close_app_thread(
     app_thread.status = APP_THREAD_CLOSED
     app_thread.updated_at = utc_now()
     session.add(app_thread)
+    if app_thread.id is not None:
+        workspace_lock_service.release_workspace_lock(
+            session,
+            owner_type="app_thread",
+            owner_id=str(app_thread.id),
+        )
     session.commit()
     session.refresh(app_thread)
     return app_thread
@@ -470,6 +497,12 @@ def reopen_agent_app_thread(session: Session, app_thread: AppThread) -> AppThrea
 
     next_generation = (app_thread.generation or 1) + 1
     now = utc_now()
+    reopen_sandbox = app_thread.sandbox or workspace.default_sandbox or "read-only"
+    workspace_lock_service.ensure_workspace_available(
+        session,
+        workspace_id=workspace.id,
+        sandbox=reopen_sandbox,
+    )
     app_thread.device_id = workspace.device_id
     app_thread.workspace_id = workspace.id
     app_thread.agent_session_id = None
@@ -480,28 +513,42 @@ def reopen_agent_app_thread(session: Session, app_thread: AppThread) -> AppThrea
     app_thread.last_error = None
     app_thread.updated_at = now
     session.add(app_thread)
-    session.commit()
-    session.refresh(app_thread)
-
-    command = agent_command_service.create_command(
+    session.flush()
+    workspace_lock_service.acquire_workspace_lock(
         session,
-        device_id=workspace.device_id,
-        command_type="SESSION_OPEN",
-        aggregate_type="app_thread",
-        aggregate_id=str(app_thread.id),
-        idempotency_key=f"session-open:{app_thread.id}:{next_generation}",
         workspace_id=workspace.id,
-        payload={
-            "app_thread_id": app_thread.id,
-            "workspace_id": workspace.id,
-            "workspace_key": workspace.workspace_key,
-            "title": app_thread.title,
-            "sandbox": app_thread.sandbox or workspace.default_sandbox or "read-only",
-            "approval_policy": app_thread.approval_policy or workspace.default_approval_policy or "never",
-            "network_access": app_thread.network_access,
-            "generation": next_generation,
-        },
+        owner_type="app_thread",
+        owner_id=str(app_thread.id),
+        sandbox=app_thread.sandbox or workspace.default_sandbox or "read-only",
     )
+
+    try:
+        command = agent_command_service.create_command(
+            session,
+            device_id=workspace.device_id,
+            command_type="SESSION_OPEN",
+            aggregate_type="app_thread",
+            aggregate_id=str(app_thread.id),
+            idempotency_key=f"session-open:{app_thread.id}:{next_generation}",
+            workspace_id=workspace.id,
+            payload={
+                "app_thread_id": app_thread.id,
+                "workspace_id": workspace.id,
+                "workspace_key": workspace.workspace_key,
+                "title": app_thread.title,
+                "sandbox": app_thread.sandbox or workspace.default_sandbox or "read-only",
+                "approval_policy": app_thread.approval_policy or workspace.default_approval_policy or "never",
+                "network_access": app_thread.network_access,
+                "generation": next_generation,
+            },
+        )
+    except Exception:
+        workspace_lock_service.release_workspace_lock(
+            session,
+            owner_type="app_thread",
+            owner_id=str(app_thread.id),
+        )
+        raise
     app_thread.command_id = command.id
     session.add(app_thread)
     session.commit()
@@ -743,6 +790,12 @@ def cancel_app_turn(session: Session, app_turn_id: int) -> AppTurn:
         app_thread.last_error = "cancelled by user; reopen required before next turn"
         app_thread.updated_at = now
         session.add(app_thread)
+        if app_thread.id is not None:
+            workspace_lock_service.release_workspace_lock(
+                session,
+                owner_type="app_thread",
+                owner_id=str(app_thread.id),
+            )
 
     session.add(app_turn)
     session.commit()

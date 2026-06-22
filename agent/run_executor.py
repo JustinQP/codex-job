@@ -8,6 +8,7 @@ from typing import Any
 from agent.api_client import AgentApiClient, AgentApiError
 from agent.command_handlers import CommandResult
 from agent.process_registry import ProcessRegistry
+from agent.workspace_lock import LocalWorkspaceLock, is_write_sandbox
 from agent.workspace_registry import WorkspaceRegistry, WorkspaceRegistryError
 from backend.models import AgentCommandStatus
 from backend.schemas import AgentCommandLeaseRequest, AgentReconcileRequest
@@ -22,11 +23,13 @@ class RunExecutor:
         client: AgentApiClient | None = None,
         device_id: str | None = None,
         process_registry: ProcessRegistry | None = None,
+        workspace_lock: LocalWorkspaceLock | None = None,
     ) -> None:
         self.workspace_registry = workspace_registry
         self.client = client
         self.device_id = device_id
         self.process_registry = process_registry or ProcessRegistry()
+        self.workspace_lock = workspace_lock or LocalWorkspaceLock()
 
     def handle(self, command: dict[str, Any]) -> CommandResult:
         try:
@@ -42,32 +45,38 @@ class RunExecutor:
         command_id = str(command.get("id") or "")
         lease_token = str(command.get("lease_token") or "")
 
-        if os.environ.get("CODEX_AGENT_FAKE_RUN") == "1":
-            return self._fake_execute(project_path, payload)
+        sandbox = str(payload.get("sandbox") or "workspace-write")
+        owner = command_id or str(payload.get("task_id") or "run")
+        try:
+            with self.workspace_lock.acquire(project_path, owner=f"run:{owner}", write=is_write_sandbox(sandbox)):
+                if os.environ.get("CODEX_AGENT_FAKE_RUN") == "1":
+                    return self._fake_execute(project_path, payload)
 
-        require_clean = bool(payload.get("require_clean_worktree"))
-        if require_clean:
-            clean_error = check_clean_worktree(project_path)
-            if clean_error:
-                return CommandResult(False, clean_error)
+                require_clean = bool(payload.get("require_clean_worktree"))
+                if require_clean:
+                    clean_error = check_clean_worktree(project_path)
+                    if clean_error:
+                        return CommandResult(False, clean_error)
 
-        job_dir = Path("data") / "agent-runs" / str(payload.get("task_id", command.get("id")))
-        log_file = job_dir / "run.log"
-        result_file = job_dir / "result.md"
-        execution = execute_codex(
-            project_path=project_path,
-            prompt=str(payload.get("prompt") or ""),
-            log_file=log_file,
-            result_file=result_file,
-            timeout_seconds=int(payload.get("timeout_seconds") or 7200),
-            model=payload.get("model"),
-            reasoning_effort=payload.get("reasoning_effort"),
-            sandbox=str(payload.get("sandbox") or "workspace-write"),
-            should_cancel=lambda: self._should_cancel(command_id, lease_token),
-            on_process_started=lambda process: self.process_registry.register(command_id, process),
-            on_process_finished=lambda: self.process_registry.unregister(command_id),
-        )
-        artifacts = collect_git_artifacts(project_path, job_dir)
+                job_dir = Path("data") / "agent-runs" / str(payload.get("task_id", command.get("id")))
+                log_file = job_dir / "run.log"
+                result_file = job_dir / "result.md"
+                execution = execute_codex(
+                    project_path=project_path,
+                    prompt=str(payload.get("prompt") or ""),
+                    log_file=log_file,
+                    result_file=result_file,
+                    timeout_seconds=int(payload.get("timeout_seconds") or 7200),
+                    model=payload.get("model"),
+                    reasoning_effort=payload.get("reasoning_effort"),
+                    sandbox=sandbox,
+                    should_cancel=lambda: self._should_cancel(command_id, lease_token),
+                    on_process_started=lambda process: self.process_registry.register(command_id, process),
+                    on_process_finished=lambda: self.process_registry.unregister(command_id),
+                )
+                artifacts = collect_git_artifacts(project_path, job_dir)
+        except RuntimeError as exc:
+            return CommandResult(False, str(exc))
         if execution.error_message:
             return CommandResult(False, execution.error_message)
         if artifacts.error_message:

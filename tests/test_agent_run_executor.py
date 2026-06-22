@@ -8,6 +8,8 @@ from sqlmodel import Session
 from agent.api_client import AgentApiError
 from agent.command_handlers import CommandHandlerRegistry
 from agent.run_executor import RunExecutor
+from agent.session_handlers import SessionOpenHandler
+from agent.workspace_lock import LocalWorkspaceLock
 from agent.workspace_registry import WorkspaceRegistry
 from backend.models import Device, DeviceStatus, Project, Workspace, utc_now
 from backend.services import agent_command_service
@@ -220,6 +222,71 @@ def test_run_executor_ignores_temporary_cancel_poll_error(monkeypatch, tmp_path)
     executor = RunExecutor(registry, client=_FailingCancelClient(), device_id="device-a")
 
     assert executor._should_cancel("cmd-1", "lease-a") is False
+
+
+def test_local_workspace_lock_blocks_write_session_when_write_run_active(monkeypatch, tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    registry = WorkspaceRegistry.load(_write_registry(tmp_path, repo))
+    workspace_lock = LocalWorkspaceLock()
+    workspace_lock.acquire_write(repo, "run:active")
+
+    class FakeSessionManager:
+        workspace_registry = registry
+
+        def open_session(self, **kwargs):
+            raise AssertionError("open_session should not be called while workspace is busy")
+
+    result = SessionOpenHandler(FakeSessionManager(), workspace_lock).handle(
+        {
+            "id": "cmd-session",
+            "command_type": "SESSION_OPEN",
+            "payload_json": json.dumps(
+                {
+                    "workspace_key": "repo",
+                    "sandbox": "workspace-write",
+                }
+            ),
+        }
+    )
+
+    assert result.success is False
+    assert "workspace busy" in (result.message or "")
+
+
+def test_local_workspace_lock_allows_read_only_session_when_write_run_active(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    registry = WorkspaceRegistry.load(_write_registry(tmp_path, repo))
+    workspace_lock = LocalWorkspaceLock()
+    workspace_lock.acquire_write(repo, "run:active")
+
+    class FakeSession:
+        cwd = repo
+        agent_session_id = "agent-session"
+        codex_thread_id = "codex-thread"
+        workspace_key = "repo"
+
+    class FakeSessionManager:
+        workspace_registry = registry
+
+        def open_session(self, **kwargs):
+            return FakeSession()
+
+    result = SessionOpenHandler(FakeSessionManager(), workspace_lock).handle(
+        {
+            "id": "cmd-session",
+            "command_type": "SESSION_OPEN",
+            "payload_json": json.dumps(
+                {
+                    "workspace_key": "repo",
+                    "sandbox": "read-only",
+                }
+            ),
+        }
+    )
+
+    assert result.success is True
 
 
 def _write_registry(tmp_path, repo):

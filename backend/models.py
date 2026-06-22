@@ -157,6 +157,22 @@ class Workspace(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class WorkspaceExecutionLock(SQLModel, table=True):
+    __tablename__ = "workspace_execution_locks"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", name="ux_workspace_execution_locks_workspace"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(foreign_key="workspaces.id", index=True)
+    owner_type: str = Field(index=True)
+    owner_id: str = Field(index=True)
+    lock_type: str = Field(index=True)
+    lease_expires_at: datetime = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class AgentCommand(SQLModel, table=True):
     __tablename__ = "agent_commands"
     __table_args__ = (

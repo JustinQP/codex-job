@@ -140,7 +140,7 @@ Codex 执行本清单时必须遵守：
 - [x] E07 实现原子 Turn 并发保护
 - [x] E08 实现 Session/Turn 取消和超时回收
 - [x] E09 实现 Session reopen 和 generation
-- [ ] E10 实现 Workspace 写入锁
+- [x] E10 实现 Workspace 写入锁
 - [ ] E11 手机会话页显示设备、目录和执行模式
 - [ ] E12 手机刷新后恢复当前 Turn 输出
 
@@ -2410,7 +2410,7 @@ E08。
 
 ---
 
-### [ ] E10 实现 Workspace 写入锁
+### [x] E10 实现 Workspace 写入锁
 
 **目标**
 
@@ -2435,6 +2435,40 @@ D02、E03、A03。
 - 同一 Workspace 两个写入执行只有一个成功。
 - 不同 Workspace 可并行。
 - 进程异常退出后锁可恢复。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/services/workspace_lock_service.py`
+  - `backend/services/task_service.py`
+  - `backend/services/app_thread_service.py`
+  - `backend/routers/agent.py`
+  - `agent/workspace_lock.py`
+  - `agent/run_executor.py`
+  - `agent/session_handlers.py`
+  - `agent/command_handlers.py`
+  - `agent/app_server/session_manager.py`
+  - `tests/test_workspace_execution_locks.py`
+  - `tests/test_agent_run_executor.py`
+  - `tests/test_db_migrations.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增 `0013 workspace_execution_locks`，包含 `workspace_id` 唯一锁、owner、lock_type、lease_expires_at 和 owner/lease 索引
+- 控制端：`workspace-write` Run 和写入 Session 在创建命令前获取 Workspace 写锁；冲突返回 409 `workspace_busy` 和当前 owner 信息；read-only Session 不占写锁；过期锁在获取前自动回收
+- 释放策略：Run 取消或 Agent `RUN_EXECUTE` complete 后释放 Run 锁；写入 Session close/cancel/recover 释放 Session 锁；SESSION_OPEN 失败释放对应 Session 锁
+- Agent 本地：新增 `LocalWorkspaceLock`，RunExecutor 和 SessionOpenHandler 共用本地写锁，避免同一设备本地绕过控制端产生并发写入
+- 自动化测试：
+  - `pytest -q tests/test_workspace_execution_locks.py tests/test_db_migrations.py tests/test_agent_run_executor.py tests/test_app_threads_api.py tests/test_runs_api.py tests/test_tasks_api.py -o cache_dir=data/pytest-cache-e10-target-2 -o addopts=--basetemp=data/pytest-tmp-e10-target-2`：通过，60 passed
+  - `pytest -q tests/test_workspace_execution_locks.py tests/test_agent_command_api.py tests/test_agent_command_service.py tests/test_agent_reconciliation.py tests/test_agent_run_executor.py tests/test_app_threads_api.py tests/test_runs_api.py tests/test_tasks_api.py tests/test_security_api.py tests/test_workspace_service.py tests/test_db_migrations.py -o cache_dir=data/pytest-cache-e10-related -o addopts=--basetemp=data/pytest-tmp-e10-related`：通过，100 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-e10-full -o addopts=--basetemp=data/pytest-tmp-e10-full`：通过，306 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及；通过 API/服务测试覆盖同 Workspace 写入互斥、不同 Workspace 并行、过期锁恢复、Run complete/Session close 释放锁、本地 Agent 写锁二次校验
+- 回归影响：已有未完成的 workspace-write Run 或写入 Session 会阻止同 Workspace 新写入任务；read-only Session 仍允许并发
+- 风险与未完成项：锁续租目前依赖较长 lease 和终态释放；如果 Agent 进程长时间运行超过 lease，后续需要在 heartbeat/renew 路径续租
 
 ---
 
