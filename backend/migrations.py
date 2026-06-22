@@ -228,6 +228,61 @@ def add_project_workspace_binding(engine: Engine) -> None:
         )
 
 
+def create_agent_commands_table(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS agent_commands (
+                    id TEXT PRIMARY KEY,
+                    device_id TEXT NOT NULL,
+                    command_type TEXT NOT NULL,
+                    aggregate_type TEXT,
+                    aggregate_id TEXT,
+                    idempotency_key TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    lease_token TEXT,
+                    lease_expires_at TIMESTAMP,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 3,
+                    created_at TIMESTAMP NOT NULL,
+                    claimed_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    last_error TEXT,
+                    FOREIGN KEY(device_id) REFERENCES devices(device_id)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_commands_idempotency_key
+                ON agent_commands (idempotency_key)
+                """
+            )
+        )
+        for column_name in (
+            "device_id",
+            "command_type",
+            "aggregate_type",
+            "aggregate_id",
+            "status",
+            "lease_token",
+            "lease_expires_at",
+            "created_at",
+        ):
+            connection.execute(
+                text(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS ix_agent_commands_{column_name}
+                    ON agent_commands ({column_name})
+                    """
+                )
+            )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -248,6 +303,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0004",
         name="project_workspace_binding",
         apply=add_project_workspace_binding,
+    ),
+    Migration(
+        version="0005",
+        name="agent_commands",
+        apply=create_agent_commands_table,
     ),
 )
 

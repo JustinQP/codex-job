@@ -95,12 +95,13 @@ def test_empty_database_initializes_to_latest_migration() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005"]
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
         ("0002", "devices"),
         ("0003", "workspaces"),
         ("0004", "project_workspace_binding"),
+        ("0005", "agent_commands"),
     ]
 
 
@@ -110,7 +111,7 @@ def test_legacy_database_upgrades_missing_columns() -> None:
 
     applied = run_migrations(engine, backup=False)
 
-    assert applied == ["0001", "0002", "0003", "0004"]
+    assert applied == ["0001", "0002", "0003", "0004", "0005"]
     assert "default_runner_id" in table_columns(engine, "projects")
     assert "task_type" in table_columns(engine, "tasks")
     assert "lease_expires_at" in table_columns(engine, "runner_records")
@@ -118,6 +119,8 @@ def test_legacy_database_upgrades_missing_columns() -> None:
     assert "workspace_key" in table_columns(engine, "workspaces")
     assert "workspace_id" in table_columns(engine, "projects")
     assert "workspace_binding_status" in table_columns(engine, "projects")
+    assert "idempotency_key" in table_columns(engine, "agent_commands")
+    assert "lease_token" in table_columns(engine, "agent_commands")
 
 
 def test_migrations_are_idempotent() -> None:
@@ -127,13 +130,14 @@ def test_migrations_are_idempotent() -> None:
     first = run_migrations(engine, backup=False)
     second = run_migrations(engine, backup=False)
 
-    assert first == ["0001", "0002", "0003", "0004"]
+    assert first == ["0001", "0002", "0003", "0004", "0005"]
     assert second == []
     assert migration_rows(engine) == [
         ("0001", "legacy_sqlite_columns"),
         ("0002", "devices"),
         ("0003", "workspaces"),
         ("0004", "project_workspace_binding"),
+        ("0005", "agent_commands"),
     ]
 
 

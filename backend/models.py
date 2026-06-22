@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
+from uuid import uuid4
 
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -38,6 +39,16 @@ class DeviceStatus(str, Enum):
 class WorkspaceBindingStatus(str, Enum):
     UNBOUND = "UNBOUND"
     BOUND = "BOUND"
+
+
+class AgentCommandStatus(str, Enum):
+    PENDING = "PENDING"
+    CLAIMED = "CLAIMED"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
 
 
 class Project(SQLModel, table=True):
@@ -140,6 +151,30 @@ class Workspace(SQLModel, table=True):
     require_clean_worktree: Optional[bool] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class AgentCommand(SQLModel, table=True):
+    __tablename__ = "agent_commands"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="ux_agent_commands_idempotency_key"),
+    )
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    device_id: str = Field(foreign_key="devices.device_id", index=True)
+    command_type: str = Field(index=True)
+    aggregate_type: Optional[str] = Field(default=None, index=True)
+    aggregate_id: Optional[str] = Field(default=None, index=True)
+    idempotency_key: str
+    payload_json: str = "{}"
+    status: AgentCommandStatus = Field(default=AgentCommandStatus.PENDING, index=True)
+    lease_token: Optional[str] = Field(default=None, index=True)
+    lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+    attempt_count: int = Field(default=0)
+    max_attempts: int = Field(default=3)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    claimed_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    last_error: Optional[str] = None
 
 
 class AppThread(SQLModel, table=True):

@@ -112,7 +112,7 @@ Codex 执行本清单时必须遵守：
 
 ### C. Agent 命令通道
 
-- [ ] C01 新增 AgentCommand 模型和状态机
+- [x] C01 新增 AgentCommand 模型和状态机
 - [ ] C02 实现命令创建服务和幂等键
 - [ ] C03 实现命令 claim、续租和完成接口
 - [ ] C04 实现 Agent 命令循环
@@ -1061,7 +1061,7 @@ tests/test_ui.py
 
 ## C. Agent 命令通道
 
-### [ ] C01 新增 AgentCommand 模型和状态机
+### [x] C01 新增 AgentCommand 模型和状态机
 
 **目标**
 
@@ -1117,6 +1117,27 @@ tests/test_command_state_machine.py
 - 非法状态流转被拒绝。
 - 重复终态完成保持幂等。
 - 命令可按 device_id 查询。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/services/agent_command_service.py`
+  - `tests/test_agent_command_service.py`
+  - `tests/test_db_migrations.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0005 agent_commands`，创建 `agent_commands` 表、`idempotency_key` 唯一索引，以及 device/status/lease 等查询索引
+- 状态机：新增 `AgentCommandStatus` 和集中流转服务，非法流转抛出 `AgentCommandStateError`；重复提交相同终态结果保持幂等
+- 自动化测试：
+  - `pytest -q tests/test_agent_command_service.py tests/test_db_migrations.py`：通过，11 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，218 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：本任务仅新增模型、迁移和 service，不接入 router，不改变现有 Runner/Task 执行路径
+- 风险与未完成项：命令创建幂等服务由 C02 完成；claim/续租/完成 API 由 C03 完成
 
 ---
 
