@@ -143,6 +143,56 @@ def create_devices_table(engine: Engine) -> None:
         )
 
 
+def create_workspaces_table(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS workspaces (
+                    id INTEGER PRIMARY KEY,
+                    workspace_key TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    path_label TEXT NOT NULL,
+                    enabled BOOLEAN NOT NULL DEFAULT 1,
+                    default_model TEXT,
+                    default_reasoning_effort TEXT,
+                    default_sandbox TEXT,
+                    default_approval_policy TEXT,
+                    require_clean_worktree BOOLEAN,
+                    created_at TIMESTAMP NOT NULL,
+                    updated_at TIMESTAMP NOT NULL,
+                    FOREIGN KEY(device_id) REFERENCES devices(device_id)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_workspaces_device_key
+                ON workspaces (device_id, workspace_key)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_workspaces_device_id
+                ON workspaces (device_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_workspaces_enabled
+                ON workspaces (enabled)
+                """
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version="0001",
@@ -153,6 +203,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version="0002",
         name="devices",
         apply=create_devices_table,
+    ),
+    Migration(
+        version="0003",
+        name="workspaces",
+        apply=create_workspaces_table,
     ),
 )
 

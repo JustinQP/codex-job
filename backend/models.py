@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -106,6 +107,27 @@ class Device(SQLModel, table=True):
     status: DeviceStatus = Field(default=DeviceStatus.ONLINE, index=True)
     last_heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
     lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Workspace(SQLModel, table=True):
+    __tablename__ = "workspaces"
+    __table_args__ = (
+        UniqueConstraint("device_id", "workspace_key", name="ux_workspaces_device_key"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_key: str = Field(index=True)
+    device_id: str = Field(foreign_key="devices.device_id", index=True)
+    name: str
+    path_label: str
+    enabled: bool = Field(default=True, index=True)
+    default_model: Optional[str] = None
+    default_reasoning_effort: Optional[str] = None
+    default_sandbox: Optional[str] = None
+    default_approval_policy: Optional[str] = None
+    require_clean_worktree: Optional[bool] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

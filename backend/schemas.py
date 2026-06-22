@@ -202,6 +202,37 @@ class DeviceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class WorkspaceUpsert(BaseModel):
+    workspace_key: str = Field(..., min_length=1, max_length=120)
+    device_id: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=200)
+    path_label: str = Field(..., min_length=1, max_length=300)
+    enabled: bool = True
+    default_model: Optional[str] = None
+    default_reasoning_effort: Optional[str] = None
+    default_sandbox: Optional[str] = None
+    default_approval_policy: Optional[str] = None
+    require_clean_worktree: Optional[bool] = None
+
+
+class WorkspaceRead(BaseModel):
+    id: int
+    workspace_key: str
+    device_id: str
+    name: str
+    path_label: str
+    enabled: bool
+    default_model: Optional[str]
+    default_reasoning_effort: Optional[str]
+    default_sandbox: Optional[str]
+    default_approval_policy: Optional[str]
+    require_clean_worktree: Optional[bool]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AppThreadCreate(BaseModel):
     project_id: int
     title: Optional[str] = None

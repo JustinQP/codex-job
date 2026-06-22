@@ -104,7 +104,7 @@ Codex 执行本清单时必须遵守：
 - [x] B01 新增 Device 数据模型和迁移
 - [x] B02 实现 Agent 稳定设备身份
 - [x] B03 实现 Agent 注册、心跳和认证接口
-- [ ] B04 新增 Workspace 数据模型和迁移
+- [x] B04 新增 Workspace 数据模型和迁移
 - [ ] B05 实现 Agent 本地 Workspace Registry
 - [ ] B06 实现 Workspace 同步接口
 - [ ] B07 兼容迁移现有 Project
@@ -714,7 +714,7 @@ tests/test_agent_auth_api.py
 
 ---
 
-### [ ] B04 新增 Workspace 数据模型和迁移
+### [x] B04 新增 Workspace 数据模型和迁移
 
 **目标**
 
@@ -767,6 +767,25 @@ tests/test_workspace_service.py
 - 两个设备可以注册相同 workspace_key。
 - 同一设备重复 workspace_key 被拒绝或更新，语义必须明确。
 - Disabled Workspace 不能创建新的执行对象。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/models.py`
+  - `backend/migrations.py`
+  - `backend/schemas.py`
+  - `backend/services/workspace_service.py`
+  - `tests/test_workspace_service.py`
+  - `tests/test_db_migrations.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：新增版本 `0003 workspaces`，创建 `workspaces` 表，增加 `(device_id, workspace_key)` 唯一约束及 device/enabled 索引
+- 自动化测试：
+  - `pytest -q tests/test_workspace_service.py tests/test_db_migrations.py`：通过，10 passed
+  - `python -m compileall backend`：通过
+  - `pytest -q`：通过，200 passed
+- 人工验证：不涉及
+- 回归影响：新增 Workspace 模型和服务，不改变旧 Project/Task/AppThread 行为
+- 风险与未完成项：本任务仅提供数据模型和服务；Agent 本地 registry 和同步接口由 B05/B06 接入
 
 ---
 
