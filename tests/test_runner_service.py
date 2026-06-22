@@ -135,6 +135,43 @@ def test_runner_service_claim_upload_and_finish(
         session.close()
 
 
+def test_runner_cancel_state_and_cancelled_finish_close_running_task(
+    tmp_path: Path,
+) -> None:
+    session = make_session()
+    try:
+        task = add_project_and_task(session, tmp_path / "project")
+        claimed = runner_service.claim_task(session, "runner-1")
+        assert claimed is not None
+
+        task.cancel_requested = True
+        session.add(task)
+        session.commit()
+
+        cancel_state = runner_service.get_cancel_state(session, task.id, "runner-1")
+        cancel_requested = cancel_state.cancel_requested
+        running_status = cancel_state.status
+        finished = runner_service.finish_task(
+            session,
+            task.id,
+            RunnerTaskFinishRequest(
+                runner_id="runner-1",
+                status=TaskStatus.CANCELLED,
+                exit_code=None,
+                error_message="task cancelled",
+            ),
+        )
+
+        assert cancel_requested is True
+        assert running_status == TaskStatus.RUNNING
+        assert finished.status == TaskStatus.CANCELLED
+        assert finished.runner_id is None
+        assert finished.lease_expires_at is None
+        assert finished.finished_at is not None
+    finally:
+        session.close()
+
+
 def test_claim_returns_codex_config(tmp_path: Path) -> None:
     session = make_session()
     try:

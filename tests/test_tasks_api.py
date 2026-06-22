@@ -46,6 +46,37 @@ def add_project(session: Session, *, enabled: bool = True) -> Project:
     return project
 
 
+def test_project_create_and_list_api_uses_path_label(tmp_path) -> None:
+    for client, session in make_client():
+        del session
+        project_dir = tmp_path / "demo-project"
+        project_dir.mkdir()
+
+        created = client.post(
+            "/projects",
+            json={
+                "name": " Demo Project ",
+                "path": str(project_dir),
+                "test_command": "pytest -q",
+                "smoke_check_command": "python -m compileall backend",
+                "default_branch": "main",
+                "require_clean_worktree": True,
+            },
+        )
+        listed = client.get("/projects")
+
+        assert created.status_code == 200
+        created_body = created.json()
+        assert created_body["name"] == "Demo Project"
+        assert created_body["path_label"] == "demo-project"
+        assert created_body["test_command"] == "pytest -q"
+        assert created_body["smoke_check_command"] == "python -m compileall backend"
+        assert created_body["default_branch"] == "main"
+        assert created_body["require_clean_worktree"] is True
+        assert listed.status_code == 200
+        assert [project["id"] for project in listed.json()] == [created_body["id"]]
+
+
 def add_task(
     session: Session,
     *,
@@ -343,6 +374,27 @@ def test_cancel_pending_task_marks_cancelled() -> None:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "CANCELLED"
+        assert body["cancel_requested"] is True
+
+
+def test_cancel_running_task_sets_cancel_request_without_terminal_status() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        task = add_task(
+            session,
+            project_id=project.id,
+            prompt="cancel running",
+            task_status=TaskStatus.RUNNING,
+        )
+        task.runner_id = "runner-a"
+        session.add(task)
+        session.commit()
+
+        response = client.post(f"/tasks/{task.id}/cancel")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "RUNNING"
         assert body["cancel_requested"] is True
 
 

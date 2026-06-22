@@ -93,7 +93,7 @@ Codex 执行本清单时必须遵守：
 
 ### A. 重构基线
 
-- [ ] A01 建立重构前回归基线
+- [x] A01 建立重构前回归基线
 - [ ] A02 增加最小 GitHub Actions CI
 - [ ] A03 引入轻量数据库版本迁移机制
 - [ ] A04 拆分 FastAPI 路由装配层
@@ -159,7 +159,7 @@ Codex 执行本清单时必须遵守：
 
 ## A. 重构基线
 
-### [ ] A01 建立重构前回归基线
+### [x] A01 建立重构前回归基线
 
 **目标**
 
@@ -210,6 +210,24 @@ cd frontend
 npm run typecheck
 npm run build
 ```
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `pytest.ini`
+  - `tests/test_tasks_api.py`
+  - `tests/test_runner_service.py`
+  - `docs/smoke-checklist.md`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `python -m compileall backend runner scripts poc/app_server`：通过
+  - `pytest -q`：通过，157 passed
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：仅补充单机控制台回归测试和测试配置；不修改业务语义
+- 风险与未完成项：PowerShell 直接执行 `npm run ...` 会受本机执行策略拦截，本次使用等价的 `npm.cmd run ...` 完成验证
 
 ---
 

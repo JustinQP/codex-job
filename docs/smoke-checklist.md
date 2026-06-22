@@ -2,6 +2,27 @@
 
 本文档用于 v1.0.0 本地验收。
 
+## 0. 重构前自动化回归基线
+
+A01 冻结以下单机控制台核心行为，后续多设备重构不得破坏：
+
+- Project 创建和列表：`tests/test_tasks_api.py` 覆盖 `/projects` 创建、列表、`path_label` 和项目执行默认配置。
+- Task 创建、认领、完成、取消和重跑：`tests/test_tasks_api.py`、`tests/test_runner_service.py` 覆盖创建配置继承、Runner 认领、日志/产物上传、完成、pending/running 取消和 rerun。
+- Runner 注册、心跳和 lease：`tests/test_runner_service.py` 覆盖注册 lease、过期 Runner 下线、运行中 Task lease 恢复。
+- AppThread cwd 和 reopen：`tests/test_app_thread_service.py`、`tests/test_app_threads_api.py` 覆盖创建和 reopen 时都把 Project 路径传给 Bridge cwd。
+- AppTurn 同步、异步、冲突、失败和取消：`tests/test_app_thread_service.py`、`tests/test_app_threads_api.py`、`tests/test_app_turn_executor.py` 覆盖同步发送、异步 pending、并发冲突、Bridge 失败、stale 恢复和取消。
+- `/app-turns/{id}/stream`：`tests/test_app_threads_api.py` 覆盖 terminal `status`、`final` 和 `error`；`tests/test_app_thread_service.py` 覆盖 active Bridge turn 的 `assistant_delta` 过滤。
+
+基线验证命令：
+
+```powershell
+python -m compileall backend runner scripts poc/app_server
+pytest -q
+cd frontend
+npm run typecheck
+npm run build
+```
+
 ## 1. compileall
 
 ```powershell
