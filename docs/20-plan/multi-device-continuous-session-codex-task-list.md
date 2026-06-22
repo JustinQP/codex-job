@@ -124,7 +124,7 @@ Codex 执行本清单时必须遵守：
 - [x] D01 将 Run/Task 绑定 Device 和 Workspace
 - [x] D02 通过 AgentCommand 下发 `codex exec`
 - [x] D03 实现增量日志上传
-- [ ] D04 实现产物 manifest 和大小限制
+- [x] D04 实现产物 manifest 和大小限制
 - [ ] D05 实现真实 Run 取消
 - [ ] D06 手机端运行页显示设备和 Workspace
 - [ ] D07 兼容并逐步废弃旧 Runner 认领接口
@@ -1686,7 +1686,7 @@ C05、D02。
 
 ---
 
-### [ ] D04 实现产物 manifest 和大小限制
+### [x] D04 实现产物 manifest 和大小限制
 
 **目标**
 
@@ -1710,6 +1710,37 @@ D02。
 - 合法产物可读取。
 - 越界大小、非法类型和非法文件名被拒绝。
 - 重传不产生重复文件。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/schemas.py`
+  - `backend/config.py`
+  - `backend/routers/agent.py`
+  - `backend/services/run_artifact_service.py`
+  - `agent/api_client.py`
+  - `agent/artifact_uploader.py`
+  - `tests/test_run_artifacts.py`
+  - `tests/test_agent_api_client.py`
+  - `tests/test_api_contract.py`
+  - `tests/test_config.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- API：新增 `POST /agent/runs/{task_id}/artifacts`，Agent 通过固定 artifact type 和 filename allowlist 上传 result、diff、Git 状态和报告等 Run 产物
+- 配置：新增 `RUN_ARTIFACT_MAX_FILE_BYTES` 和 `RUN_ARTIFACT_MAX_TOTAL_BYTES` 可覆盖单文件和单 Run artifact 总大小限制，默认分别为 2 MiB 和 8 MiB
+- 校验：后端校验 Run 的 `device_id`/`command_id` 绑定、artifact type、filename、size、sha256、单文件大小和单 Run artifact 总大小；不接受任意目标路径或任意文件名
+- 幂等：相同 type/filename 且相同 hash 重传返回成功并标记 `duplicate=true`；不同内容重传返回冲突
+- Agent：新增 `RunArtifactUploader` 和 manifest 构建逻辑，上传 manifest 包含 type、filename、sequence、size 和 sha256
+- 自动化测试：
+  - `pytest -q tests/test_run_artifacts.py tests/test_agent_api_client.py tests/test_api_contract.py`：通过，10 passed
+  - `pytest -q tests/test_run_artifacts.py tests/test_agent_api_client.py tests/test_api_contract.py tests/test_config.py`：通过，25 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，258 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：旧 `/tasks/{id}/result`、`/tasks/{id}/diff`、`/tasks/{id}/artifacts/git-status` 和 `/tasks/{id}/artifacts/report` 读取接口继续复用 `JOBS_DIR` 路径保护
+- 风险与未完成项：当前仅实现 artifact manifest 上传与读取兼容；真实 Run 取消由 D05 继续完成
 
 ---
 

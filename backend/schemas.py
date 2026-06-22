@@ -353,6 +353,29 @@ class RunLogChunkUploadRead(BaseModel):
     max_log_bytes: int
 
 
+class RunArtifactUpload(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    command_id: str = Field(..., min_length=1)
+    artifact_type: str = Field(..., min_length=1, max_length=80)
+    filename: str = Field(..., min_length=1, max_length=120)
+    sequence: int = Field(..., ge=1)
+    size_bytes: int = Field(..., ge=0)
+    sha256: str = Field(..., min_length=64, max_length=64)
+    content: str
+
+
+class RunArtifactUploadRead(BaseModel):
+    accepted: bool
+    duplicate: bool = False
+    artifact_type: str
+    filename: str
+    sequence: int
+    size_bytes: int
+    sha256: str
+    max_file_bytes: int
+    max_total_bytes: int
+
+
 class AppThreadCreate(BaseModel):
     project_id: int
     title: Optional[str] = None

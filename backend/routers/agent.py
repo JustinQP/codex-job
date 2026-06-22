@@ -17,6 +17,8 @@ from backend.schemas import (
     DeviceHeartbeat,
     DeviceRead,
     DeviceRegister,
+    RunArtifactUpload,
+    RunArtifactUploadRead,
     RunLogChunkUpload,
     RunLogChunkUploadRead,
     WorkspaceSyncRead,
@@ -27,6 +29,7 @@ from backend.services import (
     agent_command_service,
     agent_reconciliation_service,
     device_service,
+    run_artifact_service,
     run_log_service,
     workspace_service,
 )
@@ -204,3 +207,13 @@ def upload_run_log_chunk(
     _: None = Depends(require_agent_token),
 ):
     return run_log_service.upload_run_log_chunk(session, task_id, payload)
+
+
+@router.post("/agent/runs/{task_id}/artifacts", response_model=RunArtifactUploadRead)
+def upload_run_artifact(
+    task_id: int,
+    payload: RunArtifactUpload,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_agent_token),
+):
+    return run_artifact_service.upload_run_artifact(session, task_id, payload)

@@ -13,6 +13,7 @@ from backend.schemas import (
     AgentReconcileRequest,
     DeviceHeartbeat,
     DeviceRegister,
+    RunArtifactUpload,
     RunLogChunkUpload,
     WorkspaceSyncRequest,
 )
@@ -75,6 +76,12 @@ class AgentApiClient:
     def upload_run_log_chunk(self, task_id: int, payload: RunLogChunkUpload) -> dict[str, Any]:
         return self._json_request(
             f"/agent/runs/{task_id}/log-chunks",
+            payload.model_dump(exclude_none=True),
+        )
+
+    def upload_run_artifact(self, task_id: int, payload: RunArtifactUpload) -> dict[str, Any]:
+        return self._json_request(
+            f"/agent/runs/{task_id}/artifacts",
             payload.model_dump(exclude_none=True),
         )
 
