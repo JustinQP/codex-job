@@ -149,7 +149,7 @@ Codex 执行本清单时必须遵守：
 - [x] F01 增加双 Fake Agent 集成测试
 - [x] F02 增加本机双 Agent 模拟脚本
 - [x] F03 增加 Windows Agent 安装和自启动脚本
-- [ ] F04 完成已有数据升级和回滚验证
+- [x] F04 完成已有数据升级和回滚验证
 - [ ] F05 完成真实多设备 smoke 验收
 - [ ] F06 收口文档、归档旧计划并发布 v2.0
 
@@ -2730,7 +2730,7 @@ B02、C04、D02、E02。
 
 ---
 
-### [ ] F04 完成已有数据升级和回滚验证
+### [x] F04 完成已有数据升级和回滚验证
 
 **目标**
 
@@ -2757,6 +2757,31 @@ B07、D01、E02、A03。
 - 升级前后历史记录数量一致。
 - 迁移失败可恢复备份。
 - 未绑定项目不会被错误执行。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `scripts/verify_data_migration.py`
+  - `tests/test_verify_data_migration_script.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不直接迁移正式库；脚本只复制 `data/app.db` 到 `data/migration-verification` 后在副本上执行 migration，并生成备份与 JSON 报告
+- 自动化测试：
+  - `pytest -q tests/test_verify_data_migration_script.py -o cache_dir=data/pytest-cache-f04-target2 -o addopts=--basetemp=data/pytest-tmp-f04-target2`：1 passed
+  - `python scripts/verify_data_migration.py --db-path data/app.db --output-dir data/migration-verification --agent-command-mode false --json`：通过；正式源库未修改
+  - `pytest -q tests/test_verify_data_migration_script.py tests/test_db_migrations.py tests/test_project_workspace_migration.py -o cache_dir=data/pytest-cache-f04-related -o addopts=--basetemp=data/pytest-tmp-f04-related`：9 passed
+  - `python -m compileall backend runner agent scripts poc/app_server scripts/verify_data_migration.py tests/test_verify_data_migration_script.py`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-f04-full -o addopts=--basetemp=data/pytest-tmp-f04-full`：310 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：
+  - 当前 `data/app.db` 副本验证结果：projects 3 -> 3，tasks 1 -> 1，app_threads 8 -> 8，app_turns 24 -> 24
+  - 最新迁移版本：`0013`
+  - 已迁移 Project/Workspace：3 个 Project，0 个 Workspace
+  - 已绑定/未绑定设备：0 个 Device；3 个 Project 为 `UNBOUND`
+  - 回滚步骤由报告输出：停止后端和 Agent 后执行 `Copy-Item -Force '<backup_path>' 'data/app.db'`，再以 `AGENT_COMMAND_MODE=false` 启动验证旧模式
+- 回归影响：新增只读验证脚本和测试；不删除旧字段、旧表或正式数据
+- 风险与未完成项：当前个人库无已同步 Workspace/Device，3 个项目仍未绑定 Workspace；在 `AGENT_COMMAND_MODE=true` 下这些项目不能直接创建 Agent Run/Session，需要先完成 Workspace 同步或项目绑定
 
 ---
 
