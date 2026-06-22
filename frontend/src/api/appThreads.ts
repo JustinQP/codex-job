@@ -30,10 +30,10 @@ export function listAppThreads(options: ListAppThreadsOptions = {}) {
   return apiRequest<AppThread[]>(`/app-threads?${params.toString()}`);
 }
 
-export function createAppThread(projectId: number, title?: string) {
+export function createAppThread(projectId: number, title?: string, workspaceId?: number | null) {
   return apiRequest<AppThread>("/app-threads", {
     method: "POST",
-    json: { project_id: projectId, title: title || undefined }
+    json: { project_id: projectId, title: title || undefined, workspace_id: workspaceId || undefined }
   });
 }
 

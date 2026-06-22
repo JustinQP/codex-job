@@ -141,7 +141,7 @@ Codex 执行本清单时必须遵守：
 - [x] E08 实现 Session/Turn 取消和超时回收
 - [x] E09 实现 Session reopen 和 generation
 - [x] E10 实现 Workspace 写入锁
-- [ ] E11 手机会话页显示设备、目录和执行模式
+- [x] E11 手机会话页显示设备、目录和执行模式
 - [ ] E12 手机刷新后恢复当前 Turn 输出
 
 ### F. 验收与交付
@@ -2472,7 +2472,7 @@ D02、E03、A03。
 
 ---
 
-### [ ] E11 手机会话页显示设备、目录和执行模式
+### [x] E11 手机会话页显示设备、目录和执行模式
 
 **目标**
 
@@ -2499,6 +2499,27 @@ B08、E02、E10。
 - 用户不查看设置页也能确认执行上下文。
 - 不会在切换设备后继续误发旧设备 Session。
 - 移动端小屏可用。
+
+**执行结果**
+
+- 状态：完成
+- 修改文件：
+  - `frontend/src/api/types.ts`
+  - `frontend/src/api/appThreads.ts`
+  - `frontend/src/components/session/SessionHeader.tsx`
+  - `frontend/src/components/session/SessionPage.tsx`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_ui.py tests/test_app_threads_api.py -o cache_dir=data/pytest-cache-e11-target -o addopts=--basetemp=data/pytest-tmp-e11-target`：40 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q -o cache_dir=data/pytest-cache-e11-full -o addopts=--basetemp=data/pytest-tmp-e11-full`：306 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及；通过类型检查、构建和静态 UI 断言覆盖 Header 执行上下文展示与 Workspace 创建参数传递
+- 回归影响：新建会话会使用当前 Workspace；已存在 Session 继续显示并使用自身绑定的 device/workspace，不随当前选择迁移
+- 风险与未完成项：Header 仅展示已有设备/Workspace 元数据；断网后 Turn 文本恢复由 E12 继续处理
 
 ---
 

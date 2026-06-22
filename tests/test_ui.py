@@ -256,13 +256,20 @@ def test_frontend_v17_pages_are_migrated_to_react() -> None:
 
     session = (root / "components/session/SessionPage.tsx").read_text(encoding="utf-8")
     assert "listDevices()" in session
+    assert "listWorkspaces()" in session
     assert "deviceDisabledReason(currentDevice)" in session
+    assert "deviceDisabledReason(threadDevice)" in session
     assert "listAppThreads({" in session
     assert "projectId: effectiveProjectId" in session
-    assert "createAppThread(effectiveProjectId, title)" in session
+    assert "currentWorkspaceIdText" in session
+    assert "UI_STATE_KEYS.currentWorkspaceId" in session
+    assert "const effectiveWorkspaceId = currentWorkspace?.id || null" in session
+    assert "createAppThread(effectiveProjectId, title, effectiveWorkspaceId)" in session
     assert "UI_STATE_KEYS.currentProjectId" in session
     assert "UI_STATE_KEYS.currentDeviceId" in session
     assert "createDisabledReason={executionDisabledReason}" in session
+    assert "threadDevice={threadDevice}" in session
+    assert "threadWorkspace={threadWorkspace}" in session
     assert "listAppTurns(selectedThreadId)" in session
     assert "sendAsyncAppTurn" in session
     assert "sendAppTurn" in session
@@ -362,6 +369,11 @@ def test_frontend_v176_regression_fixes_exist() -> None:
     header = (root / "components/session/SessionHeader.tsx").read_text(encoding="utf-8")
     assert 'className="session-header-main selected"' in header
     assert "selectedThread.generation" in header
+    assert "threadDevice?.display_name" in header
+    assert "threadWorkspace.name" in header
+    assert "threadWorkspace.path_label" in header
+    assert "selectedThread.sandbox" in header
+    assert "deviceStatus" in header
 
     session_css = (root / "styles/session.css").read_text(encoding="utf-8")
     assert ".session-header-main.selected" in session_css

@@ -19,7 +19,8 @@ import {
 } from "../../api/appThreads";
 import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
-import type { AppThread, AppTurn, AppTurnStreamEvent, Device, Project } from "../../api/types";
+import type { AppThread, AppTurn, AppTurnStreamEvent, Device, Project, Workspace } from "../../api/types";
+import { listWorkspaces } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePolling } from "../../hooks/usePolling";
 import { UI_STATE_KEYS } from "../../state/storage";
@@ -38,6 +39,7 @@ export function SessionPage({ showToast }: PageProps) {
   const [turns, setTurns] = useState<AppTurn[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedThreadIdText, setSelectedThreadIdText] = useLocalStorage(
     UI_STATE_KEYS.selectedAppThreadId,
     ""
@@ -55,6 +57,7 @@ export function SessionPage({ showToast }: PageProps) {
     ""
   );
   const [currentDeviceIdText] = useLocalStorage(UI_STATE_KEYS.currentDeviceId, "");
+  const [currentWorkspaceIdText, setCurrentWorkspaceIdText] = useLocalStorage(UI_STATE_KEYS.currentWorkspaceId, "");
   const [sendMode, setSendMode] = useLocalStorage(UI_STATE_KEYS.appSendMode, "async");
   const [message, setMessage] = useState("");
   const [waitingText, setWaitingText] = useState("");
@@ -82,6 +85,22 @@ export function SessionPage({ showToast }: PageProps) {
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
     [selectedThreadId, threads]
   );
+  const currentWorkspace = useMemo(() => {
+    const storedWorkspaceId = currentWorkspaceIdText ? Number(currentWorkspaceIdText) : null;
+    return workspaces.find((workspace) => workspace.id === storedWorkspaceId)
+      || workspaces.find((workspace) => workspace.device_id === currentDevice?.device_id && workspace.enabled)
+      || workspaces.find((workspace) => workspace.enabled)
+      || workspaces[0]
+      || null;
+  }, [currentDevice, currentWorkspaceIdText, workspaces]);
+  const threadDevice = useMemo(
+    () => devices.find((device) => device.device_id === selectedThread?.device_id) || null,
+    [devices, selectedThread]
+  );
+  const threadWorkspace = useMemo(
+    () => workspaces.find((workspace) => workspace.id === selectedThread?.workspace_id) || null,
+    [selectedThread, workspaces]
+  );
   const currentProject = useMemo(
     () => projects.find((project) => project.id === currentProjectId)
       || projects.find((project) => project.enabled)
@@ -90,8 +109,13 @@ export function SessionPage({ showToast }: PageProps) {
     [currentProjectId, projects]
   );
   const runningTurn = turns.find((turn) => isRunningStatus(turn.status)) || null;
+  const selectedThreadDeviceDisabledReason = selectedThread?.device_id
+    ? deviceDisabledReason(threadDevice)
+    : "";
   const disabledReason = !selectedThread
     ? "请先新建或选择会话"
+    : selectedThreadDeviceDisabledReason
+      ? selectedThreadDeviceDisabledReason
     : selectedThread.status === "CLOSED"
       ? "当前会话已关闭，请重开后继续"
       : selectedThread.status === "RECOVER_REQUIRED"
@@ -116,9 +140,10 @@ export function SessionPage({ showToast }: PageProps) {
   }, []);
 
   const loadThreads = useCallback(async () => {
-    const [deviceData, projectData] = await Promise.all([
+    const [deviceData, projectData, workspaceData] = await Promise.all([
       listDevices().catch(() => [] as Device[]),
-      listProjects()
+      listProjects(),
+      listWorkspaces().catch(() => [] as Workspace[])
     ]);
     const effectiveProject = currentProjectId
       ? projectData.find((project) => project.id === currentProjectId)
@@ -127,6 +152,13 @@ export function SessionPage({ showToast }: PageProps) {
     const effectiveProjectId = effectiveProject?.id || fallbackProject?.id || null;
     if (!currentProjectIdText && effectiveProjectId) {
       setCurrentProjectIdText(String(effectiveProjectId));
+    }
+    if (!currentWorkspaceIdText) {
+      const preferredWorkspace = workspaceData.find((workspace) => workspace.device_id === currentDeviceIdText && workspace.enabled)
+        || workspaceData.find((workspace) => workspace.enabled)
+        || workspaceData[0]
+        || null;
+      if (preferredWorkspace) setCurrentWorkspaceIdText(String(preferredWorkspace.id));
     }
 
     const threadData = effectiveProjectId
@@ -155,14 +187,17 @@ export function SessionPage({ showToast }: PageProps) {
     setThreads(nextThreads);
     setDevices(deviceData);
     setProjects(projectData);
+    setWorkspaces(workspaceData);
   }, [
     appThreadStatusFilter,
     currentProjectId,
     currentProjectIdText,
     currentDeviceIdText,
+    currentWorkspaceIdText,
     includeArchived,
     selectedThreadId,
     setCurrentProjectIdText,
+    setCurrentWorkspaceIdText,
     setSelectedThreadIdText
   ]);
 
@@ -321,8 +356,10 @@ export function SessionPage({ showToast }: PageProps) {
         showToast("请先选择项目", "warning");
         return;
       }
+      const effectiveWorkspaceId = currentWorkspace?.id || null;
       setCurrentProjectIdText(String(effectiveProjectId));
-      const thread = await createAppThread(effectiveProjectId, title);
+      if (effectiveWorkspaceId) setCurrentWorkspaceIdText(String(effectiveWorkspaceId));
+      const thread = await createAppThread(effectiveProjectId, title, effectiveWorkspaceId);
       setSelectedThreadIdText(String(thread.id));
       setSheet(null);
       showToast("会话已创建", "success");
@@ -456,6 +493,8 @@ export function SessionPage({ showToast }: PageProps) {
           onMore={() => setSheet("more")}
           onSwitch={() => setSheet("switch")}
           selectedThread={selectedThread}
+          threadDevice={threadDevice}
+          threadWorkspace={threadWorkspace}
         />
         {error ? <div className="inline-error">{error}</div> : null}
         <main className="message-list" onScroll={updateStickToBottom} ref={messageListRef}>

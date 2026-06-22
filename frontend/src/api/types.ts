@@ -104,6 +104,13 @@ export type AppThread = {
   id: number;
   project_id: number;
   title: string;
+  device_id?: string | null;
+  workspace_id?: number | null;
+  agent_session_id?: string | null;
+  sandbox?: string | null;
+  approval_policy?: string | null;
+  network_access?: boolean;
+  command_id?: string | null;
   bridge_thread_id?: string | null;
   app_thread_id?: string | null;
   generation: number;
