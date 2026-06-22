@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from backend.main import _read_task_artifact
+from backend.routers.tasks import _read_task_artifact
 
 
 class FakeTask:
@@ -24,7 +24,7 @@ def test_read_task_artifact_rejects_path_outside_jobs_dir(
         return FakeTask(str(outside_file))
 
     monkeypatch.setattr(
-        "backend.main.task_service.get_task_or_404",
+        "backend.routers.tasks.task_service.get_task_or_404",
         fake_get_task_or_404,
     )
 

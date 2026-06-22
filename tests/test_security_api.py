@@ -8,6 +8,8 @@ from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
 import backend.main as main_module
+import backend.routers.tasks as tasks_router
+import backend.routers.ui as ui_router
 from backend.db import get_session
 from backend.main import app
 from backend.models import Project, RunnerRecord, Task, TaskStatus, utc_now
@@ -72,7 +74,7 @@ def test_health_remains_public_when_api_token_is_enabled(monkeypatch) -> None:
 def test_api_token_protects_read_endpoints(monkeypatch) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
     monkeypatch.setattr(
-        main_module,
+        ui_router,
         "get_default_client",
         lambda: type(
             "FakeBridgeClient",
@@ -200,7 +202,7 @@ def test_api_token_protects_runner_write_endpoints(monkeypatch) -> None:
 def test_api_token_protects_artifact_reads(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
     jobs_dir = tmp_path / "jobs"
-    monkeypatch.setattr(main_module, "JOBS_DIR", jobs_dir)
+    monkeypatch.setattr(tasks_router.db, "JOBS_DIR", jobs_dir)
     job_dir = jobs_dir / "pytest-token-artifacts"
     job_dir.mkdir(parents=True, exist_ok=True)
     log_file = job_dir / "run.log"
@@ -359,7 +361,7 @@ def test_remote_runner_http_claim_upload_and_finish(
     tmp_path: Path,
 ) -> None:
     jobs_dir = tmp_path / "backend-jobs"
-    monkeypatch.setattr(main_module, "JOBS_DIR", jobs_dir)
+    monkeypatch.setattr(tasks_router.db, "JOBS_DIR", jobs_dir)
     monkeypatch.setattr("backend.services.runner_service.JOBS_DIR", jobs_dir)
 
     for client, session in make_client():

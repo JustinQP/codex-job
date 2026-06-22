@@ -9,6 +9,7 @@ from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
 from backend import main as backend_main
+import backend.routers.ui as ui_router
 from backend import mobile, ui
 from backend.db import get_session
 from backend.main import app
@@ -80,7 +81,7 @@ def test_dashboard_renders_projects_and_tasks() -> None:
 
 def test_mobile_console_returns_build_missing_page_when_dist_absent(monkeypatch) -> None:
     monkeypatch.setattr(
-        backend_main,
+        ui_router,
         "FRONTEND_INDEX_HTML",
         Path("missing-frontend-dist-index.html"),
     )
@@ -105,7 +106,7 @@ def test_mobile_console_returns_frontend_dist_index_when_present(
         '<!doctype html><html><body><div id="root">Codex Mobile Console</div></body></html>',
         encoding="utf-8",
     )
-    monkeypatch.setattr(backend_main, "FRONTEND_INDEX_HTML", index_html)
+    monkeypatch.setattr(ui_router, "FRONTEND_INDEX_HTML", index_html)
 
     for client, session in make_client():
         del session

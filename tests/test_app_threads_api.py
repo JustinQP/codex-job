@@ -8,6 +8,7 @@ from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
 import backend.main as main_module
+import backend.routers.ui as ui_router
 from backend.db import get_session
 from backend.main import app
 from backend.models import AppThread, AppTurn, Project, utc_now
@@ -77,6 +78,7 @@ def make_client(monkeypatch, fake: FakeBridgeClient | None = None) -> Generator[
     session = Session(engine)
     fake_client = fake or FakeBridgeClient()
     monkeypatch.setattr(main_module, "get_default_client", lambda: fake_client)
+    monkeypatch.setattr(ui_router, "get_default_client", lambda: fake_client)
     monkeypatch.setattr("backend.services.app_thread_service.get_default_client", lambda: fake_client)
 
     def override_get_session() -> Generator[Session, None, None]:

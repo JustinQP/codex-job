@@ -96,7 +96,7 @@ Codex 执行本清单时必须遵守：
 - [x] A01 建立重构前回归基线
 - [x] A02 增加最小 GitHub Actions CI
 - [x] A03 引入轻量数据库版本迁移机制
-- [ ] A04 拆分 FastAPI 路由装配层
+- [x] A04 拆分 FastAPI 路由装配层
 - [ ] A05 增加新旧执行模式功能开关
 
 ### B. Device 与 Workspace
@@ -358,7 +358,7 @@ pytest -q
 
 ---
 
-### [ ] A04 拆分 FastAPI 路由装配层
+### [x] A04 拆分 FastAPI 路由装配层
 
 **目标**
 
@@ -406,6 +406,31 @@ tests/test_api_contract.py
 python -m compileall backend
 pytest -q
 ```
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/main.py`
+  - `backend/dependencies.py`
+  - `backend/routers/__init__.py`
+  - `backend/routers/ui.py`
+  - `backend/routers/projects.py`
+  - `backend/routers/tasks.py`
+  - `backend/routers/runners.py`
+  - `backend/routers/app_threads.py`
+  - `tests/test_api_contract.py`
+  - `tests/test_app_threads_api.py`
+  - `tests/test_artifact_guard.py`
+  - `tests/test_security_api.py`
+  - `tests/test_ui.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `python -m compileall backend`：通过
+  - `pytest -q`：通过，163 passed
+- 人工验证：检查 `backend/main.py` 仅保留 FastAPI 创建、lifespan、静态前端挂载和 router 注册；OpenAPI 契约测试覆盖核心路径仍存在
+- 回归影响：现有 URL、response model 和 API Token 保护保持不变；测试 monkeypatch 目标调整到新 router 模块
+- 风险与未完成项：未拆 service 层；后续 Agent API 可继续在 `backend/routers/` 下新增边界
 
 ---
 
