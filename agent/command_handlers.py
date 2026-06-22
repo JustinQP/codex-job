@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import json
 from typing import Any, Protocol
 
+from agent.workspace_registry import WorkspaceRegistry
+
 
 @dataclass(frozen=True)
 class CommandResult:
@@ -35,10 +37,14 @@ class UnsupportedCommandHandler:
 
 
 class CommandHandlerRegistry:
-    def __init__(self) -> None:
+    def __init__(self, workspace_registry: WorkspaceRegistry | None = None) -> None:
         self._handlers: dict[str, CommandHandler] = {
             "fake.echo": FakeCommandHandler(),
         }
+        if workspace_registry is not None:
+            from agent.run_executor import RunExecutor
+
+            self._handlers["RUN_EXECUTE"] = RunExecutor(workspace_registry)
         self._fallback = UnsupportedCommandHandler()
 
     def handle(self, command: dict[str, Any]) -> CommandResult:

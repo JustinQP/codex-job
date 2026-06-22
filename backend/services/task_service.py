@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from backend.db import JOBS_DIR
 from backend.models import DeviceStatus, Project, RunnerRecord, Task, TaskStatus, TaskType, Workspace, utc_now
 from backend.schemas import RunCreate, TaskCreate
+from backend.services import agent_command_service
 
 
 TASK_TEMPLATES: dict[TaskType, tuple[str, str]] = {
@@ -146,6 +147,31 @@ def create_run(session: Session, payload: RunCreate) -> Task:
     task.workspace_id = workspace.id
     task.device_id = workspace.device_id
     task.client_request_id = payload.client_request_id
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    command = agent_command_service.create_command(
+        session,
+        device_id=workspace.device_id,
+        command_type="RUN_EXECUTE",
+        aggregate_type="task",
+        aggregate_id=str(task.id),
+        idempotency_key=payload.client_request_id or f"run:{task.id}",
+        workspace_id=workspace.id,
+        payload={
+            "task_id": task.id,
+            "workspace_id": workspace.id,
+            "workspace_key": workspace.workspace_key,
+            "prompt": task.prompt,
+            "timeout_seconds": task.timeout_seconds,
+            "task_type": task.task_type.value,
+            "model": task.model,
+            "reasoning_effort": task.reasoning_effort,
+            "sandbox": task.sandbox,
+            "require_clean_worktree": workspace.require_clean_worktree,
+        },
+    )
+    task.command_id = command.id
     session.add(task)
     session.commit()
     session.refresh(task)

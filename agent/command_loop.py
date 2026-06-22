@@ -37,7 +37,7 @@ class AgentCommandLoop:
         self.identity = identity
         self.local_state = local_state
         self.workspace_registry = workspace_registry
-        self.handlers = handlers or CommandHandlerRegistry()
+        self.handlers = handlers or CommandHandlerRegistry(workspace_registry)
         self.poll_interval_seconds = poll_interval_seconds
         self.max_retries = max_retries
 

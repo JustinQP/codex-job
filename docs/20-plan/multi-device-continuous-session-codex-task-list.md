@@ -122,7 +122,7 @@ Codex 执行本清单时必须遵守：
 ### D. 多设备 Run
 
 - [x] D01 将 Run/Task 绑定 Device 和 Workspace
-- [ ] D02 通过 AgentCommand 下发 `codex exec`
+- [x] D02 通过 AgentCommand 下发 `codex exec`
 - [ ] D03 实现增量日志上传
 - [ ] D04 实现产物 manifest 和大小限制
 - [ ] D05 实现真实 Run 取消
@@ -1566,7 +1566,7 @@ client_request_id
 
 ---
 
-### [ ] D02 通过 AgentCommand 下发 `codex exec`
+### [x] D02 通过 AgentCommand 下发 `codex exec`
 
 **目标**
 
@@ -1606,6 +1606,29 @@ tests/test_agent_run_executor.py
 - Device A Workspace 的 Run 只产生 Device A 命令。
 - Agent 使用 Registry 中的真实路径。
 - Fake Codex 执行可完成状态闭环。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/services/task_service.py`
+  - `agent/run_executor.py`
+  - `agent/command_handlers.py`
+  - `agent/command_loop.py`
+  - `tests/test_agent_run_executor.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 后端：`POST /runs` 创建 Run 后生成 `RUN_EXECUTE` AgentCommand，并将 `command_id` 回写到 Task；命令只发往 Workspace 所属设备
+- Payload：命令 payload 只包含 `task_id`、`workspace_id`、`workspace_key`、执行选项等业务字段，不传 `cwd`/`project_path`
+- Agent：新增 `RunExecutor` handler，通过 Workspace Registry 解析真实目录；`CODEX_AGENT_FAKE_RUN=1` 下可完成 fake 执行闭环
+- 执行复用：真实执行路径预留复用 `execute_codex`、`check_clean_worktree`、`collect_git_artifacts`；旧 Runner/Task 路径不受影响
+- 自动化测试：
+  - `pytest -q tests/test_agent_run_executor.py tests/test_runs_api.py tests/test_agent_command_loop.py`：通过，10 passed
+  - `python -m compileall backend runner agent scripts poc/app_server`：通过
+  - `pytest -q`：通过，246 passed, 1 skipped
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：不涉及
+- 回归影响：旧 `/tasks` 和旧 Runner 认领路径保持可用；新 `/runs` 使用 AgentCommand
+- 风险与未完成项：日志增量上传、产物 manifest、Run/Command 状态双向映射将在 D03/D04/D05 继续完善
 
 ---
 
