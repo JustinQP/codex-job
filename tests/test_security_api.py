@@ -62,13 +62,28 @@ def test_api_token_protects_mutation_endpoints(monkeypatch, tmp_path: Path) -> N
 
 def test_health_remains_public_when_api_token_is_enabled(monkeypatch) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
+    monkeypatch.delenv("AGENT_COMMAND_MODE", raising=False)
 
     for client, session in make_client():
         del session
         response = client.get("/health")
 
         assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+        assert response.json()["status"] == "ok"
+        assert response.json()["agent_command_mode"] is False
+        assert response.json()["execution_mode"] == "legacy_runner"
+
+
+def test_health_reports_agent_command_mode(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+
+    for client, session in make_client():
+        del session
+        response = client.get("/health")
+
+        assert response.status_code == 200
+        assert response.json()["agent_command_mode"] is True
+        assert response.json()["execution_mode"] == "agent_command"
 
 
 def test_api_token_protects_read_endpoints(monkeypatch) -> None:

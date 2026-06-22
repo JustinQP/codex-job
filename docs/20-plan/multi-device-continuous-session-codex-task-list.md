@@ -97,7 +97,7 @@ Codex 执行本清单时必须遵守：
 - [x] A02 增加最小 GitHub Actions CI
 - [x] A03 引入轻量数据库版本迁移机制
 - [x] A04 拆分 FastAPI 路由装配层
-- [ ] A05 增加新旧执行模式功能开关
+- [x] A05 增加新旧执行模式功能开关
 
 ### B. Device 与 Workspace
 
@@ -434,7 +434,7 @@ pytest -q
 
 ---
 
-### [ ] A05 增加新旧执行模式功能开关
+### [x] A05 增加新旧执行模式功能开关
 
 **目标**
 
@@ -473,6 +473,28 @@ tests/test_config.py
 - 未配置时仍使用现有模式。
 - 配置启用后健康接口可以识别模式。
 - 不影响当前 Run 和 Session。
+
+执行结果：
+- 状态：完成
+- 修改文件：
+  - `backend/config.py`
+  - `backend/routers/ui.py`
+  - `frontend/src/api/health.ts`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/components/settings/SettingsPage.tsx`
+  - `tests/test_config.py`
+  - `tests/test_security_api.py`
+  - `docs/20-plan/multi-device-continuous-session-codex-task-list.md`
+- 数据迁移：不涉及
+- 自动化测试：
+  - `pytest -q tests/test_config.py tests/test_security_api.py`：通过，25 passed
+  - `python -m compileall backend`：通过
+  - `pytest -q`：通过，177 passed
+  - `cd frontend; npm.cmd run typecheck`：通过
+  - `cd frontend; npm.cmd run build`：通过
+- 人工验证：检查 `/health` 默认返回 `agent_command_mode=false`、`execution_mode=legacy_runner`；`AGENT_COMMAND_MODE=true` 时返回 `agent_command`
+- 回归影响：默认未配置时仍走现有 Runner/Bridge 语义；本任务未切换 Run 或 Session 链路
+- 风险与未完成项：仅提供开关和展示，后续任务再接入新 Agent Command 链路
 
 ---
 

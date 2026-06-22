@@ -100,6 +100,12 @@ export type AppTurnStreamEvent = {
   turn?: AppTurn;
 };
 
+export type Health = {
+  status: string;
+  agent_command_mode: boolean;
+  execution_mode: "legacy_runner" | "agent_command" | string;
+};
+
 export type BridgeHealth = {
   status?: string;
   service?: string;

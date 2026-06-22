@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlmodel import Session
 
 from backend import ui
+from backend.config import get_settings
 from backend.db import get_session
 from backend.dependencies import require_api_token
 from backend.models import TaskStatus, TaskType
@@ -96,8 +97,13 @@ def index(
 
 
 @router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, str | bool]:
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "agent_command_mode": settings.agent_command_mode,
+        "execution_mode": settings.execution_mode,
+    }
 
 
 @router.get("/app-server-bridge/health")

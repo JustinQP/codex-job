@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { cleanupAppThreads, getBridgeHealth, recoverStaleAppTurns } from "../../api/appThreads";
+import { getHealth } from "../../api/health";
 import { listRunners } from "../../api/runners";
-import type { BridgeHealth, Runner } from "../../api/types";
+import type { BridgeHealth, Health, Runner } from "../../api/types";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { API_TOKEN_KEY } from "../../state/storage";
 import { errorText } from "../../utils/error";
@@ -13,6 +14,7 @@ import { RunnerDiagnostics } from "./RunnerDiagnostics";
 export function SettingsPage({ showToast }: PageProps) {
   const [token, setToken] = useLocalStorage(API_TOKEN_KEY, "");
   const [draftToken, setDraftToken] = useState(token);
+  const [health, setHealth] = useState<Health | null>(null);
   const [bridge, setBridge] = useState<BridgeHealth | null>(null);
   const [runners, setRunners] = useState<Runner[]>([]);
   const [error, setError] = useState("");
@@ -20,13 +22,15 @@ export function SettingsPage({ showToast }: PageProps) {
   const loadDiagnostics = useCallback(async () => {
     setError("");
     try {
-      const [bridgeData, runnerData] = await Promise.all([
+      const [healthData, bridgeData, runnerData] = await Promise.all([
+        getHealth(),
         getBridgeHealth().catch((err) => {
           setError(errorText(err));
           return null;
         }),
         listRunners()
       ]);
+      setHealth(healthData);
       setBridge(bridgeData);
       setRunners(runnerData);
     } catch (err) {
@@ -120,7 +124,21 @@ export function SettingsPage({ showToast }: PageProps) {
             <div className="wechat-row">
               <div className="wechat-avatar">M</div>
               <div className="wechat-row-main">
-                <strong>mode</strong>
+                <strong>control mode</strong>
+                <span>{health?.execution_mode || "-"}</span>
+              </div>
+            </div>
+            <div className="wechat-row">
+              <div className="wechat-avatar">A</div>
+              <div className="wechat-row-main">
+                <strong>agent command</strong>
+                <span>{health?.agent_command_mode ? "enabled" : "disabled"}</span>
+              </div>
+            </div>
+            <div className="wechat-row">
+              <div className="wechat-avatar">B</div>
+              <div className="wechat-row-main">
+                <strong>bridge mode</strong>
                 <span>{bridge?.mode || "-"}</span>
               </div>
             </div>
