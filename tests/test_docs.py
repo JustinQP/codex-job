@@ -39,12 +39,11 @@ def test_current_docs_exist() -> None:
         assert path.read_text(encoding="utf-8").strip()
 
 
-def test_docs_root_contains_only_current_entries_and_one_compatibility_fixture() -> None:
+def test_docs_root_contains_only_current_entry_documents() -> None:
     expected_root_files = {
         "README.md",
         "api-overview.md",
         "app-server-session.md",
-        "mobile-v1.7-frontend-split-plan.md",
         "smoke-checklist.md",
         "state-machines.md",
     }
