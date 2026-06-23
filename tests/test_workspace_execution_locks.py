@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from sqlmodel import select
 
-from backend.models import AgentCommandStatus, AppThread, WorkspaceExecutionLock, utc_now
+from backend.models import AgentCommand, AgentCommandStatus, AppThread, Run, RunStatus, WorkspaceExecutionLock, utc_now
 from backend.services import workspace_lock_service
 from tests.test_runs_api import add_device, add_project, add_workspace
 from tests.test_runs_api import make_client
@@ -45,7 +45,8 @@ def test_workspace_write_run_conflicts_with_write_session() -> None:
 
 def test_different_workspace_write_runs_can_start() -> None:
     for client, session in make_client():
-        project = add_project(session)
+        project_a = add_project(session)
+        project_b = add_project(session)
         add_device(session, "device-a")
         add_device(session, "device-b")
         workspace_a = add_workspace(session, "device-a")
@@ -54,7 +55,7 @@ def test_different_workspace_write_runs_can_start() -> None:
         first = client.post(
             "/runs",
             json={
-                "project_id": project.id,
+                "project_id": project_a.id,
                 "workspace_id": workspace_a.id,
                 "prompt": "write a",
                 "sandbox": "workspace-write",
@@ -63,7 +64,7 @@ def test_different_workspace_write_runs_can_start() -> None:
         second = client.post(
             "/runs",
             json={
-                "project_id": project.id,
+                "project_id": project_b.id,
                 "workspace_id": workspace_b.id,
                 "prompt": "write b",
                 "sandbox": "workspace-write",
@@ -184,6 +185,83 @@ def test_run_completion_releases_workspace_lock(monkeypatch) -> None:
 
         assert complete.status_code == 200
         assert second.status_code == 200
+
+
+def test_claim_sweeper_expires_stale_run_and_releases_workspace_lock(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "prompt": "stale",
+                "sandbox": "workspace-write",
+            },
+        ).json()
+        command = session.get(AgentCommand, created["command_id"])
+        command.status = AgentCommandStatus.RUNNING
+        command.lease_token = "lease-stale"
+        command.lease_expires_at = utc_now() - timedelta(seconds=1)
+        session.add(command)
+        session.commit()
+
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-after-stale"},
+        )
+
+        assert claim.status_code == 200
+        assert claim.json() is None
+        run = session.get(Run, created["id"])
+        assert run.status == RunStatus.FAILED
+        assert session.get(WorkspaceExecutionLock, 1) is None
+
+
+def test_renew_run_command_extends_workspace_lock(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "prompt": "renew",
+                "sandbox": "workspace-write",
+            },
+        ).json()
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-renew"},
+        ).json()
+        client.post(
+            f"/agent/commands/{created['command_id']}/ack",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "lease_token": claim["lease_token"]},
+        )
+        lock = session.get(WorkspaceExecutionLock, 1)
+        lock.lease_expires_at = utc_now() + timedelta(seconds=1)
+        session.add(lock)
+        session.commit()
+        old_lock_expiry = lock.lease_expires_at
+
+        renew = client.post(
+            f"/agent/commands/{created['command_id']}/renew",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "lease_token": claim["lease_token"]},
+        )
+
+        assert renew.status_code == 200
+        renewed_lock = session.get(WorkspaceExecutionLock, 1)
+        assert renewed_lock.lease_expires_at > old_lock_expiry
 
 
 def test_closing_write_session_releases_workspace_lock() -> None:

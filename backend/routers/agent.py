@@ -25,6 +25,7 @@ from backend.schemas import (
     WorkspaceSyncRequest,
 )
 from backend.services import (
+    agent_command_maintenance_service,
     agent_command_event_service,
     agent_command_service,
     agent_reconciliation_service,
@@ -103,6 +104,10 @@ def claim_agent_command(
     _: None = Depends(require_agent_token),
 ):
     try:
+        agent_command_maintenance_service.expire_stale_agent_commands(
+            session,
+            device_id=payload.device_id,
+        )
         return agent_command_service.claim_command(
             session,
             device_id=payload.device_id,
@@ -145,12 +150,31 @@ def renew_agent_command(
     _: None = Depends(require_agent_token),
 ):
     try:
-        return agent_command_service.renew_command(
+        command = agent_command_service.renew_command(
             session,
             command_id=command_id,
             device_id=payload.device_id,
             lease_token=payload.lease_token,
         )
+        if command.command_type == "RUN_EXECUTE":
+            run_service.renew_run_lease_from_command(session, command_id=command.id)
+            if command.aggregate_id:
+                workspace_lock_service.renew_workspace_lock(
+                    session,
+                    owner_type="run",
+                    owner_id=str(command.aggregate_id),
+                )
+            session.refresh(command)
+        elif command.command_type in {"SESSION_OPEN", "SESSION_CLOSE", "TURN_START"}:
+            owner_id = _workspace_lock_owner_id_for_session_command(session, command)
+            if owner_id is not None:
+                workspace_lock_service.renew_workspace_lock(
+                    session,
+                    owner_type="app_thread",
+                    owner_id=owner_id,
+                )
+            session.refresh(command)
+        return command
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)
 
@@ -178,25 +202,13 @@ def complete_agent_command(
                 command_id=command.id,
                 result_payload=payload.result_payload,
             )
-            session.refresh(command)
-        if command.command_type == "SESSION_CLOSE":
-            app_thread_service.complete_agent_session_close(session, command_id=command.id)
-            session.refresh(command)
-        elif command.command_type == "TURN_START":
-            app_thread_service.complete_agent_turn_start(
+        elif command.command_type in {"SESSION_CLOSE", "TURN_START", "RUN_EXECUTE"}:
+            agent_command_maintenance_service.apply_terminal_command_effects(
                 session,
-                command_id=command.id,
+                command,
                 result_payload=payload.result_payload,
             )
-            session.refresh(command)
-        elif command.command_type == "RUN_EXECUTE":
-            run_service.complete_run_command(session, command_id=command.id)
-            session.refresh(command)
-            workspace_lock_service.release_workspace_lock(
-                session,
-                owner_type="run",
-                owner_id=str(command.aggregate_id),
-            )
+        session.refresh(command)
         return command
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)
@@ -256,3 +268,16 @@ def upload_run_artifact(
     _: None = Depends(require_agent_token),
 ):
     return run_artifact_service.upload_run_artifact(session, run_id, payload)
+
+
+def _workspace_lock_owner_id_for_session_command(session: Session, command) -> str | None:
+    if command.aggregate_type == "app_thread" and command.aggregate_id:
+        return str(command.aggregate_id)
+    if command.aggregate_type != "app_turn" or not command.aggregate_id:
+        return None
+    try:
+        app_turn_id = int(command.aggregate_id)
+    except ValueError:
+        return None
+    app_turn = app_thread_service.get_app_turn_or_404(session, app_turn_id)
+    return str(app_turn.app_thread_id)

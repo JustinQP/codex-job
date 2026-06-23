@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from backend.db import JOBS_DIR
 from backend.models import AgentCommand, AgentCommandStatus, Device, DeviceStatus, Project, Run, RunStatus, RunType, Workspace, utc_now
 from backend.schemas import RunCreate
-from backend.services import agent_command_service, workspace_lock_service
+from backend.services import agent_command_service, project_service, workspace_lock_service
 
 
 RUN_TEMPLATES: dict[RunType, tuple[str, str]] = {
@@ -77,6 +77,7 @@ def create_run(session: Session, payload: RunCreate) -> Run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
     if not project.enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project is disabled")
+    project_service.ensure_project_workspace(session, project, workspace.id)
     requested_sandbox = payload.sandbox or project.default_sandbox or workspace.default_sandbox or DEFAULT_SANDBOX
     workspace_lock_service.ensure_workspace_available(
         session,
@@ -126,13 +127,10 @@ def create_run(session: Session, payload: RunCreate) -> Run:
                 "sandbox": run.sandbox,
                 "require_clean_worktree": workspace.require_clean_worktree,
             },
+            commit=False,
         )
     except Exception:
-        workspace_lock_service.release_workspace_lock(
-            session,
-            owner_type="run",
-            owner_id=str(run.id),
-        )
+        session.rollback()
         raise
     run.command_id = command.id
     session.add(run)
@@ -167,12 +165,11 @@ def _create_run_record(
         updated_at=created_at,
     )
     session.add(run)
-    session.commit()
-    session.refresh(run)
+    session.flush()
 
     _assign_artifact_paths(run)
     session.add(run)
-    session.commit()
+    session.flush()
     session.refresh(run)
     return run
 
@@ -262,6 +259,25 @@ def mark_run_running(session: Session, *, command_id: str) -> Run | None:
     run.started_at = now
     run.lease_expires_at = command.lease_expires_at
     run.updated_at = now
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def renew_run_lease_from_command(session: Session, *, command_id: str) -> Run | None:
+    command = session.get(AgentCommand, command_id)
+    if command is None or command.aggregate_type != "run":
+        return None
+    try:
+        run_id = int(command.aggregate_id or "0")
+    except ValueError:
+        return None
+    run = session.get(Run, run_id)
+    if run is None or run.status not in {RunStatus.PENDING, RunStatus.RUNNING}:
+        return run
+    run.lease_expires_at = command.lease_expires_at
+    run.updated_at = utc_now()
     session.add(run)
     session.commit()
     session.refresh(run)

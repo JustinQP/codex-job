@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from backend.models import AgentCommandStatus
-from backend.schemas import AgentCommandCompleteRequest, AgentCommandLeaseRequest
-from backend.services import agent_command_service
+from backend.schemas import AgentCommandCompleteRequest, AgentCommandLeaseRequest, AppThreadCreate, AppTurnCreate
+from backend.models import AppThread, AppTurn, WorkspaceExecutionLock
+from backend.services import agent_command_service, app_thread_service
+import pytest
+from sqlmodel import select
 from tests.test_runs_api import add_device, add_project, add_workspace, make_client
 
 
@@ -155,3 +158,63 @@ def test_close_active_thread_creates_session_close_command(monkeypatch) -> None:
         assert body["status"] == "CLOSING"
         close_command = agent_command_service.list_commands_for_device(session, "device-a")[-1]
         assert close_command.command_type == "SESSION_CLOSE"
+
+
+def test_create_app_thread_rolls_back_when_command_creation_fails(monkeypatch) -> None:
+    def fail_create_command(*args, **kwargs):
+        raise agent_command_service.AgentCommandServiceError("boom", "boom")
+
+    monkeypatch.setattr(agent_command_service, "create_command", fail_create_command)
+    for _client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+
+        with pytest.raises(agent_command_service.AgentCommandServiceError):
+            app_thread_service.create_app_thread(
+                session,
+                AppThreadCreate(project_id=project.id, workspace_id=workspace.id, title="rollback"),
+            )
+
+        assert len(session.exec(select(AppThread)).all()) == 0
+        assert len(session.exec(select(WorkspaceExecutionLock)).all()) == 0
+
+
+def test_create_app_turn_rolls_back_when_command_creation_fails(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/app-threads",
+            json={"project_id": project.id, "workspace_id": workspace.id, "title": "Demo"},
+        ).json()
+        command = agent_command_service.claim_command(session, device_id="device-a", claim_request_id="claim-open")
+        assert command is not None
+        lease = {"device_id": "device-a", "lease_token": command.lease_token}
+        client.post(f"/agent/commands/{command.id}/ack", headers=api_headers(), json=lease)
+        client.post(
+            f"/agent/commands/{command.id}/complete",
+            headers=api_headers(),
+            json={
+                **lease,
+                "status": "SUCCESS",
+                "result_payload": {"agent_session_id": "agent-session-1", "codex_thread_id": "codex-thread-1"},
+            },
+        )
+
+        def fail_create_command(*args, **kwargs):
+            raise agent_command_service.AgentCommandServiceError("boom", "boom")
+
+        monkeypatch.setattr(agent_command_service, "create_command", fail_create_command)
+        app_thread = session.get(AppThread, created["id"])
+
+        with pytest.raises(agent_command_service.AgentCommandServiceError):
+            app_thread_service.create_agent_async_app_turn(
+                session,
+                app_thread,
+                AppTurnCreate(message="hello").message,
+            )
+
+        assert len(session.exec(select(AppTurn)).all()) == 0

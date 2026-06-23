@@ -8,9 +8,10 @@ from sqlmodel.pool import StaticPool
 
 from backend.db import get_session
 from backend.main import app
-from backend.models import AgentCommandStatus
+from backend.models import AgentCommandStatus, AppThread, WorkspaceExecutionLock, utc_now
 from backend.schemas import DeviceRegister
 from backend.services import agent_command_service, device_service
+from tests.test_runs_api import add_project, add_workspace
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -191,3 +192,49 @@ def test_reconcile_without_local_command_keeps_pending_queue(monkeypatch) -> Non
         assert response.json()["action"] == "IDLE"
         assert claim.status_code == 200
         assert claim.json()["id"] == command.id
+
+
+def test_reconcile_without_local_command_marks_active_sessions_recover_required(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        add_device(session)
+        project = add_project(session)
+        workspace = add_workspace(session, "device-a")
+        app_thread = AppThread(
+            project_id=project.id,
+            title="Active",
+            device_id="device-a",
+            workspace_id=workspace.id,
+            agent_session_id="agent-session-1",
+            codex_thread_id="codex-thread-1",
+            status="ACTIVE",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(app_thread)
+        session.commit()
+        session.refresh(app_thread)
+        session.add(
+            WorkspaceExecutionLock(
+                workspace_id=workspace.id,
+                owner_type="app_thread",
+                owner_id=str(app_thread.id),
+                lock_type="write",
+                lease_expires_at=utc_now(),
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
+        session.commit()
+
+        response = client.post(
+            "/agent/reconcile",
+            headers=auth_headers(),
+            json={"device_id": "device-a", "process_status": "STARTING"},
+        )
+
+        assert response.status_code == 200
+        session.refresh(app_thread)
+        assert app_thread.status == "RECOVER_REQUIRED"
+        assert app_thread.agent_session_id is None
+        assert session.get(WorkspaceExecutionLock, 1) is None

@@ -13,7 +13,7 @@ from backend.db import engine, get_session, init_db
 from backend.routers import agent, app_threads, devices, projects, runs, ui, workspaces
 from backend.routers.ui import frontend_build_missing_page
 from backend import db
-from backend.services import app_thread_service
+from backend.services import agent_command_maintenance_service, app_thread_service
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -37,6 +37,7 @@ async def lifespan(app_instance: FastAPI) -> Iterable[None]:
         try:
             with Session(engine) as session:
                 app_thread_service.recover_stale_app_turns(session)
+                agent_command_maintenance_service.expire_stale_agent_commands(session)
         except Exception:
             traceback.print_exc()
     yield

@@ -9,6 +9,7 @@ from agent.api_client import AgentApiClient, AgentApiError
 from agent.command_handlers import CommandHandlerRegistry
 from agent.event_uploader import CommandEventUploader
 from agent.heartbeat import register_agent, send_heartbeat
+from agent.heartbeat_worker import HeartbeatWorker
 from agent.identity import AgentIdentity
 from agent.local_state import AgentLocalState, CurrentCommandState
 from agent.process_registry import ProcessRegistry
@@ -47,12 +48,14 @@ class AgentCommandLoop:
         app_session_manager=None,
         event_uploader: CommandEventUploader | None = None,
         poll_interval_seconds: float = 2.0,
+        heartbeat_interval_seconds: float = 30.0,
         max_retries: int = 3,
     ) -> None:
         self.client = client
         self.identity = identity
         self.local_state = local_state
         self.workspace_registry = workspace_registry
+        self.app_session_manager = app_session_manager
         self.process_registry = process_registry or ProcessRegistry()
         self.event_uploader = event_uploader or CommandEventUploader(
             client=client,
@@ -67,6 +70,7 @@ class AgentCommandLoop:
             event_uploader=self.event_uploader,
         )
         self.poll_interval_seconds = poll_interval_seconds
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.max_retries = max_retries
 
     def bootstrap(self) -> None:
@@ -88,15 +92,29 @@ class AgentCommandLoop:
     def run_forever(self, stop_event: Event | None = None) -> None:
         stop_event = stop_event or Event()
         self.bootstrap()
-        while not stop_event.is_set():
-            try:
-                self.run_once()
-            except AgentApiError:
+        heartbeat_worker = HeartbeatWorker(
+            client=self.client,
+            identity=self.identity,
+            interval_seconds=self.heartbeat_interval_seconds,
+        )
+        heartbeat_worker.start()
+        try:
+            while not stop_event.is_set():
+                try:
+                    self.run_once()
+                except AgentApiError:
+                    if stop_event.wait(self.poll_interval_seconds):
+                        break
+                    continue
                 if stop_event.wait(self.poll_interval_seconds):
                     break
-                continue
-            if stop_event.wait(self.poll_interval_seconds):
-                break
+        finally:
+            heartbeat_worker.stop()
+            self.close()
+
+    def close(self) -> None:
+        if self.app_session_manager is not None and hasattr(self.app_session_manager, "close_all"):
+            self.app_session_manager.close_all()
 
     def run_once(self) -> dict[str, Any] | None:
         return self._with_retries(self._run_once)
@@ -137,6 +155,16 @@ class AgentCommandLoop:
             device_id=self.identity.device_id,
             lease_token=current.lease_token,
         )
+        if current.phase == PHASE_EXECUTING:
+            current = CurrentCommandState(
+                command_id=current.command_id,
+                claim_request_id=current.claim_request_id,
+                lease_token=current.lease_token,
+                phase=PHASE_COMPLETION_PENDING,
+                status=AgentCommandStatus.FAILED.value,
+                error_message="agent restarted while command was executing; command was not retried to avoid duplicate execution",
+            )
+            self.local_state.save_current_command(current)
         if current.phase != PHASE_COMPLETION_PENDING:
             self.client.ack_command(current.command_id, lease)
             self.client.renew_command(current.command_id, lease)
@@ -194,4 +222,8 @@ class AgentCommandLoop:
 
 def _is_terminal_or_invalid_lease_error(exc: AgentApiError) -> bool:
     message = str(exc)
-    return "invalid_lease_token" in message or "server command is terminal" in message
+    return (
+        "invalid_lease_token" in message
+        or "lease_expired" in message
+        or "server command is terminal" in message
+    )

@@ -18,26 +18,41 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
             detail="project name cannot be empty",
         )
 
-    project_path = Path(payload.path).expanduser().resolve()
-    whitelist_error = validate_project_whitelist(project_path)
-    if whitelist_error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=whitelist_error,
-        )
-    if not project_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="project path does not exist",
-        )
-    if not project_path.is_dir():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="project path must be a directory",
-        )
+    workspace = None
+    if payload.workspace_id is not None:
+        from backend.models import Workspace
+
+        workspace = session.get(Workspace, payload.workspace_id)
+        if workspace is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="workspace not found",
+            )
+        project_path_value = payload.path.strip()
+        binding_status = WorkspaceBindingStatus.BOUND
+    else:
+        project_path = Path(payload.path).expanduser().resolve()
+        whitelist_error = validate_project_whitelist(project_path)
+        if whitelist_error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=whitelist_error,
+            )
+        if not project_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="project path does not exist",
+            )
+        if not project_path.is_dir():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="project path must be a directory",
+            )
+        project_path_value = str(project_path)
+        binding_status = WorkspaceBindingStatus.UNBOUND
     project = Project(
         name=project_name,
-        path=str(project_path),
+        path=project_path_value,
         enabled=payload.enabled,
         test_command=payload.test_command,
         smoke_check_command=payload.smoke_check_command,
@@ -46,6 +61,8 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
         default_model=payload.default_model,
         default_reasoning_effort=payload.default_reasoning_effort,
         default_sandbox=payload.default_sandbox,
+        workspace_id=payload.workspace_id,
+        workspace_binding_status=binding_status,
         created_at=utc_now(),
         updated_at=utc_now(),
     )
@@ -116,6 +133,39 @@ def bind_project_workspace(session: Session, project_id: int, workspace_id: int)
     session.add(project)
     session.commit()
     session.refresh(project)
+    return project
+
+
+def ensure_project_workspace(
+    session: Session,
+    project: Project,
+    workspace_id: int,
+) -> Project:
+    from backend.models import Workspace
+
+    if session.get(Workspace, workspace_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="workspace not found",
+        )
+    if project.workspace_id is None:
+        project.workspace_id = workspace_id
+        project.workspace_binding_status = WorkspaceBindingStatus.BOUND
+        project.updated_at = utc_now()
+        session.add(project)
+        session.flush()
+        return project
+    if project.workspace_id != workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "project_workspace_mismatch",
+                "message": "project is bound to a different workspace",
+                "project_id": project.id,
+                "project_workspace_id": project.workspace_id,
+                "requested_workspace_id": workspace_id,
+            },
+        )
     return project
 
 

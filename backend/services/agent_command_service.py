@@ -95,6 +95,7 @@ def create_command(
     aggregate_id: str | None = None,
     workspace_id: int | None = None,
     max_attempts: int = 3,
+    commit: bool = True,
 ) -> AgentCommand:
     if not idempotency_key:
         raise AgentCommandServiceError(
@@ -143,7 +144,10 @@ def create_command(
         max_attempts=max_attempts,
     )
     session.add(command)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(command)
     return command
 
@@ -164,23 +168,12 @@ def _ensure_device_command(command: AgentCommand, device_id: str) -> None:
 
 
 def _handle_expired_lease(session: Session, command: AgentCommand) -> None:
-    if command.attempt_count >= command.max_attempts:
-        transition_command(
-            session,
-            command,
-            AgentCommandStatus.EXPIRED,
-            last_error="lease expired",
-        )
-        return
-
-    command.status = AgentCommandStatus.PENDING
-    command.claim_request_id = None
-    command.lease_token = None
-    command.lease_expires_at = None
-    command.last_error = "lease expired"
-    session.add(command)
-    session.commit()
-    session.refresh(command)
+    transition_command(
+        session,
+        command,
+        AgentCommandStatus.EXPIRED,
+        last_error="lease expired before agent completed command",
+    )
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -259,6 +252,29 @@ def claim_command(
     if result.rowcount != 1:
         return None
     return session.get(AgentCommand, command.id)
+
+
+def expire_stale_active_commands(session: Session, *, device_id: str | None = None) -> list[AgentCommand]:
+    now = utc_now()
+    statement = select(AgentCommand).where(
+        AgentCommand.status.in_([AgentCommandStatus.CLAIMED, AgentCommandStatus.RUNNING]),
+        AgentCommand.lease_expires_at.is_not(None),
+        AgentCommand.lease_expires_at < now,
+    )
+    if device_id is not None:
+        statement = statement.where(AgentCommand.device_id == device_id)
+    stale_commands = list(session.exec(statement).all())
+    expired: list[AgentCommand] = []
+    for command in stale_commands:
+        expired.append(
+            transition_command(
+                session,
+                command,
+                AgentCommandStatus.EXPIRED,
+                last_error="agent command lease expired",
+            )
+        )
+    return expired
 
 
 def ack_command(

@@ -18,7 +18,7 @@ from backend.schemas import (
     AppTurnCreate,
     AppTurnRead,
 )
-from backend.services import agent_command_service, turn_event_service, workspace_lock_service
+from backend.services import agent_command_service, project_service, turn_event_service, workspace_lock_service
 
 
 APP_THREAD_CREATED = "CREATED"
@@ -68,6 +68,7 @@ def create_app_thread(session: Session, payload: AppThreadCreate) -> AppThread:
     if workspace_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace is required")
     workspace = _get_usable_workspace(session, workspace_id)
+    project_service.ensure_project_workspace(session, project, workspace.id)
     device = _get_usable_device(session, workspace.device_id)
 
     sandbox = payload.sandbox or workspace.default_sandbox or project.default_sandbox or "read-only"
@@ -116,9 +117,10 @@ def create_app_thread(session: Session, payload: AppThreadCreate) -> AppThread:
                 "network_access": payload.network_access,
                 "generation": app_thread.generation,
             },
+            commit=False,
         )
     except Exception:
-        workspace_lock_service.release_workspace_lock(session, owner_type="app_thread", owner_id=str(app_thread.id))
+        session.rollback()
         raise
     app_thread.command_id = command.id
     session.add(app_thread)
@@ -420,9 +422,10 @@ def reopen_app_thread(session: Session, app_thread_id: int) -> AppThread:
                 "network_access": app_thread.network_access,
                 "generation": next_generation,
             },
+            commit=False,
         )
     except Exception:
-        workspace_lock_service.release_workspace_lock(session, owner_type="app_thread", owner_id=str(app_thread.id))
+        session.rollback()
         raise
     app_thread.command_id = command.id
     session.add(app_thread)
@@ -459,32 +462,38 @@ def create_agent_async_app_turn(session: Session, app_thread: AppThread, message
         message=message,
         status_value=APP_TURN_PENDING,
         created_at=utc_now(),
+        commit=False,
     )
     if app_turn.id is None:
         raise ValueError("app turn id is required")
 
-    command = agent_command_service.create_command(
-        session,
-        device_id=app_thread.device_id,
-        command_type="TURN_START",
-        aggregate_type="app_turn",
-        aggregate_id=str(app_turn.id),
-        idempotency_key=f"turn-start:{app_turn.id}",
-        workspace_id=workspace.id,
-        payload={
-            "app_thread_id": app_thread.id,
-            "app_turn_id": app_turn.id,
-            "agent_session_id": app_thread.agent_session_id,
-            "codex_thread_id": app_thread.codex_thread_id,
-            "workspace_id": workspace.id,
-            "workspace_key": workspace.workspace_key,
-            "generation": app_thread.generation,
-            "message": message,
-            "sandbox": app_thread.sandbox,
-            "approval_policy": app_thread.approval_policy,
-            "network_access": app_thread.network_access,
-        },
-    )
+    try:
+        command = agent_command_service.create_command(
+            session,
+            device_id=app_thread.device_id,
+            command_type="TURN_START",
+            aggregate_type="app_turn",
+            aggregate_id=str(app_turn.id),
+            idempotency_key=f"turn-start:{app_turn.id}",
+            workspace_id=workspace.id,
+            payload={
+                "app_thread_id": app_thread.id,
+                "app_turn_id": app_turn.id,
+                "agent_session_id": app_thread.agent_session_id,
+                "codex_thread_id": app_thread.codex_thread_id,
+                "workspace_id": workspace.id,
+                "workspace_key": workspace.workspace_key,
+                "generation": app_thread.generation,
+                "message": message,
+                "sandbox": app_thread.sandbox,
+                "approval_policy": app_thread.approval_policy,
+                "network_access": app_thread.network_access,
+            },
+            commit=False,
+        )
+    except Exception:
+        session.rollback()
+        raise
     app_turn.command_id = command.id
     session.add(app_turn)
     session.commit()
@@ -859,6 +868,7 @@ def _create_active_app_turn(
     status_value: str,
     created_at,
     started_at=None,
+    commit: bool = True,
 ) -> AppTurn:
     active_turn = _get_active_app_turn(session, app_thread_id)
     if active_turn is not None:
@@ -872,7 +882,10 @@ def _create_active_app_turn(
     )
     session.add(app_turn)
     try:
-        session.commit()
+        if commit:
+            session.commit()
+        else:
+            session.flush()
     except IntegrityError:
         session.rollback()
         active_turn = _get_active_app_turn(session, app_thread_id)

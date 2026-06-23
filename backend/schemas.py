@@ -19,6 +19,7 @@ class ProjectCreate(BaseModel):
     default_model: Optional[str] = None
     default_reasoning_effort: Optional[str] = None
     default_sandbox: Optional[str] = None
+    workspace_id: Optional[int] = None
 
 
 class ProjectRead(BaseModel):

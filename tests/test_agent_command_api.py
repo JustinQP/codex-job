@@ -162,7 +162,7 @@ def test_ack_renew_and_complete_require_valid_lease_token(monkeypatch) -> None:
         assert repeated_complete.json()["id"] == claim["id"]
 
 
-def test_expired_lease_returns_command_to_pending_until_max_attempts(monkeypatch) -> None:
+def test_expired_lease_marks_command_expired_without_requeue(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
     for client, session in make_client():
         add_device(session, "device-a")
@@ -191,4 +191,6 @@ def test_expired_lease_returns_command_to_pending_until_max_attempts(monkeypatch
         assert renew.status_code == 409
         assert renew.json()["detail"]["code"] == "lease_expired"
         assert next_claim.status_code == 200
-        assert next_claim.json()["id"] == claim["id"]
+        assert next_claim.json() is None
+        session.refresh(command)
+        assert command.status == "EXPIRED"

@@ -4,9 +4,10 @@ from threading import Event
 from typing import Any
 
 from agent.api_client import AgentApiError
+from agent.command_handlers import CommandResult
 from agent.command_loop import AgentCommandLoop
 from agent.identity import AgentIdentity
-from agent.local_state import AgentLocalState
+from agent.local_state import AgentLocalState, CurrentCommandState
 from agent.process_registry import ProcessRegistry
 from agent.workspace_registry import WorkspaceRegistry
 
@@ -64,6 +65,15 @@ class FakeClient:
         self.completed.append(payload.model_dump())
         self.command = None
         return {"id": command_id, "status": payload.status}
+
+
+class CountingHandler:
+    def __init__(self) -> None:
+        self.count = 0
+
+    def handle(self, command):
+        self.count += 1
+        return CommandResult(True, "handled")
 
 
 def identity() -> AgentIdentity:
@@ -160,6 +170,35 @@ def test_complete_retry_does_not_execute_handler_twice(tmp_path) -> None:
     assert state.load_current_command() is None
 
 
+def test_executing_command_after_agent_restart_completes_failed_without_rerun(tmp_path) -> None:
+    client = FakeClient()
+    state = AgentLocalState(tmp_path / "state.json")
+    state.save_current_command(
+        CurrentCommandState(
+            command_id="cmd-1",
+            claim_request_id="claim-restart",
+            lease_token="lease-a",
+            phase="EXECUTING",
+        )
+    )
+    handler = CountingHandler()
+    handlers = type("Handlers", (), {"handle": handler.handle})()
+    loop = AgentCommandLoop(
+        client=client,
+        identity=identity(),
+        local_state=state,
+        handlers=handlers,
+        poll_interval_seconds=0,
+    )
+
+    loop.run_once()
+
+    assert handler.count == 0
+    assert client.completed[0]["status"] == "FAILED"
+    assert "not retried" in (client.completed[0]["error_message"] or "")
+    assert state.load_current_command() is None
+
+
 def test_run_forever_stops_when_stop_event_is_set(tmp_path) -> None:
     client = FakeClient()
     stop_event = Event()
@@ -179,6 +218,30 @@ def test_run_forever_stops_when_stop_event_is_set(tmp_path) -> None:
     loop.run_forever(stop_event)
 
     assert "register" in client.calls
+
+
+def test_run_forever_starts_background_heartbeat_during_blocking_handler(tmp_path) -> None:
+    class BlockingLoop(AgentCommandLoop):
+        def run_once(self):
+            if self.client.calls.count("heartbeat") >= 2:
+                stop_event.set()
+            else:
+                stop_event.wait(0.05)
+            return None
+
+    client = FakeClient()
+    stop_event = Event()
+    loop = BlockingLoop(
+        client=client,
+        identity=identity(),
+        local_state=AgentLocalState(tmp_path / "state.json"),
+        poll_interval_seconds=0.01,
+        heartbeat_interval_seconds=0.01,
+    )
+
+    loop.run_forever(stop_event)
+
+    assert client.calls.count("heartbeat") >= 2
 
 
 def test_command_loop_injects_process_registry_into_run_executor(tmp_path) -> None:

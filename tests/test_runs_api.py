@@ -4,12 +4,16 @@ import json
 from collections.abc import Generator
 
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 from sqlmodel.pool import StaticPool
 
 from backend.db import get_session
 from backend.main import app
 from backend.models import AgentCommand, Device, DeviceStatus, Project, Run, RunStatus, Workspace, WorkspaceExecutionLock, utc_now
+import pytest
+
+from backend.services import agent_command_service, run_service
+from backend.schemas import RunCreate
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -112,6 +116,48 @@ def test_create_run_generates_device_scoped_agent_command() -> None:
         assert "project_path" not in payload
 
 
+def test_run_rejects_workspace_not_bound_to_project() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        add_device(session, "device-b")
+        workspace_a = add_workspace(session, "device-a")
+        workspace_b = add_workspace(session, "device-b")
+        first = client.post(
+            "/runs",
+            json={"project_id": project.id, "workspace_id": workspace_a.id, "prompt": "bind"},
+        )
+        second = client.post(
+            "/runs",
+            json={"project_id": project.id, "workspace_id": workspace_b.id, "prompt": "wrong"},
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 409
+        assert second.json()["detail"]["code"] == "project_workspace_mismatch"
+
+
+def test_create_run_rolls_back_when_command_creation_fails(monkeypatch) -> None:
+    for _client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+
+        def fail_create_command(*args, **kwargs):
+            raise agent_command_service.AgentCommandServiceError("boom", "boom")
+
+        monkeypatch.setattr(agent_command_service, "create_command", fail_create_command)
+
+        with pytest.raises(agent_command_service.AgentCommandServiceError):
+            run_service.create_run(
+                session,
+                RunCreate(project_id=project.id, workspace_id=workspace.id, prompt="should rollback"),
+            )
+
+        assert len(session.exec(select(Run)).all()) == 0
+        assert len(session.exec(select(WorkspaceExecutionLock)).all()) == 0
+
+
 def test_create_run_rejects_disabled_workspace_and_offline_device() -> None:
     for client, session in make_client():
         project = add_project(session)
@@ -137,18 +183,19 @@ def test_create_run_rejects_disabled_workspace_and_offline_device() -> None:
 
 def test_list_runs_can_filter_by_workspace() -> None:
     for client, session in make_client():
-        project = add_project(session)
+        project_a = add_project(session)
+        project_b = add_project(session)
         add_device(session, "device-a")
         add_device(session, "device-b")
         workspace_a = add_workspace(session, "device-a")
         workspace_b = add_workspace(session, "device-b")
         run_a = client.post(
             "/runs",
-            json={"project_id": project.id, "workspace_id": workspace_a.id, "prompt": "run a", "client_request_id": "filter-a"},
+            json={"project_id": project_a.id, "workspace_id": workspace_a.id, "prompt": "run a", "client_request_id": "filter-a"},
         ).json()
         run_b = client.post(
             "/runs",
-            json={"project_id": project.id, "workspace_id": workspace_b.id, "prompt": "run b", "client_request_id": "filter-b"},
+            json={"project_id": project_b.id, "workspace_id": workspace_b.id, "prompt": "run b", "client_request_id": "filter-b"},
         ).json()
 
         filtered = client.get(f"/runs?workspace_id={workspace_a.id}&limit=20")

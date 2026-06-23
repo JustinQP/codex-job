@@ -90,6 +90,29 @@ def release_workspace_lock(
     return True
 
 
+def renew_workspace_lock(
+    session: Session,
+    *,
+    owner_type: str,
+    owner_id: str,
+) -> WorkspaceExecutionLock | None:
+    lock = session.exec(
+        select(WorkspaceExecutionLock).where(
+            WorkspaceExecutionLock.owner_type == owner_type,
+            WorkspaceExecutionLock.owner_id == owner_id,
+        )
+    ).first()
+    if lock is None:
+        return None
+    now = utc_now()
+    lock.lease_expires_at = now + timedelta(seconds=WORKSPACE_LOCK_LEASE_SECONDS)
+    lock.updated_at = now
+    session.add(lock)
+    session.commit()
+    session.refresh(lock)
+    return lock
+
+
 def _recover_expired_locks(session: Session) -> None:
     expired = list(
         session.exec(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlmodel import Session
+from sqlmodel import select
 
 from backend.models import AgentCommand, AgentCommandStatus, Device
 from backend.schemas import AgentReconcileRead, AgentReconcileRequest
@@ -17,10 +18,11 @@ def reconcile_agent(
         raise AgentCommandServiceError("device_not_found", "device not found")
 
     if not payload.command_id:
+        _mark_active_sessions_recover_required(session, payload.device_id)
         return AgentReconcileRead(
             action="IDLE",
             latest_sequence=None,
-            reason="no local command reported",
+            reason="no local command reported; active sessions marked recover required",
         )
 
     command = session.get(AgentCommand, payload.command_id)
@@ -71,3 +73,33 @@ def reconcile_agent(
         upload_from_sequence=upload_from_sequence,
         reason=reason,
     )
+
+
+def _mark_active_sessions_recover_required(session: Session, device_id: str) -> None:
+    from backend.services import app_thread_service, workspace_lock_service
+    from backend.models import AppThread, utc_now
+
+    active_threads = list(
+        session.exec(
+            select(AppThread).where(
+                AppThread.device_id == device_id,
+                AppThread.status == app_thread_service.APP_THREAD_ACTIVE,
+            )
+        ).all()
+    )
+    if not active_threads:
+        return
+    now = utc_now()
+    for app_thread in active_threads:
+        app_thread.status = app_thread_service.APP_THREAD_RECOVER_REQUIRED
+        app_thread.last_error = "agent restarted without active app-server session; reopen required"
+        app_thread.agent_session_id = None
+        app_thread.updated_at = now
+        session.add(app_thread)
+        if app_thread.id is not None:
+            workspace_lock_service.release_workspace_lock(
+                session,
+                owner_type="app_thread",
+                owner_id=str(app_thread.id),
+            )
+    session.commit()
