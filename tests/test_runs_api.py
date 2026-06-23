@@ -159,7 +159,8 @@ def test_list_runs_can_filter_by_workspace() -> None:
         assert {item["id"] for item in all_runs.json()} >= {run_a["id"], run_b["id"]}
 
 
-def test_cancel_pending_run_cancels_command_and_releases_workspace_lock() -> None:
+def test_cancel_run_requests_cancel_and_keeps_workspace_lock_until_agent_completes(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
     for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
@@ -168,16 +169,64 @@ def test_cancel_pending_run_cancels_command_and_releases_workspace_lock() -> Non
             "/runs",
             json={"project_id": project.id, "workspace_id": workspace.id, "prompt": "cancel me"},
         ).json()
+        command = session.get(AgentCommand, created["command_id"])
+        claimed = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-run"},
+        ).json()
+        lease = {"device_id": "device-a", "lease_token": claimed["lease_token"]}
+        ack = client.post(f"/agent/commands/{command.id}/ack", headers={"X-Agent-Token": "agent-secret"}, json=lease)
+        assert ack.status_code == 200
 
         response = client.post(f"/runs/{created['id']}/cancel")
 
         assert response.status_code == 200
         body = response.json()
-        assert body["status"] == RunStatus.CANCELLED.value
-        assert session.get(WorkspaceExecutionLock, 1) is None
+        assert body["status"] == RunStatus.RUNNING.value
+        assert body["cancel_requested"] is True
+        assert session.get(WorkspaceExecutionLock, 1) is not None
         command = session.get(AgentCommand, body["command_id"])
         assert command is not None
-        assert command.status.value == "CANCELLED"
+        assert command.cancel_requested is True
+        assert command.lease_token == claimed["lease_token"]
+
+        complete = client.post(
+            f"/agent/commands/{command.id}/complete",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={**lease, "status": "CANCELLED", "error_message": "run cancelled"},
+        )
+        assert complete.status_code == 200
+        final = client.get(f"/runs/{created['id']}").json()
+        assert final["status"] == RunStatus.CANCELLED.value
+        assert session.get(WorkspaceExecutionLock, 1) is None
+
+
+def test_run_ack_marks_run_running(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/runs",
+            json={"project_id": project.id, "workspace_id": workspace.id, "prompt": "run me"},
+        ).json()
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-run"},
+        ).json()
+        ack = client.post(
+            f"/agent/commands/{created['command_id']}/ack",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "lease_token": claim["lease_token"]},
+        )
+
+        assert ack.status_code == 200
+        running = client.get(f"/runs/{created['id']}").json()
+        assert running["status"] == RunStatus.RUNNING.value
+        assert running["started_at"] is not None
 
 
 def test_rerun_creates_new_run_and_agent_command() -> None:

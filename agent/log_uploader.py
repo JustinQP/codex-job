@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent.api_client import AgentApiClient
+from backend.services.run_log_service import MAX_LOG_CHUNK_BYTES
 from backend.schemas import RunLogChunkUpload
 
 
@@ -17,7 +18,7 @@ class RunLogUploadTracker:
         data = self.log_file.read_bytes()
         if len(data) <= self.offset:
             return None
-        chunk = data[self.offset:]
+        chunk = data[self.offset:self.offset + MAX_LOG_CHUNK_BYTES]
         return self.offset, chunk.decode("utf-8", errors="replace")
 
     def mark_uploaded(self, offset: int) -> None:

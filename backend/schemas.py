@@ -197,6 +197,8 @@ class AgentCommandRead(BaseModel):
     status: AgentCommandStatus
     lease_token: Optional[str]
     lease_expires_at: Optional[datetime]
+    cancel_requested: bool = False
+    cancel_requested_at: Optional[datetime] = None
     attempt_count: int
     max_attempts: int
     created_at: datetime

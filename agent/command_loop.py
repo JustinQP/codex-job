@@ -23,6 +23,17 @@ from backend.schemas import (
 )
 
 
+PHASE_CLAIMED = "CLAIMED"
+PHASE_EXECUTING = "EXECUTING"
+PHASE_COMPLETION_PENDING = "COMPLETION_PENDING"
+TERMINAL_STATUSES = {
+    AgentCommandStatus.SUCCESS.value,
+    AgentCommandStatus.FAILED.value,
+    AgentCommandStatus.CANCELLED.value,
+    AgentCommandStatus.EXPIRED.value,
+}
+
+
 class AgentCommandLoop:
     def __init__(
         self,
@@ -118,22 +129,46 @@ class AgentCommandLoop:
 
         if command is None or current is None:
             return None
+        if str(command.get("status") or "") in TERMINAL_STATUSES:
+            self.local_state.clear_current_command()
+            return command
 
         lease = AgentCommandLeaseRequest(
             device_id=self.identity.device_id,
             lease_token=current.lease_token,
         )
-        self.client.ack_command(current.command_id, lease)
-        self.client.renew_command(current.command_id, lease)
-        result = self.handlers.handle(command)
+        if current.phase != PHASE_COMPLETION_PENDING:
+            self.client.ack_command(current.command_id, lease)
+            self.client.renew_command(current.command_id, lease)
+            executing = CurrentCommandState(
+                command_id=current.command_id,
+                claim_request_id=current.claim_request_id,
+                lease_token=current.lease_token,
+                phase=PHASE_EXECUTING,
+            )
+            self.local_state.save_current_command(executing)
+            result = self.handlers.handle(command)
+            status = AgentCommandStatus.SUCCESS if result.success else AgentCommandStatus.FAILED
+            current = CurrentCommandState(
+                command_id=current.command_id,
+                claim_request_id=current.claim_request_id,
+                lease_token=current.lease_token,
+                phase=PHASE_COMPLETION_PENDING,
+                status=status.value,
+                error_message=None if result.success else result.message,
+                result_payload=result.result_payload,
+            )
+            self.local_state.save_current_command(current)
+
+        completion_status = AgentCommandStatus(current.status or AgentCommandStatus.FAILED.value)
         self.client.complete_command(
             current.command_id,
             AgentCommandCompleteRequest(
                 device_id=self.identity.device_id,
                 lease_token=current.lease_token,
-                status=AgentCommandStatus.SUCCESS if result.success else AgentCommandStatus.FAILED,
-                error_message=None if result.success else result.message,
-                result_payload=result.result_payload,
+                status=completion_status,
+                error_message=current.error_message,
+                result_payload=current.result_payload,
             ),
         )
         self.local_state.clear_current_command()
@@ -146,9 +181,17 @@ class AgentCommandLoop:
                 return operation()
             except AgentApiError as exc:
                 last_error = exc
+                if _is_terminal_or_invalid_lease_error(exc):
+                    self.local_state.clear_current_command()
+                    return None
                 if attempt + 1 >= self.max_retries:
                     break
                 time.sleep(min(0.2 * (attempt + 1), self.poll_interval_seconds))
         if last_error is not None:
             raise last_error
         return None
+
+
+def _is_terminal_or_invalid_lease_error(exc: AgentApiError) -> bool:
+    message = str(exc)
+    return "invalid_lease_token" in message or "server command is terminal" in message

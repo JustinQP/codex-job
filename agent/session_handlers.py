@@ -139,5 +139,21 @@ class TurnStartHandler:
         return should_cancel
 
 
+class SessionCloseHandler:
+    def __init__(self, session_manager: AgentAppSessionManager) -> None:
+        self.session_manager = session_manager
+
+    def handle(self, command: dict[str, Any]) -> CommandResult:
+        try:
+            payload = json.loads(command.get("payload_json") or "{}")
+            agent_session_id = str(payload["agent_session_id"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return CommandResult(False, f"invalid session close payload: {exc}")
+        closed = self.session_manager.close_session(agent_session_id)
+        if not closed:
+            return CommandResult(False, f"agent session not found: {agent_session_id}")
+        return CommandResult(True, f"session closed: {agent_session_id}")
+
+
 def _string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None

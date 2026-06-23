@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 
-from backend.db import engine, init_db
+from backend.db import engine, get_session, init_db
 from backend.routers import agent, app_threads, devices, projects, runs, ui, workspaces
 from backend.routers.ui import frontend_build_missing_page
 from backend import db
@@ -31,13 +31,14 @@ def sync_router_settings() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> Iterable[None]:
-    init_db()
-    try:
-        with Session(engine) as session:
-            app_thread_service.recover_stale_app_turns(session)
-    except Exception:
-        traceback.print_exc()
+async def lifespan(app_instance: FastAPI) -> Iterable[None]:
+    if get_session not in app_instance.dependency_overrides:
+        init_db()
+        try:
+            with Session(engine) as session:
+                app_thread_service.recover_stale_app_turns(session)
+        except Exception:
+            traceback.print_exc()
     yield
 
 

@@ -236,10 +236,32 @@ def request_cancel(session: Session, run_id: int) -> Run:
             run.lease_expires_at = None
             run.error_message = "run cancelled"
             workspace_lock_service.release_workspace_lock(session, owner_type="run", owner_id=str(run.id))
-    if run.status == RunStatus.PENDING:
+    if run.status == RunStatus.PENDING and not run.command_id:
         run.status = RunStatus.CANCELLED
         run.finished_at = utc_now()
         workspace_lock_service.release_workspace_lock(session, owner_type="run", owner_id=str(run.id))
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def mark_run_running(session: Session, *, command_id: str) -> Run | None:
+    command = session.get(AgentCommand, command_id)
+    if command is None or command.aggregate_type != "run":
+        return None
+    try:
+        run_id = int(command.aggregate_id or "0")
+    except ValueError:
+        return None
+    run = session.get(Run, run_id)
+    if run is None or run.status != RunStatus.PENDING:
+        return run
+    now = utc_now()
+    run.status = RunStatus.RUNNING
+    run.started_at = now
+    run.lease_expires_at = command.lease_expires_at
+    run.updated_at = now
     session.add(run)
     session.commit()
     session.refresh(run)

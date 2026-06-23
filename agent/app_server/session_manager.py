@@ -186,7 +186,7 @@ class AgentAppSessionManager:
                 kind="status",
                 payload={"status": "RUNNING", "agent_session_id": agent_session_id},
             )
-            uploader.flush(command_id=command_id, device_id=device_id, lease_token=lease_token)
+            _flush_events_safely(uploader, command_id=command_id, device_id=device_id, lease_token=lease_token)
             sequence += 1
 
         session.client.request(
@@ -215,7 +215,7 @@ class AgentAppSessionManager:
         session.last_turn_id = codex_turn_id
 
         try:
-            end_index = self._wait_for_turn_completed(
+            end_index, sequence = self._wait_for_turn_completed(
                 session=session,
                 codex_turn_id=codex_turn_id,
                 request_id=request_id,
@@ -259,7 +259,7 @@ class AgentAppSessionManager:
                     "event_summary": event_summary,
                 },
             )
-            uploader.flush(command_id=command_id, device_id=device_id, lease_token=lease_token)
+            _flush_events_safely(uploader, command_id=command_id, device_id=device_id, lease_token=lease_token)
         return AgentAppTurnResult(
             codex_turn_id=codex_turn_id,
             assistant_final=assistant_final,
@@ -282,7 +282,7 @@ class AgentAppSessionManager:
         lease_token: str | None,
         first_sequence: int,
         should_cancel: Callable[[], bool] | None,
-    ) -> int:
+    ) -> tuple[int, int]:
         deadline = time.monotonic() + timeout
         next_index = start_index
         sequence = first_sequence
@@ -315,10 +315,10 @@ class AgentAppSessionManager:
                         "event": event,
                     },
                 )
-                uploader.flush(command_id=command_id, device_id=device_id, lease_token=lease_token)
+                _flush_events_safely(uploader, command_id=command_id, device_id=device_id, lease_token=lease_token)
                 sequence += 1
             if _is_turn_completed(event, codex_turn_id):
-                return message_index + 1
+                return message_index + 1, sequence
         self.close_session(session.agent_session_id)
         raise TimeoutError(f"timed out waiting for turn/completed: {codex_turn_id}")
 
@@ -338,6 +338,8 @@ class AgentAppSessionManager:
             self._sessions.clear()
         for session in sessions:
             session.client.close()
+            if session.workspace_lock_owner and session.workspace_lock_release:
+                session.workspace_lock_release(session.cwd, session.workspace_lock_owner)
 
 
 def _extract_turn_id(turn_start_result) -> str:
@@ -350,6 +352,13 @@ def _extract_turn_id(turn_start_result) -> str:
     if not isinstance(turn_id, str) or not turn_id:
         raise RuntimeError("turn/start result.turn.id is missing")
     return turn_id
+
+
+def _flush_events_safely(uploader, *, command_id: str, device_id: str, lease_token: str) -> None:
+    try:
+        uploader.flush(command_id=command_id, device_id=device_id, lease_token=lease_token)
+    except Exception:
+        return
 
 
 def _utc_iso() -> str:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 
 
@@ -14,6 +15,10 @@ class CurrentCommandState:
     command_id: str
     claim_request_id: str
     lease_token: str
+    phase: str = "CLAIMED"
+    status: str | None = None
+    error_message: str | None = None
+    result_payload: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +45,10 @@ class AgentLocalState:
             command_id=_required_string(current, "command_id", self.path),
             claim_request_id=_required_string(current, "claim_request_id", self.path),
             lease_token=_required_string(current, "lease_token", self.path),
+            phase=str(current.get("phase") or "CLAIMED"),
+            status=current.get("status") if isinstance(current.get("status"), str) else None,
+            error_message=current.get("error_message") if isinstance(current.get("error_message"), str) else None,
+            result_payload=current.get("result_payload") if isinstance(current.get("result_payload"), dict) else None,
         )
 
     def save_current_command(self, state: CurrentCommandState) -> None:
@@ -48,6 +57,10 @@ class AgentLocalState:
             "command_id": state.command_id,
             "claim_request_id": state.claim_request_id,
             "lease_token": state.lease_token,
+            "phase": state.phase,
+            "status": state.status,
+            "error_message": state.error_message,
+            "result_payload": state.result_payload,
         }
         self._write_raw(raw)
 
@@ -122,7 +135,9 @@ class AgentLocalState:
 
     def _write_raw(self, raw: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+        tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp_path, self.path)
 
 
 def _required_string(raw: dict, key: str, path: Path) -> str:

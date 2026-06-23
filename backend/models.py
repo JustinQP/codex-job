@@ -174,6 +174,8 @@ class AgentCommand(SQLModel, table=True):
     claim_request_id: Optional[str] = Field(default=None, index=True)
     lease_token: Optional[str] = Field(default=None, index=True)
     lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+    cancel_requested: bool = Field(default=False, index=True)
+    cancel_requested_at: Optional[datetime] = None
     attempt_count: int = Field(default=0)
     max_attempts: int = Field(default=3)
     created_at: datetime = Field(default_factory=utc_now, index=True)

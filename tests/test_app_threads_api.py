@@ -95,3 +95,63 @@ def test_complete_session_open_and_turn_start_exposes_codex_ids(monkeypatch) -> 
         assert finished["assistant_final"] == "hi"
         assert finished["codex_turn_id"] == "codex-turn-1"
         assert "bridge_turn_id" not in finished
+
+
+def test_session_open_failure_marks_thread_error_and_releases_lock(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/app-threads",
+            json={"project_id": project.id, "workspace_id": workspace.id, "title": "Demo"},
+        ).json()
+        command = agent_command_service.claim_command(session, device_id="device-a", claim_request_id="claim-open")
+        assert command is not None
+        lease = {"device_id": "device-a", "lease_token": command.lease_token}
+        client.post(f"/agent/commands/{command.id}/ack", headers=api_headers(), json=lease)
+
+        response = client.post(
+            f"/agent/commands/{command.id}/complete",
+            headers=api_headers(),
+            json={**lease, "status": "FAILED", "error_message": "open failed"},
+        )
+
+        assert response.status_code == 200
+        thread = client.get(f"/app-threads/{created['id']}").json()
+        assert thread["status"] == "ERROR"
+        assert thread["last_error"] == "open failed"
+
+
+def test_close_active_thread_creates_session_close_command(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/app-threads",
+            json={"project_id": project.id, "workspace_id": workspace.id, "title": "Demo"},
+        ).json()
+        command = agent_command_service.claim_command(session, device_id="device-a", claim_request_id="claim-open")
+        assert command is not None
+        lease = {"device_id": "device-a", "lease_token": command.lease_token}
+        client.post(f"/agent/commands/{command.id}/ack", headers=api_headers(), json=lease)
+        client.post(
+            f"/agent/commands/{command.id}/complete",
+            headers=api_headers(),
+            json={
+                **lease,
+                "status": "SUCCESS",
+                "result_payload": {"agent_session_id": "agent-session-1", "codex_thread_id": "codex-thread-1"},
+            },
+        )
+
+        closed = client.delete(f"/app-threads/{created['id']}")
+
+        assert closed.status_code == 200
+        body = closed.json()
+        assert body["status"] == "CLOSING"
+        close_command = agent_command_service.list_commands_for_device(session, "device-a")[-1]
+        assert close_command.command_type == "SESSION_CLOSE"

@@ -6,8 +6,10 @@ import os
 from typing import Any
 
 from agent.api_client import AgentApiClient, AgentApiError
+from agent.artifact_uploader import RunArtifactUploader, build_run_artifact_manifest
 from agent.command_handlers import CommandResult
 from agent.process_registry import ProcessRegistry
+from agent.log_uploader import RunLogUploader, RunLogUploadTracker
 from agent.workspace_lock import LocalWorkspaceLock, is_write_sandbox
 from agent.workspace_registry import WorkspaceRegistry, WorkspaceRegistryError
 from backend.models import AgentCommandStatus
@@ -62,6 +64,7 @@ class RunExecutor:
                 job_dir = Path("data") / "agent-runs" / str(run_id or command.get("id"))
                 log_file = job_dir / "run.log"
                 result_file = job_dir / "result.md"
+                log_uploader = self._build_log_uploader(log_file)
                 execution = execute_codex(
                     project_path=project_path,
                     prompt=str(payload.get("prompt") or ""),
@@ -72,12 +75,18 @@ class RunExecutor:
                     reasoning_effort=payload.get("reasoning_effort"),
                     sandbox=sandbox,
                     should_cancel=lambda: self._should_cancel(command_id, lease_token),
+                    on_tick=lambda: self._upload_log(log_uploader, run_id, command_id),
                     on_process_started=lambda process: self.process_registry.register(command_id, process),
                     on_process_finished=lambda: self.process_registry.unregister(command_id),
                 )
+                self._upload_log(log_uploader, run_id, command_id)
                 artifacts = collect_git_artifacts(project_path, job_dir)
+                if execution.error_message is None and artifacts.error_message is None:
+                    self._upload_artifacts(job_dir, run_id, command_id)
         except RuntimeError as exc:
             return CommandResult(False, str(exc))
+        except AgentApiError as exc:
+            return CommandResult(False, f"failed to upload run output: {exc}")
         if execution.error_message:
             return CommandResult(False, execution.error_message)
         if artifacts.error_message:
@@ -88,6 +97,43 @@ class RunExecutor:
         return CommandResult(
             True,
             f"fake run executed in {project_path} for run {payload.get('run_id')}",
+        )
+
+    def _build_log_uploader(self, log_file: Path) -> RunLogUploader | None:
+        if self.client is None or not hasattr(self.client, "upload_run_log_chunk"):
+            return None
+        return RunLogUploader(
+            client=self.client,
+            tracker=RunLogUploadTracker(log_file),
+        )
+
+    def _upload_log(self, uploader: RunLogUploader | None, run_id: Any, command_id: str) -> None:
+        if uploader is None or not self.device_id or not command_id:
+            return
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return
+        while uploader.upload_new_content(
+            run_id=normalized_run_id,
+            device_id=self.device_id,
+            command_id=command_id,
+        ) is not None:
+            pass
+
+    def _upload_artifacts(self, job_dir: Path, run_id: Any, command_id: str) -> None:
+        if self.client is None or not hasattr(self.client, "upload_run_artifact") or not self.device_id or not command_id:
+            return
+        try:
+            normalized_run_id = int(run_id)
+        except (TypeError, ValueError):
+            return
+        manifest = build_run_artifact_manifest(job_dir)
+        RunArtifactUploader(client=self.client).upload_manifest(
+            run_id=normalized_run_id,
+            device_id=self.device_id,
+            command_id=command_id,
+            manifest=manifest,
         )
 
     def _should_cancel(self, command_id: str, lease_token: str) -> bool:

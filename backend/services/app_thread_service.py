@@ -24,6 +24,7 @@ from backend.services import agent_command_service, turn_event_service, workspac
 APP_THREAD_CREATED = "CREATED"
 APP_THREAD_OPENING = "OPENING"
 APP_THREAD_ACTIVE = "ACTIVE"
+APP_THREAD_CLOSING = "CLOSING"
 APP_THREAD_RECOVER_REQUIRED = "RECOVER_REQUIRED"
 APP_THREAD_ERROR = "ERROR"
 APP_THREAD_CLOSED = "CLOSED"
@@ -41,6 +42,7 @@ APP_THREAD_STATUSES = {
     APP_THREAD_CREATED,
     APP_THREAD_OPENING,
     APP_THREAD_ACTIVE,
+    APP_THREAD_CLOSING,
     APP_THREAD_RECOVER_REQUIRED,
     APP_THREAD_ERROR,
     APP_THREAD_CLOSED,
@@ -129,7 +131,7 @@ def complete_agent_session_open(
     session: Session,
     *,
     command_id: str,
-    result_payload: dict[str, Any],
+    result_payload: dict[str, Any] | None,
 ) -> AppThread | None:
     command = session.get(AgentCommand, command_id)
     if command is None or command.aggregate_type != "app_thread":
@@ -137,18 +139,54 @@ def complete_agent_session_open(
     app_thread = _get_aggregate_app_thread(session, command)
     if app_thread is None:
         return None
-    agent_session_id = _string_or_none(result_payload.get("agent_session_id"))
-    codex_thread_id = _string_or_none(result_payload.get("codex_thread_id"))
+    payload = result_payload or {}
+    agent_session_id = _string_or_none(payload.get("agent_session_id"))
+    codex_thread_id = _string_or_none(payload.get("codex_thread_id"))
     if command.status == AgentCommandStatus.SUCCESS and agent_session_id and codex_thread_id:
         app_thread.agent_session_id = agent_session_id
         app_thread.codex_thread_id = codex_thread_id
         app_thread.status = APP_THREAD_ACTIVE
         app_thread.last_error = None
+    elif command.status == AgentCommandStatus.SUCCESS:
+        app_thread.status = APP_THREAD_ERROR
+        app_thread.last_error = "SESSION_OPEN succeeded without agent_session_id or codex_thread_id"
+        if app_thread.id is not None:
+            workspace_lock_service.release_workspace_lock(session, owner_type="app_thread", owner_id=str(app_thread.id))
     elif command.status in {AgentCommandStatus.FAILED, AgentCommandStatus.CANCELLED, AgentCommandStatus.EXPIRED}:
         app_thread.status = APP_THREAD_ERROR
         app_thread.last_error = command.last_error or f"SESSION_OPEN ended with {command.status}"
+        if app_thread.id is not None:
+            workspace_lock_service.release_workspace_lock(session, owner_type="app_thread", owner_id=str(app_thread.id))
     app_thread.updated_at = utc_now()
     session.add(app_thread)
+    session.commit()
+    session.refresh(app_thread)
+    return app_thread
+
+
+def complete_agent_session_close(
+    session: Session,
+    *,
+    command_id: str,
+) -> AppThread | None:
+    command = session.get(AgentCommand, command_id)
+    if command is None or command.aggregate_type != "app_thread":
+        return None
+    app_thread = _get_aggregate_app_thread(session, command)
+    if app_thread is None:
+        return None
+    now = utc_now()
+    if command.status == AgentCommandStatus.SUCCESS:
+        app_thread.status = APP_THREAD_CLOSED
+        app_thread.agent_session_id = None
+        app_thread.last_error = None
+    elif command.status in {AgentCommandStatus.FAILED, AgentCommandStatus.CANCELLED, AgentCommandStatus.EXPIRED}:
+        app_thread.status = APP_THREAD_RECOVER_REQUIRED
+        app_thread.last_error = command.last_error or f"SESSION_CLOSE ended with {command.status}"
+    app_thread.updated_at = now
+    session.add(app_thread)
+    if app_thread.id is not None:
+        workspace_lock_service.release_workspace_lock(session, owner_type="app_thread", owner_id=str(app_thread.id))
     session.commit()
     session.refresh(app_thread)
     return app_thread
@@ -301,11 +339,31 @@ def rename_app_thread(session: Session, app_thread_id: int, payload: AppThreadUp
 
 def close_app_thread(session: Session, app_thread_id: int) -> AppThread:
     app_thread = get_app_thread_or_404(session, app_thread_id)
-    app_thread.status = APP_THREAD_CLOSED
+    if app_thread.status == APP_THREAD_CLOSED:
+        return app_thread
+    if app_thread.device_id and app_thread.workspace_id is not None and app_thread.agent_session_id:
+        command = agent_command_service.create_command(
+            session,
+            device_id=app_thread.device_id,
+            command_type="SESSION_CLOSE",
+            aggregate_type="app_thread",
+            aggregate_id=str(app_thread.id),
+            idempotency_key=f"session-close:{app_thread.id}:{app_thread.generation}",
+            workspace_id=app_thread.workspace_id,
+            payload={
+                "app_thread_id": app_thread.id,
+                "agent_session_id": app_thread.agent_session_id,
+                "generation": app_thread.generation,
+            },
+        )
+        app_thread.command_id = command.id
+        app_thread.status = APP_THREAD_CLOSING
+    else:
+        app_thread.status = APP_THREAD_CLOSED
+        if app_thread.id is not None:
+            workspace_lock_service.release_workspace_lock(session, owner_type="app_thread", owner_id=str(app_thread.id))
     app_thread.updated_at = utc_now()
     session.add(app_thread)
-    if app_thread.id is not None:
-        workspace_lock_service.release_workspace_lock(session, owner_type="app_thread", owner_id=str(app_thread.id))
     session.commit()
     session.refresh(app_thread)
     return app_thread

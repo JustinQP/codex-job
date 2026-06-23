@@ -129,6 +129,9 @@ def ack_agent_command(
         if command.command_type == "TURN_START":
             app_thread_service.mark_agent_turn_running(session, command_id=command.id)
             session.refresh(command)
+        elif command.command_type == "RUN_EXECUTE":
+            run_service.mark_run_running(session, command_id=command.id)
+            session.refresh(command)
         return command
     except agent_command_service.AgentCommandServiceError as exc:
         raise_agent_command_error(exc)
@@ -169,19 +172,16 @@ def complete_agent_command(
             error_message=payload.error_message,
             result_payload=payload.result_payload,
         )
-        if command.command_type == "SESSION_OPEN" and payload.result_payload is not None:
+        if command.command_type == "SESSION_OPEN":
             app_thread_service.complete_agent_session_open(
                 session,
                 command_id=command.id,
                 result_payload=payload.result_payload,
             )
             session.refresh(command)
-        if command.command_type == "SESSION_OPEN" and command.status != "SUCCESS":
-            workspace_lock_service.release_workspace_lock(
-                session,
-                owner_type="app_thread",
-                owner_id=str(command.aggregate_id),
-            )
+        if command.command_type == "SESSION_CLOSE":
+            app_thread_service.complete_agent_session_close(session, command_id=command.id)
+            session.refresh(command)
         elif command.command_type == "TURN_START":
             app_thread_service.complete_agent_turn_start(
                 session,

@@ -44,7 +44,10 @@ def reconcile_agent(
         if last_uploaded > latest_sequence:
             upload_from_sequence = latest_sequence + 1
 
-    if command.status == AgentCommandStatus.CANCELLED:
+    if command.cancel_requested:
+        action = "STOP"
+        reason = "server command cancel requested"
+    elif command.status == AgentCommandStatus.CANCELLED:
         action = "STOP"
         reason = "server command is cancelled"
     elif command.status in TERMINAL_STATUSES:

@@ -320,6 +320,9 @@ def complete_command(
     if command.status == AgentCommandStatus.CANCELLED:
         return command
     _ensure_valid_lease(session, command, lease_token)
+    if command.cancel_requested:
+        status = AgentCommandStatus.CANCELLED
+        error_message = error_message or "cancelled by user"
     return transition_command(
         session,
         command,
@@ -408,9 +411,11 @@ def request_cancel_command(
     command = _get_command_or_error(session, command_id)
     if command.status in TERMINAL_STATUSES:
         return command
-    return transition_command(
-        session,
-        command,
-        AgentCommandStatus.CANCELLED,
-        last_error="cancelled by user",
-    )
+    if not command.cancel_requested:
+        command.cancel_requested = True
+        command.cancel_requested_at = utc_now()
+        command.last_error = "cancel requested by user"
+        session.add(command)
+        session.commit()
+        session.refresh(command)
+    return command

@@ -23,6 +23,7 @@ class FakeClient:
             "lease_token": "lease-a",
         }
         self.completed: list[dict[str, Any]] = []
+        self.fail_complete_once = False
 
     def register(self, payload):
         self.calls.append("register")
@@ -57,6 +58,9 @@ class FakeClient:
 
     def complete_command(self, command_id, payload):
         self.calls.append(f"complete:{command_id}:{payload.status}")
+        if self.fail_complete_once:
+            self.fail_complete_once = False
+            raise AgentApiError("response lost")
         self.completed.append(payload.model_dump())
         self.command = None
         return {"id": command_id, "status": payload.status}
@@ -122,6 +126,38 @@ def test_unsupported_command_type_completes_failed(tmp_path) -> None:
 
     assert client.completed[0]["status"] == "FAILED"
     assert "unsupported command type" in (client.completed[0]["error_message"] or "")
+
+
+def test_complete_retry_does_not_execute_handler_twice(tmp_path) -> None:
+    client = FakeClient()
+    client.fail_complete_once = True
+    state = AgentLocalState(tmp_path / "state.json")
+    loop = AgentCommandLoop(
+        client=client,
+        identity=identity(),
+        local_state=state,
+        poll_interval_seconds=0,
+        max_retries=1,
+    )
+
+    try:
+        loop.run_once()
+    except AgentApiError:
+        pass
+    else:
+        raise AssertionError("expected first complete to fail")
+
+    pending = state.load_current_command()
+    assert pending is not None
+    assert pending.phase == "COMPLETION_PENDING"
+    first_calls = list(client.calls)
+
+    loop.run_once()
+
+    assert client.calls.count("ack:cmd-1:lease-a") == first_calls.count("ack:cmd-1:lease-a")
+    assert client.calls.count("renew:cmd-1:lease-a") == first_calls.count("renew:cmd-1:lease-a")
+    assert len(client.completed) == 1
+    assert state.load_current_command() is None
 
 
 def test_run_forever_stops_when_stop_event_is_set(tmp_path) -> None:

@@ -326,8 +326,9 @@ def test_cancel_command_is_idempotent_for_terminal_command() -> None:
         )
 
         assert repeated.id == cancelled.id
-        assert repeated.status == AgentCommandStatus.CANCELLED
-        assert repeated.completed_at == cancelled.completed_at
+        assert repeated.status == AgentCommandStatus.PENDING
+        assert repeated.cancel_requested is True
+        assert repeated.cancel_requested_at == cancelled.cancel_requested_at
     finally:
         session.close()
 

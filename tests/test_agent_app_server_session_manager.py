@@ -275,7 +275,40 @@ def test_session_manager_runs_turn_on_existing_session_and_uploads_events(tmp_pa
         "turn/completed",
         "final",
     ]
+    assert [event["sequence"] for event in uploader.cached] == [1, 2, 3, 4, 5]
     assert all(flush["device_id"] == "device-a" for flush in uploader.flushed)
+
+
+def test_session_manager_keeps_turn_running_when_event_flush_fails(tmp_path: Path) -> None:
+    class FailingUploader(FakeUploader):
+        def flush(self, *, command_id: str, device_id: str, lease_token: str) -> dict[str, Any]:
+            super().flush(command_id=command_id, device_id=device_id, lease_token=lease_token)
+            raise RuntimeError("network down")
+
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+    uploader = FailingUploader()
+
+    result = manager.run_turn(
+        agent_session_id=session.agent_session_id,
+        message="hello",
+        command_id="cmd-1",
+        uploader=uploader,
+        device_id="device-a",
+        lease_token="lease-a",
+    )
+
+    assert result.assistant_final == "hello-1"
+    assert [event["sequence"] for event in uploader.cached] == [1, 2, 3, 4, 5]
 
 
 def test_session_manager_closes_session_when_turn_is_cancelled(tmp_path: Path) -> None:

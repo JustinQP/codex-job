@@ -175,6 +175,78 @@ class CancelClient:
         }
 
 
+class UploadClient:
+    def __init__(self) -> None:
+        self.log_chunks = []
+        self.artifacts = []
+
+    def upload_run_log_chunk(self, run_id, payload):
+        self.log_chunks.append((run_id, payload.offset, payload.content))
+        return {
+            "accepted": True,
+            "duplicate": False,
+            "current_offset": payload.offset + len(payload.content.encode("utf-8")),
+            "max_chunk_bytes": 64 * 1024,
+            "max_log_bytes": 10 * 1024 * 1024,
+        }
+
+    def upload_run_artifact(self, run_id, payload):
+        self.artifacts.append((run_id, payload.artifact_type, payload.filename))
+        return {
+            "accepted": True,
+            "duplicate": False,
+            "artifact_type": payload.artifact_type,
+            "filename": payload.filename,
+            "sequence": payload.sequence,
+            "size_bytes": payload.size_bytes,
+            "sha256": payload.sha256,
+            "max_file_bytes": 2 * 1024 * 1024,
+            "max_total_bytes": 8 * 1024 * 1024,
+        }
+
+
+def test_run_executor_uploads_log_and_artifacts(monkeypatch, tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    registry = WorkspaceRegistry.load(_write_registry(tmp_path, repo))
+    client = UploadClient()
+    executor = RunExecutor(registry, client=client, device_id="device-a")
+
+    class Execution:
+        error_message = None
+
+    def fake_execute(**kwargs):
+        kwargs["log_file"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["log_file"].write_text("hello log", encoding="utf-8")
+        kwargs["result_file"].write_text("result text", encoding="utf-8")
+        kwargs["on_tick"]()
+        return Execution()
+
+    monkeypatch.setattr("agent.run_executor.check_clean_worktree", lambda project_path: None)
+    monkeypatch.setattr("agent.run_executor.execute_codex", fake_execute)
+    monkeypatch.setattr("agent.run_executor.collect_git_artifacts", lambda project_path, job_dir: _git_artifacts(job_dir))
+
+    result = executor.handle(
+        {
+            "id": "cmd-1",
+            "lease_token": "lease-a",
+            "command_type": "RUN_EXECUTE",
+            "payload_json": json.dumps(
+                {
+                    "run_id": 1,
+                    "workspace_key": "repo",
+                    "prompt": "upload outputs",
+                }
+            ),
+        }
+    )
+
+    assert result.success is True
+    assert client.log_chunks == [(1, 0, "hello log")]
+    artifact_types = {item[1] for item in client.artifacts}
+    assert {"result", "diff", "git_status"} <= artifact_types
+
+
 def test_run_executor_stops_process_when_command_is_cancelled(monkeypatch, tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
