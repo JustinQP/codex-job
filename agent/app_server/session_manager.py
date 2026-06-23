@@ -9,6 +9,7 @@ import time
 from typing import Callable
 from uuid import uuid4
 
+from agent.codex_executor import find_codex_bin
 from agent.app_server.client import JsonlRpcClient, extract_thread_id, response_result
 from agent.app_server.event_parser import extract_assistant_text, summarize_events
 from agent.workspace_registry import WorkspaceRegistry
@@ -53,12 +54,12 @@ class AgentAppSessionManager:
         self,
         *,
         workspace_registry: WorkspaceRegistry,
-        codex_command: str = "codex.cmd",
+        codex_command: str | None = None,
         data_dir: Path = Path("data") / "agent-app-server",
         client_factory: Callable[[list[str], Path, Path, Path], JsonlRpcClient] = JsonlRpcClient,
     ) -> None:
         self.workspace_registry = workspace_registry
-        self.codex_command = codex_command
+        self.codex_command = codex_command or find_codex_bin()
         self.data_dir = data_dir
         self.client_factory = client_factory
         self._sessions: dict[str, AgentAppSession] = {}

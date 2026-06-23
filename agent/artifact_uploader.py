@@ -37,7 +37,8 @@ def build_run_artifact_manifest(job_dir: Path) -> list[RunArtifactManifestItem]:
         path = job_dir / filename
         if not path.exists() or not path.is_file():
             continue
-        content_bytes = path.read_bytes()
+        content = path.read_bytes().decode("utf-8", errors="replace")
+        content_bytes = content.encode("utf-8")
         items.append(
             RunArtifactManifestItem(
                 artifact_type=artifact_type,
@@ -45,7 +46,7 @@ def build_run_artifact_manifest(job_dir: Path) -> list[RunArtifactManifestItem]:
                 sequence=sequence,
                 size_bytes=len(content_bytes),
                 sha256=hashlib.sha256(content_bytes).hexdigest(),
-                content=content_bytes.decode("utf-8", errors="replace"),
+                content=content,
             )
         )
         sequence += 1

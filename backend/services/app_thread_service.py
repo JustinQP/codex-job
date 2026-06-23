@@ -509,15 +509,15 @@ def list_app_turns(
 ) -> list[AppTurn]:
     get_app_thread_or_404(session, app_thread_id)
     normalized_status = _normalize_status(status_filter, APP_TURN_STATUSES, "app turn status")
-    statement = select(AppTurn).where(AppTurn.app_thread_id == app_thread_id).order_by(AppTurn.id).limit(limit)
+    statement = select(AppTurn).where(AppTurn.app_thread_id == app_thread_id).order_by(AppTurn.id.desc()).limit(limit)
     if normalized_status is not None:
         statement = (
             select(AppTurn)
             .where(AppTurn.app_thread_id == app_thread_id, AppTurn.status == normalized_status)
-            .order_by(AppTurn.id)
+            .order_by(AppTurn.id.desc())
             .limit(limit)
         )
-    return list(session.exec(statement).all())
+    return sorted(session.exec(statement).all(), key=lambda app_turn: app_turn.id or 0)
 
 
 def recover_stale_app_turns(session: Session) -> dict[str, Any]:

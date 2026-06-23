@@ -218,3 +218,29 @@ def test_create_app_turn_rolls_back_when_command_creation_fails(monkeypatch) -> 
             )
 
         assert len(session.exec(select(AppTurn)).all()) == 0
+
+
+def test_list_app_turns_returns_latest_limited_turns_in_ascending_order(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/app-threads",
+            json={"project_id": project.id, "workspace_id": workspace.id, "title": "Demo"},
+        ).json()
+        for index in range(5):
+            session.add(
+                AppTurn(
+                    app_thread_id=created["id"],
+                    user_message=f"turn-{index + 1}",
+                    status="SUCCESS",
+                )
+            )
+        session.commit()
+
+        response = client.get(f"/app-threads/{created['id']}/turns", params={"limit": 3})
+
+        assert response.status_code == 200
+        assert [turn["user_message"] for turn in response.json()] == ["turn-3", "turn-4", "turn-5"]

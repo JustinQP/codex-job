@@ -168,6 +168,24 @@ def test_session_manager_opens_isolated_sessions_per_workspace(tmp_path: Path) -
     assert FakeJsonlRpcClient.instances[1].closed is True
 
 
+def test_session_manager_default_codex_command_uses_codex_bin_lookup(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("agent.app_server.session_manager.find_codex_bin", lambda: "custom-codex")
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+    )
+
+    manager.open_session(workspace_key="repo-a", title="A")
+
+    assert FakeJsonlRpcClient.instances[0].command == ["custom-codex", "app-server", "--listen", "stdio://"]
+
+
 def test_agent_event_parser_entrypoint_matches_poc_behavior() -> None:
     events = [
         {"method": "agent/message_delta", "params": {"itemId": "a", "delta": "hel"}},

@@ -201,3 +201,19 @@ def test_run_artifact_uploader_builds_manifest_and_uploads(tmp_path) -> None:
         {"accepted": True, "artifact_type": "result"},
         {"accepted": True, "artifact_type": "diff"},
     ]
+
+
+def test_run_artifact_manifest_hashes_normalized_utf8_content(tmp_path) -> None:
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    (job_dir / "result.md").write_bytes(b"\xffabc")
+
+    manifest = build_run_artifact_manifest(job_dir)
+
+    assert len(manifest) == 1
+    item = manifest[0]
+    expected_content = "\ufffdabc"
+    expected_bytes = expected_content.encode("utf-8")
+    assert item.content == expected_content
+    assert item.size_bytes == len(expected_bytes)
+    assert item.sha256 == hashlib.sha256(expected_bytes).hexdigest()
