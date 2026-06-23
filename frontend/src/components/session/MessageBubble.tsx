@@ -23,7 +23,7 @@ export function MessageBubble({
   const assistantText = turn.assistant_final || turn.error_message || "正在等待 App Server 返回";
   const longText = assistantText.length > 520;
   const failed = ["FAILED", "ERROR", "CANCELLED"].includes(turn.status);
-  const canRecoverByReopen = /unknown bridge thread id/i.test(turn.error_message || "");
+  const canRecoverByReopen = /unknown codex thread id/i.test(turn.error_message || "");
 
   return (
     <article className="chat-turn">

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from poc.app_server.app_server_event_parser import (
+from agent.app_server.event_parser import (
     detect_errors,
     extract_assistant_text,
     load_events,

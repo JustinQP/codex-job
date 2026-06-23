@@ -53,10 +53,10 @@ def create_command(session: Session, device_id: str, key: str):
         session,
         device_id=device_id,
         command_type="codex.exec",
-        aggregate_type="task",
+        aggregate_type="run",
         aggregate_id=key,
         idempotency_key=key,
-        payload={"task_id": key},
+        payload={"run_id": key},
     )
 
 

@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from runner.config import GIT_DIFF_TIMEOUT_SECONDS
+
+GIT_DIFF_TIMEOUT_SECONDS = 30
 
 
 @dataclass
@@ -37,18 +38,15 @@ def find_codex_bin() -> str:
         found = shutil.which(env_bin)
         if found:
             return found
-
         explicit_path = Path(env_bin).expanduser()
         if explicit_path.exists():
             return str(explicit_path.resolve())
-
         raise FileNotFoundError(f"CODEX_BIN is set but not found: {env_bin}")
 
     for candidate in ("codex.cmd", "codex", "codex.exe"):
         found = shutil.which(candidate)
         if found:
             return found
-
     raise FileNotFoundError("codex CLI not found; set CODEX_BIN or add codex to PATH")
 
 
@@ -75,12 +73,7 @@ def execute_codex(
         codex_bin = find_codex_bin()
     except FileNotFoundError as exc:
         _append_log(log_file, f"ERROR: {exc}\n")
-        return CodexExecutionResult(
-            exit_code=-1,
-            timed_out=False,
-            error_message=str(exc),
-            codex_bin=None,
-        )
+        return CodexExecutionResult(exit_code=-1, timed_out=False, error_message=str(exc), codex_bin=None)
 
     command = build_codex_command(
         codex_bin=codex_bin,
@@ -93,11 +86,10 @@ def execute_codex(
     )
 
     with log_file.open("a", encoding="utf-8", errors="replace") as log:
-        log.write(f"Starting codex task in {project_path}\n")
+        log.write(f"Starting codex run in {project_path}\n")
         log.write(f"Codex binary: {codex_bin}\n")
         log.write(f"Timeout seconds: {timeout_seconds}\n")
         log.flush()
-
         try:
             process = subprocess.Popen(
                 command,
@@ -113,27 +105,17 @@ def execute_codex(
             message = f"failed to start codex: {exc}"
             log.write(f"ERROR: {message}\n")
             log.flush()
-            return CodexExecutionResult(
-                exit_code=-1,
-                timed_out=False,
-                error_message=message,
-                codex_bin=codex_bin,
-            )
+            return CodexExecutionResult(exit_code=-1, timed_out=False, error_message=message, codex_bin=codex_bin)
 
         if on_process_started is not None:
             try:
                 on_process_started(process)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 message = f"on_process_started failed: {exc}"
                 log.write(f"ERROR: {message}\n")
                 log.flush()
                 _stop_process_tree(process, log)
-                return CodexExecutionResult(
-                    exit_code=-1,
-                    timed_out=False,
-                    error_message=message,
-                    codex_bin=codex_bin,
-                )
+                return CodexExecutionResult(exit_code=-1, timed_out=False, error_message=message, codex_bin=codex_bin)
 
         def stream_output() -> None:
             if process.stdout is None:
@@ -155,10 +137,8 @@ def execute_codex(
             if exit_code is not None:
                 break
             try:
-                cancel_requested = (
-                    should_cancel() if should_cancel is not None else False
-                )
-            except Exception as exc:  # noqa: BLE001
+                cancel_requested = should_cancel() if should_cancel is not None else False
+            except Exception as exc:
                 callback_error = f"should_cancel failed: {exc}"
                 exit_code = -1
                 log.write(f"\nERROR: {callback_error}\n")
@@ -177,7 +157,7 @@ def execute_codex(
             if time.monotonic() >= deadline:
                 timed_out = True
                 exit_code = -1
-                log.write(f"\nERROR: task timed out after {timeout_seconds} seconds\n")
+                log.write(f"\nERROR: run timed out after {timeout_seconds} seconds\n")
                 log.write(f"Attempting to stop process tree for pid={process.pid}\n")
                 log.flush()
                 _stop_process_tree(process, log)
@@ -185,13 +165,11 @@ def execute_codex(
             if on_tick is not None:
                 try:
                     on_tick()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     callback_error = f"on_tick failed: {exc}"
                     exit_code = -1
                     log.write(f"\nERROR: {callback_error}\n")
-                    log.write(
-                        f"Attempting to stop process tree for pid={process.pid}\n"
-                    )
+                    log.write(f"Attempting to stop process tree for pid={process.pid}\n")
                     log.flush()
                     _stop_process_tree(process, log)
                     break
@@ -214,18 +192,13 @@ def execute_codex(
     if callback_error:
         error_message = callback_error
     elif timed_out:
-        error_message = f"task timed out after {timeout_seconds} seconds"
+        error_message = f"run timed out after {timeout_seconds} seconds"
     elif cancelled:
-        error_message = "task cancelled"
+        error_message = "run cancelled"
     elif exit_code != 0:
         error_message = f"codex exited with code {exit_code}"
 
-    return CodexExecutionResult(
-        exit_code=exit_code,
-        timed_out=timed_out,
-        error_message=error_message,
-        codex_bin=codex_bin,
-    )
+    return CodexExecutionResult(exit_code=exit_code, timed_out=timed_out, error_message=error_message, codex_bin=codex_bin)
 
 
 def build_codex_command(
@@ -269,7 +242,6 @@ def check_clean_worktree(project_path: Path) -> Optional[str]:
     repository_error = ensure_git_repository(project_path)
     if repository_error:
         return repository_error
-
     completed = _run_git(project_path, ["git", "status", "--porcelain"])
     if completed.returncode != 0:
         return _git_error("failed to inspect git status", completed)
@@ -280,20 +252,17 @@ def check_clean_worktree(project_path: Path) -> Optional[str]:
 
 def collect_git_artifacts(project_path: Path, job_dir: Path) -> GitArtifactsResult:
     job_dir.mkdir(parents=True, exist_ok=True)
-
     status_file = job_dir / "git-status.txt"
     diff_unstaged_file = job_dir / "diff-unstaged.patch"
     diff_staged_file = job_dir / "diff-staged.patch"
     untracked_files_file = job_dir / "untracked-files.txt"
     combined_diff_file = job_dir / "diff.patch"
-
     commands = [
         (status_file, ["git", "status", "--short"]),
         (diff_unstaged_file, ["git", "diff"]),
         (diff_staged_file, ["git", "diff", "--cached"]),
         (untracked_files_file, ["git", "ls-files", "--others", "--exclude-standard"]),
     ]
-
     errors: list[str] = []
     for output_file, command in commands:
         completed = _run_git(project_path, command)
@@ -304,7 +273,6 @@ def collect_git_artifacts(project_path: Path, job_dir: Path) -> GitArtifactsResu
         output_file.write_text(content, encoding="utf-8")
         if completed.returncode != 0:
             errors.append(_git_error(f"{' '.join(command)} failed", completed))
-
     _write_combined_git_diff(
         combined_diff_file=combined_diff_file,
         status_file=status_file,
@@ -312,7 +280,6 @@ def collect_git_artifacts(project_path: Path, job_dir: Path) -> GitArtifactsResu
         diff_staged_file=diff_staged_file,
         untracked_files_file=untracked_files_file,
     )
-
     return GitArtifactsResult(
         error_message="; ".join(errors) if errors else None,
         status_file=status_file,
@@ -340,12 +307,7 @@ def _run_git(project_path: Path, command: list[str]) -> subprocess.CompletedProc
             timeout=GIT_DIFF_TIMEOUT_SECONDS,
         )
     except FileNotFoundError:
-        return subprocess.CompletedProcess(
-            command,
-            returncode=127,
-            stdout="",
-            stderr="git command not found",
-        )
+        return subprocess.CompletedProcess(command, returncode=127, stdout="", stderr="git command not found")
     except subprocess.TimeoutExpired as exc:
         return subprocess.CompletedProcess(
             command,
@@ -407,10 +369,9 @@ def _stop_process_tree(process: subprocess.Popen[str], log) -> None:
             log.write(f"taskkill exit code: {completed.returncode}\n")
             log.flush()
             return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.write(f"ERROR: taskkill failed: {exc}\n")
             log.flush()
-
     log.write(f"Calling terminate for pid={process.pid}\n")
     log.flush()
     process.terminate()

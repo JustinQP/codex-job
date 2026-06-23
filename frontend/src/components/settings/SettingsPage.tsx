@@ -1,38 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { cleanupAppThreads, getBridgeHealth, recoverStaleAppTurns } from "../../api/appThreads";
+import { cleanupAppThreads, recoverStaleAppTurns } from "../../api/appThreads";
 import { getHealth } from "../../api/health";
-import { listRunners } from "../../api/runners";
-import type { BridgeHealth, Health, Runner } from "../../api/types";
+import type { Health } from "../../api/types";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { API_TOKEN_KEY } from "../../state/storage";
 import { errorText } from "../../utils/error";
 import { Button } from "../common/Button";
 import type { PageProps } from "../types";
-import { RunnerDiagnostics } from "./RunnerDiagnostics";
 
 export function SettingsPage({ showToast }: PageProps) {
   const [token, setToken] = useLocalStorage(API_TOKEN_KEY, "");
   const [draftToken, setDraftToken] = useState(token);
   const [health, setHealth] = useState<Health | null>(null);
-  const [bridge, setBridge] = useState<BridgeHealth | null>(null);
-  const [runners, setRunners] = useState<Runner[]>([]);
   const [error, setError] = useState("");
 
   const loadDiagnostics = useCallback(async () => {
     setError("");
     try {
-      const [healthData, bridgeData, runnerData] = await Promise.all([
-        getHealth(),
-        getBridgeHealth().catch((err) => {
-          setError(errorText(err));
-          return null;
-        }),
-        listRunners()
-      ]);
+      const healthData = await getHealth();
       setHealth(healthData);
-      setBridge(bridgeData);
-      setRunners(runnerData);
     } catch (err) {
       setError(errorText(err));
     }
@@ -115,13 +102,6 @@ export function SettingsPage({ showToast }: PageProps) {
           {error ? <div className="inline-warning">{error}</div> : null}
           <div className="wechat-list">
             <div className="wechat-row">
-              <div className="wechat-avatar online">B</div>
-              <div className="wechat-row-main">
-                <strong>Bridge</strong>
-                <span>{bridge?.status || "unavailable"}</span>
-              </div>
-            </div>
-            <div className="wechat-row">
               <div className="wechat-avatar">M</div>
               <div className="wechat-row-main">
                 <strong>control mode</strong>
@@ -131,33 +111,11 @@ export function SettingsPage({ showToast }: PageProps) {
             <div className="wechat-row">
               <div className="wechat-avatar">A</div>
               <div className="wechat-row-main">
-                <strong>agent command</strong>
-                <span>{health?.agent_command_mode ? "enabled" : "disabled"}</span>
-              </div>
-            </div>
-            <div className="wechat-row">
-              <div className="wechat-avatar">B</div>
-              <div className="wechat-row-main">
-                <strong>bridge mode</strong>
-                <span>{bridge?.mode || "-"}</span>
-              </div>
-            </div>
-            <div className="wechat-row">
-              <div className="wechat-avatar">S</div>
-              <div className="wechat-row-main">
-                <strong>sandbox</strong>
-                <span>{bridge?.sandbox || "-"}</span>
-              </div>
-            </div>
-            <div className="wechat-row">
-              <div className="wechat-avatar">R</div>
-              <div className="wechat-row-main">
-                <strong>runners</strong>
-                <span>{runners.length}</span>
+                <strong>session mode</strong>
+                <span>{health?.session_mode || "-"}</span>
               </div>
             </div>
           </div>
-          <RunnerDiagnostics runners={runners} />
         </div>
 
         <div className="wechat-form stack">
@@ -182,10 +140,9 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000</pre>
         <div className="wechat-form stack">
           <h3>当前限制</h3>
           <ul>
-            <li>不支持 SSE。</li>
             <li>不支持审批 UI。</li>
             <li>不支持 diff UI。</li>
-            <li>App Server Bridge 仍作为 sidecar 独立运行。</li>
+            <li>会话与运行统一通过 Device Agent 执行。</li>
           </ul>
         </div>
       </div>

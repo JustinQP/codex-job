@@ -1,6 +1,6 @@
-export type TaskStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELLED";
+export type RunStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELLED";
 
-export type TaskType = "PLAN" | "IMPLEMENT" | "REVIEW" | "TEST_FIX" | "DOCS" | "COMMIT";
+export type RunType = "PLAN" | "IMPLEMENT" | "REVIEW" | "TEST_FIX" | "DOCS" | "COMMIT";
 
 export type Project = {
   id: number;
@@ -11,23 +11,13 @@ export type Project = {
   smoke_check_command?: string | null;
   default_branch?: string | null;
   require_clean_worktree?: boolean | null;
-  default_runner_id?: string | null;
+  workspace_id?: number | null;
+  workspace_binding_status?: string;
   default_model?: string | null;
   default_reasoning_effort?: string | null;
   default_sandbox?: string | null;
   created_at: string;
   updated_at: string;
-};
-
-export type Runner = {
-  runner_id: string;
-  pid: number;
-  hostname: string;
-  supported_models?: string | null;
-  status: string;
-  registered_at: string;
-  last_heartbeat_at: string;
-  lease_expires_at?: string | null;
 };
 
 export type Device = {
@@ -60,12 +50,12 @@ export type Workspace = {
   updated_at: string;
 };
 
-export type Task = {
+export type Run = {
   id: number;
   project_id: number;
   prompt: string;
-  task_type: TaskType;
-  status: TaskStatus;
+  run_type: RunType;
+  status: RunStatus;
   timeout_seconds: number;
   model?: string | null;
   reasoning_effort?: string | null;
@@ -73,9 +63,6 @@ export type Task = {
   exit_code?: number | null;
   error_message?: string | null;
   cancel_requested: boolean;
-  assigned_runner_id?: string | null;
-  runner_id?: string | null;
-  runner_pid?: number | null;
   lease_expires_at?: string | null;
   device_id?: string | null;
   device_display_name?: string | null;
@@ -94,8 +81,8 @@ export type Task = {
   finished_at?: string | null;
 };
 
-export type TaskTemplate = {
-  task_type: TaskType;
+export type RunTemplate = {
+  run_type: RunType;
   title: string;
   template: string;
 };
@@ -111,8 +98,7 @@ export type AppThread = {
   approval_policy?: string | null;
   network_access?: boolean;
   command_id?: string | null;
-  bridge_thread_id?: string | null;
-  app_thread_id?: string | null;
+  codex_thread_id?: string | null;
   generation: number;
   status: "CREATED" | "OPENING" | "ACTIVE" | "RECOVER_REQUIRED" | "ERROR" | "CLOSED" | string;
   last_error?: string | null;
@@ -130,7 +116,7 @@ export type AppTurn = {
   assistant_final?: string | null;
   status: string;
   error_message?: string | null;
-  bridge_turn_id?: string | null;
+  codex_turn_id?: string | null;
   created_at: string;
   started_at?: string | null;
   completed_at?: string | null;
@@ -168,21 +154,8 @@ export type TurnEventList = {
 
 export type Health = {
   status: string;
-  agent_command_mode: boolean;
-  execution_mode: "legacy_runner" | "agent_command" | string;
-};
-
-export type BridgeHealth = {
-  status?: string;
-  service?: string;
-  mode?: string;
-  sandbox?: string;
-  threads?: number;
-  token_required?: boolean;
-  idle_timeout_seconds?: number;
-  codex_command?: string;
-  repo_root?: string;
-  [key: string]: unknown;
+  execution_mode: "agent_command" | string;
+  session_mode: "agent_managed_app_server" | string;
 };
 
 export type AppThreadFinal = {

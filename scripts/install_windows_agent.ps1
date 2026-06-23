@@ -22,7 +22,7 @@ if (-not $DisplayName) {
     $DisplayName = $env:COMPUTERNAME
 }
 $LogDir = Join-Path $DataDir "logs"
-$RunnerScript = Join-Path $DataDir "run-agent.ps1"
+$AgentLaunchScript = Join-Path $DataDir "run-agent.ps1"
 
 function Ensure-Directory {
     param([string]$Path)
@@ -66,7 +66,7 @@ function Invoke-EnvironmentCheck {
     Write-Host "Environment check passed."
 }
 
-function Write-RunnerScript {
+function Write-AgentLaunchScript {
     Ensure-Directory $DataDir
     Ensure-Directory $LogDir
     $escapedRoot = $RootDir -replace "'", "''"
@@ -92,12 +92,12 @@ if (-not (Test-Path -LiteralPath `$logDir)) {
 python -m agent.main --register *>> `$logPath
 python -m agent.main --sync-workspaces *>> `$logPath
 python -m agent.main --run-loop *>> `$logPath
-"@ | Set-Content -Encoding UTF8 -Path $RunnerScript
+"@ | Set-Content -Encoding UTF8 -Path $AgentLaunchScript
 }
 
 function Install-AgentTask {
     Invoke-EnvironmentCheck
-    Write-RunnerScript
+    Write-AgentLaunchScript
     $existing = schtasks.exe /Query /TN $TaskName 2>$null
     if ($LASTEXITCODE -eq 0 -and -not $Force) {
         Write-Host "Task '$TaskName' already exists. Use -Force to replace it."
@@ -106,7 +106,7 @@ function Install-AgentTask {
     if ($LASTEXITCODE -eq 0) {
         schtasks.exe /Delete /TN $TaskName /F | Out-Null
     }
-    $action = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$RunnerScript`""
+    $action = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$AgentLaunchScript`""
     schtasks.exe /Create /TN $TaskName /SC ONLOGON /RL LIMITED /F /TR $action | Out-Null
     Write-Host "Installed Windows scheduled task '$TaskName'."
     Write-Host "Data dir: $DataDir"

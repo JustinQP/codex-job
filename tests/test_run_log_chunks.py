@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from agent.log_uploader import RunLogUploader, RunLogUploadTracker
 from backend import db
-from backend.services import task_service
+from backend.services import run_service
 from tests.test_runs_api import add_device, add_project, add_workspace, make_client
 
 
@@ -13,7 +13,7 @@ def auth_headers() -> dict[str, str]:
 def isolate_jobs_dir(monkeypatch, tmp_path) -> None:
     jobs_dir = tmp_path / "jobs"
     monkeypatch.setattr(db, "JOBS_DIR", jobs_dir)
-    monkeypatch.setattr(task_service, "JOBS_DIR", jobs_dir)
+    monkeypatch.setattr(run_service, "JOBS_DIR", jobs_dir)
 
 
 def create_bound_run(client, session):
@@ -33,7 +33,7 @@ def create_bound_run(client, session):
     return response.json()
 
 
-def test_run_log_chunks_append_incrementally_and_old_log_api_reads(monkeypatch, tmp_path) -> None:
+def test_run_log_chunks_append_incrementally_and_run_log_api_reads(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
     isolate_jobs_dir(monkeypatch, tmp_path)
     for client, session in make_client():
@@ -64,7 +64,7 @@ def test_run_log_chunks_append_incrementally_and_old_log_api_reads(monkeypatch, 
         assert first.json()["current_offset"] == 4
         assert second.status_code == 200
         assert second.json()["current_offset"] == 8
-        assert client.get(f"/tasks/{run['id']}/log").text == "one\ntwo\n"
+        assert client.get(f"/runs/{run['id']}/log").text == "one\ntwo\n"
 
 
 def test_replayed_log_chunk_is_idempotent(monkeypatch, tmp_path) -> None:
@@ -85,7 +85,7 @@ def test_replayed_log_chunk_is_idempotent(monkeypatch, tmp_path) -> None:
         assert first.status_code == 200
         assert replay.status_code == 200
         assert replay.json()["duplicate"] is True
-        assert client.get(f"/tasks/{run['id']}/log").text == "same\n"
+        assert client.get(f"/runs/{run['id']}/log").text == "same\n"
 
 
 def test_log_offset_gap_returns_current_offset(monkeypatch, tmp_path) -> None:
@@ -115,8 +115,8 @@ def test_run_log_uploader_sends_only_new_content(tmp_path) -> None:
         def __init__(self):
             self.uploads = []
 
-        def upload_run_log_chunk(self, task_id, payload):
-            self.uploads.append((task_id, payload.offset, payload.content))
+        def upload_run_log_chunk(self, run_id, payload):
+            self.uploads.append((run_id, payload.offset, payload.content))
             return {"current_offset": payload.offset + len(payload.content.encode("utf-8"))}
 
     log_file = tmp_path / "run.log"
@@ -127,7 +127,7 @@ def test_run_log_uploader_sends_only_new_content(tmp_path) -> None:
     for text in ("one\n", "two\n", "three\n"):
         with log_file.open("ab") as handle:
             handle.write(text.encode("utf-8"))
-        uploader.upload_new_content(task_id=1, device_id="device-a", command_id="cmd-1")
+        uploader.upload_new_content(run_id=1, device_id="device-a", command_id="cmd-1")
 
     assert client.uploads == [
         (1, 0, "one\n"),

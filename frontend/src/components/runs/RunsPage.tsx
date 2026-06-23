@@ -2,36 +2,35 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
-import { cancelTask, listTasks, rerunTask } from "../../api/tasks";
-import type { Device, Project, Task, TaskStatus, Workspace } from "../../api/types";
+import { cancelRun, listRuns, rerunRun } from "../../api/runs";
+import type { Device, Project, Run, RunStatus, Workspace } from "../../api/types";
 import { listWorkspaces } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePolling } from "../../hooks/usePolling";
 import { UI_STATE_KEYS } from "../../state/storage";
+import { formatRelativeTime } from "../../utils/date";
 import { deviceDisabledReason } from "../../utils/device";
 import { errorText, isRunningStatus } from "../../utils/error";
+import { statusTone, shortText } from "../../utils/text";
+import { Badge } from "../common/Badge";
+import { Button } from "../common/Button";
 import { EmptyState } from "../common/EmptyState";
 import { Sheet } from "../layout/Sheet";
-import { TaskCard } from "../tasks/TaskCard";
-import { TaskDetailSheet } from "../tasks/TaskDetailSheet";
 import type { PageProps } from "../types";
 
-const statuses: Array<"" | TaskStatus> = ["", "PENDING", "RUNNING", "SUCCESS", "FAILED", "CANCELLED"];
+const statuses: Array<"" | RunStatus> = ["", "PENDING", "RUNNING", "SUCCESS", "FAILED", "CANCELLED"];
 
 export function RunsPage({ showToast }: PageProps) {
-  const [runs, setRuns] = useState<Task[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [showAllHistory, setShowAllHistory] = useState(false);
-  const [currentProjectIdText, setCurrentProjectIdText] = useLocalStorage(
-    UI_STATE_KEYS.currentProjectId,
-    ""
-  );
+  const [currentProjectIdText, setCurrentProjectIdText] = useLocalStorage(UI_STATE_KEYS.currentProjectId, "");
   const [currentDeviceIdText] = useLocalStorage(UI_STATE_KEYS.currentDeviceId, "");
   const [currentWorkspaceIdText] = useLocalStorage(UI_STATE_KEYS.currentWorkspaceId, "");
   const [statusFilter, setStatusFilter] = useLocalStorage(UI_STATE_KEYS.taskStatusFilter, "");
-  const [selectedRun, setSelectedRun] = useState<Task | null>(null);
+  const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -76,11 +75,11 @@ export function RunsPage({ showToast }: PageProps) {
         : null;
       const fallbackWorkspace = workspaceData.find((workspace) => workspace.enabled) || workspaceData[0] || null;
       const effectiveWorkspaceId = selectedWorkspace?.id || fallbackWorkspace?.id || null;
-      const effectiveProject = currentProjectId
+      const selectedProject = currentProjectId
         ? projectData.find((project) => project.id === currentProjectId)
         : null;
       const fallbackProject = projectData.find((project) => project.enabled) || projectData[0] || null;
-      const effectiveProjectId = effectiveProject?.id || fallbackProject?.id || null;
+      const effectiveProjectId = selectedProject?.id || fallbackProject?.id || null;
       setDevices(deviceData);
       setProjects(projectData);
       setWorkspaces(workspaceData);
@@ -90,7 +89,7 @@ export function RunsPage({ showToast }: PageProps) {
       const workspaceFilter = showAllHistory ? null : effectiveWorkspaceId;
       setRuns(
         effectiveProjectId
-          ? await listTasks({ limit: 50, projectId: effectiveProjectId, workspaceId: workspaceFilter })
+          ? await listRuns({ limit: 50, projectId: effectiveProjectId, workspaceId: workspaceFilter })
           : []
       );
     } catch (err) {
@@ -120,10 +119,10 @@ export function RunsPage({ showToast }: PageProps) {
   const runningCount = runs.filter((run) => ["PENDING", "RUNNING"].includes(run.status)).length;
   const failedCount = runs.filter((run) => run.status === "FAILED").length;
 
-  async function handleCancel(run: Task) {
+  async function handleCancel(run: Run) {
     if (!window.confirm(`确认取消运行 #${run.id}？`)) return;
     try {
-      await cancelTask(run.id);
+      await cancelRun(run.id);
       showToast("运行已请求取消", "success");
       await loadRuns();
     } catch (err) {
@@ -131,13 +130,13 @@ export function RunsPage({ showToast }: PageProps) {
     }
   }
 
-  async function handleRerun(run: Task) {
+  async function handleRerun(run: Run) {
     if (rerunDisabledReason) {
       showToast(rerunDisabledReason, "warning");
       return;
     }
     try {
-      const newRun = await rerunTask(run.id);
+      const newRun = await rerunRun(run.id);
       showToast(`已创建重跑运行 #${newRun.id}`, "success");
       await loadRuns();
     } catch (err) {
@@ -192,13 +191,13 @@ export function RunsPage({ showToast }: PageProps) {
       <div className="task-list">
         {filteredRuns.length ? (
           filteredRuns.map((run) => (
-            <TaskCard
+            <RunCard
               key={run.id}
               onCancel={handleCancel}
               onOpen={setSelectedRun}
               onRerun={handleRerun}
               rerunDisabledReason={rerunDisabledReason}
-              task={run}
+              run={run}
             />
           ))
         ) : (
@@ -208,14 +207,97 @@ export function RunsPage({ showToast }: PageProps) {
 
       {selectedRun ? (
         <Sheet onClose={() => setSelectedRun(null)} title={`运行 #${selectedRun.id}`}>
-          <TaskDetailSheet
+          <RunDetail
             onCancel={handleCancel}
             onRerun={handleRerun}
             rerunDisabledReason={rerunDisabledReason}
-            task={selectedRun}
+            run={selectedRun}
           />
         </Sheet>
       ) : null}
     </section>
+  );
+}
+
+function RunCard({
+  onCancel,
+  onOpen,
+  onRerun,
+  rerunDisabledReason,
+  run
+}: {
+  onCancel: (run: Run) => void;
+  onOpen: (run: Run) => void;
+  onRerun: (run: Run) => void;
+  rerunDisabledReason: string;
+  run: Run;
+}) {
+  const running = isRunningStatus(run.status);
+  return (
+    <div className="task-card">
+      <button className="task-main as-button" onClick={() => onOpen(run)} type="button">
+        <div className={`wechat-avatar ${statusTone(run.status)}`}>运</div>
+        <div className="task-main-text">
+          <strong>#{run.id} · {run.run_type}</strong>
+          <span>{shortText(run.prompt, 80)}</span>
+          <span>{run.workspace_name || run.workspace_path_label || "Workspace"} · {formatRelativeTime(run.updated_at)}</span>
+        </div>
+        <Badge tone={statusTone(run.status)}>{run.status}</Badge>
+      </button>
+      <div className="task-actions">
+        {running ? <Button onClick={() => onCancel(run)} variant="secondary">取消</Button> : null}
+        <Button disabled={Boolean(rerunDisabledReason)} onClick={() => onRerun(run)} variant="secondary">
+          重跑
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RunDetail({
+  onCancel,
+  onRerun,
+  rerunDisabledReason,
+  run
+}: {
+  onCancel: (run: Run) => void;
+  onRerun: (run: Run) => void;
+  rerunDisabledReason: string;
+  run: Run;
+}) {
+  const running = isRunningStatus(run.status);
+  return (
+    <div className="stack">
+      <div className="meta-grid">
+        <Meta label="状态" value={run.status} />
+        <Meta label="类型" value={run.run_type} />
+        <Meta label="设备" value={run.device_display_name || run.device_id || "-"} />
+        <Meta label="Workspace" value={run.workspace_name || run.workspace_path_label || "-"} />
+        <Meta label="模型" value={run.model || "默认"} />
+        <Meta label="sandbox" value={run.sandbox || "workspace-write"} />
+        <Meta label="创建" value={formatRelativeTime(run.created_at) || "-"} />
+        <Meta label="更新" value={formatRelativeTime(run.updated_at) || "-"} />
+      </div>
+      <div>
+        <h3>Prompt</h3>
+        <pre className="code-block">{run.prompt}</pre>
+      </div>
+      {run.error_message ? <div className="inline-error">{run.error_message}</div> : null}
+      <div className="task-actions">
+        {running ? <Button onClick={() => onCancel(run)} variant="secondary">取消</Button> : null}
+        <Button disabled={Boolean(rerunDisabledReason)} onClick={() => onRerun(run)} variant="primary">
+          重跑
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="meta-cell">
+      <span className="meta-label">{label}</span>
+      <span className="meta-value">{value || "-"}</span>
+    </div>
   );
 }

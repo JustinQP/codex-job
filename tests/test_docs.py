@@ -12,9 +12,9 @@ def test_readme_v2_overview_contains_key_sections() -> None:
 
     assert "当前版本：v2.0.0" in readme
     assert "/mobile" in readme
-    assert "smoke_app_server_flow.py" in readme
     assert "Device Agent" in readme
-    assert "Runner/codex exec" in readme
+    assert "python -m compileall backend agent scripts" in readme
+    assert "/runs" in readme
 
 
 def test_current_docs_exist() -> None:

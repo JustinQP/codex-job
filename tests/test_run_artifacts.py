@@ -4,7 +4,7 @@ import hashlib
 
 from agent.artifact_uploader import RunArtifactUploader, build_run_artifact_manifest
 from backend import db
-from backend.services import task_service
+from backend.services import run_service
 from tests.test_run_log_chunks import auth_headers, create_bound_run
 from tests.test_runs_api import make_client
 
@@ -12,7 +12,7 @@ from tests.test_runs_api import make_client
 def isolate_jobs_dir(monkeypatch, tmp_path) -> None:
     jobs_dir = tmp_path / "jobs"
     monkeypatch.setattr(db, "JOBS_DIR", jobs_dir)
-    monkeypatch.setattr(task_service, "JOBS_DIR", jobs_dir)
+    monkeypatch.setattr(run_service, "JOBS_DIR", jobs_dir)
 
 
 def artifact_body(run: dict, artifact_type: str, filename: str, content: str, *, sequence: int = 1) -> dict:
@@ -29,7 +29,7 @@ def artifact_body(run: dict, artifact_type: str, filename: str, content: str, *,
     }
 
 
-def test_run_artifacts_upload_and_existing_read_apis_work(monkeypatch, tmp_path) -> None:
+def test_run_artifacts_upload_and_run_read_apis_work(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
     isolate_jobs_dir(monkeypatch, tmp_path)
     for client, session in make_client():
@@ -53,17 +53,17 @@ def test_run_artifacts_upload_and_existing_read_apis_work(monkeypatch, tmp_path)
         report = client.post(
             f"/agent/runs/{run['id']}/artifacts",
             headers=auth_headers(),
-            json=artifact_body(run, "task_report", "task-report.md", "report", sequence=4),
+            json=artifact_body(run, "run_report", "run-report.md", "report", sequence=4),
         )
 
         assert result.status_code == 200
         assert diff.status_code == 200
         assert status.status_code == 200
         assert report.status_code == 200
-        assert client.get(f"/tasks/{run['id']}/result").text == "result text"
-        assert client.get(f"/tasks/{run['id']}/diff").text == "diff text"
-        assert client.get(f"/tasks/{run['id']}/artifacts/git-status").text == " M file.py"
-        assert client.get(f"/tasks/{run['id']}/artifacts/report").text == "report"
+        assert client.get(f"/runs/{run['id']}/result").text == "result text"
+        assert client.get(f"/runs/{run['id']}/diff").text == "diff text"
+        assert client.get(f"/runs/{run['id']}/artifacts/git-status").text == " M file.py"
+        assert client.get(f"/runs/{run['id']}/artifacts/report").text == "report"
 
 
 def test_run_artifact_replay_same_hash_is_idempotent(monkeypatch, tmp_path) -> None:
@@ -79,7 +79,7 @@ def test_run_artifact_replay_same_hash_is_idempotent(monkeypatch, tmp_path) -> N
         assert first.status_code == 200
         assert replay.status_code == 200
         assert replay.json()["duplicate"] is True
-        assert client.get(f"/tasks/{run['id']}/result").text == "same"
+        assert client.get(f"/runs/{run['id']}/result").text == "same"
 
 
 def test_run_artifact_conflicting_reupload_is_rejected(monkeypatch, tmp_path) -> None:
@@ -170,8 +170,8 @@ def test_run_artifact_uploader_builds_manifest_and_uploads(tmp_path) -> None:
         def __init__(self):
             self.uploads = []
 
-        def upload_run_artifact(self, task_id, payload):
-            self.uploads.append((task_id, payload.artifact_type, payload.filename, payload.sequence))
+        def upload_run_artifact(self, run_id, payload):
+            self.uploads.append((run_id, payload.artifact_type, payload.filename, payload.sequence))
             return {"accepted": True, "artifact_type": payload.artifact_type}
 
     job_dir = tmp_path / "job"
@@ -183,7 +183,7 @@ def test_run_artifact_uploader_builds_manifest_and_uploads(tmp_path) -> None:
     manifest = build_run_artifact_manifest(job_dir)
     client = FakeClient()
     responses = RunArtifactUploader(client=client).upload_manifest(
-        task_id=1,
+        run_id=1,
         device_id="device-a",
         command_id="cmd-1",
         manifest=manifest,

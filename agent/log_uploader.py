@@ -29,13 +29,13 @@ class RunLogUploader:
         self.client = client
         self.tracker = tracker
 
-    def upload_new_content(self, *, task_id: int, device_id: str, command_id: str) -> dict | None:
+    def upload_new_content(self, *, run_id: int, device_id: str, command_id: str) -> dict | None:
         chunk = self.tracker.next_chunk()
         if chunk is None:
             return None
         offset, content = chunk
         response = self.client.upload_run_log_chunk(
-            task_id,
+            run_id,
             RunLogChunkUpload(
                 device_id=device_id,
                 command_id=command_id,

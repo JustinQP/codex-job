@@ -16,7 +16,7 @@ RUN_ARTIFACT_FILES = {
     "diff_staged": "diff-staged.patch",
     "untracked_files": "untracked-files.txt",
     "test_output": "test-output.txt",
-    "task_report": "task-report.md",
+    "run_report": "run-report.md",
 }
 
 
@@ -59,7 +59,7 @@ class RunArtifactUploader:
     def upload_manifest(
         self,
         *,
-        task_id: int,
+        run_id: int,
         device_id: str,
         command_id: str,
         manifest: list[RunArtifactManifestItem],
@@ -68,7 +68,7 @@ class RunArtifactUploader:
         for item in manifest:
             responses.append(
                 self.client.upload_run_artifact(
-                    task_id,
+                    run_id,
                     RunArtifactUpload(
                         device_id=device_id,
                         command_id=command_id,

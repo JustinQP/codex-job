@@ -10,14 +10,10 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 
 from backend.db import engine, init_db
-from backend.dependencies import require_api_token
-from backend.routers import agent, app_threads, devices, projects, runners, tasks, ui, workspaces
-from backend.routers.app_threads import _sse_event
-from backend.routers.tasks import _read_task_artifact
+from backend.routers import agent, app_threads, devices, projects, runs, ui, workspaces
 from backend.routers.ui import frontend_build_missing_page
 from backend import db
 from backend.services import app_thread_service
-from backend.services.app_server_bridge_client import get_default_client
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -62,6 +58,5 @@ app.include_router(app_threads.router)
 app.include_router(devices.router)
 app.include_router(projects.router)
 app.include_router(workspaces.router)
-app.include_router(tasks.router)
-app.include_router(runners.router)
+app.include_router(runs.router)
 sync_router_settings()

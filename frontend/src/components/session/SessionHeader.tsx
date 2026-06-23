@@ -41,7 +41,7 @@ export function SessionHeader({
   }
 
   const updated = formatRelativeTime(selectedThread.updated_at);
-  const deviceLabel = threadDevice?.display_name || selectedThread.device_id || "本机 Bridge";
+  const deviceLabel = threadDevice?.display_name || selectedThread.device_id || "Device Agent";
   const workspaceLabel = threadWorkspace
     ? `${threadWorkspace.name} · ${threadWorkspace.path_label}`
     : selectedThread.workspace_id

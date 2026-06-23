@@ -105,7 +105,7 @@ def test_run_executor_uses_workspace_registry_path_in_fake_mode(monkeypatch, tmp
             "command_type": "RUN_EXECUTE",
             "payload_json": json.dumps(
                 {
-                    "task_id": 1,
+                    "run_id": 1,
                     "workspace_key": "repo",
                     "prompt": "hello",
                 }
@@ -125,11 +125,7 @@ def test_command_registry_completes_run_execute_with_fake_handler(monkeypatch, t
     monkeypatch.setenv("CODEX_AGENT_FAKE_RUN", "1")
 
     result = handlers.handle(
-        {
-            "id": "cmd-1",
-            "command_type": "RUN_EXECUTE",
-            "payload_json": json.dumps({"task_id": 1, "workspace_key": "repo"}),
-        }
+        {"id": "cmd-1", "command_type": "RUN_EXECUTE", "payload_json": json.dumps({"run_id": 1, "workspace_key": "repo"})}
     )
 
     assert result.success is True
@@ -189,9 +185,9 @@ def test_run_executor_stops_process_when_command_is_cancelled(monkeypatch, tmp_p
 
     monkeypatch.setattr("agent.run_executor.check_clean_worktree", lambda project_path: None)
     monkeypatch.setattr("agent.run_executor.collect_git_artifacts", lambda project_path, job_dir: _git_artifacts(job_dir))
-    monkeypatch.setattr("runner.codex_executor.find_codex_bin", lambda: "codex")
-    monkeypatch.setattr("runner.codex_executor.subprocess.Popen", lambda *args, **kwargs: process)
-    monkeypatch.setattr("runner.codex_executor.time.sleep", lambda seconds: None)
+    monkeypatch.setattr("agent.codex_executor.find_codex_bin", lambda: "codex")
+    monkeypatch.setattr("agent.codex_executor.subprocess.Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr("agent.codex_executor.time.sleep", lambda seconds: None)
 
     result = executor.handle(
         {
@@ -200,7 +196,7 @@ def test_run_executor_stops_process_when_command_is_cancelled(monkeypatch, tmp_p
             "command_type": "RUN_EXECUTE",
             "payload_json": json.dumps(
                 {
-                    "task_id": 1,
+                    "run_id": 1,
                     "workspace_key": "repo",
                     "prompt": "long run",
                 }
@@ -209,7 +205,7 @@ def test_run_executor_stops_process_when_command_is_cancelled(monkeypatch, tmp_p
     )
 
     assert result.success is False
-    assert result.message == "task cancelled"
+    assert result.message == "run cancelled"
     assert process.terminated is True
     assert client.renewed == 1
     assert client.reconciled == 1
@@ -320,7 +316,7 @@ def _git_artifacts(job_dir: Path):
     }
     for path in paths.values():
         path.write_text("", encoding="utf-8")
-    from runner.codex_executor import GitArtifactsResult
+    from agent.codex_executor import GitArtifactsResult
 
     return GitArtifactsResult(error_message=None, **paths)
 

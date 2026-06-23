@@ -31,6 +31,7 @@ from backend.services import (
     app_thread_service,
     device_service,
     run_artifact_service,
+    run_service,
     run_log_service,
     workspace_service,
     workspace_lock_service,
@@ -189,6 +190,8 @@ def complete_agent_command(
             )
             session.refresh(command)
         elif command.command_type == "RUN_EXECUTE":
+            run_service.complete_run_command(session, command_id=command.id)
+            session.refresh(command)
             workspace_lock_service.release_workspace_lock(
                 session,
                 owner_type="run",
@@ -235,21 +238,21 @@ def reconcile_agent(
         raise_agent_command_error(exc)
 
 
-@router.post("/agent/runs/{task_id}/log-chunks", response_model=RunLogChunkUploadRead)
+@router.post("/agent/runs/{run_id}/log-chunks", response_model=RunLogChunkUploadRead)
 def upload_run_log_chunk(
-    task_id: int,
+    run_id: int,
     payload: RunLogChunkUpload,
     session: Session = Depends(get_session),
     _: None = Depends(require_agent_token),
 ):
-    return run_log_service.upload_run_log_chunk(session, task_id, payload)
+    return run_log_service.upload_run_log_chunk(session, run_id, payload)
 
 
-@router.post("/agent/runs/{task_id}/artifacts", response_model=RunArtifactUploadRead)
+@router.post("/agent/runs/{run_id}/artifacts", response_model=RunArtifactUploadRead)
 def upload_run_artifact(
-    task_id: int,
+    run_id: int,
     payload: RunArtifactUpload,
     session: Session = Depends(get_session),
     _: None = Depends(require_agent_token),
 ):
-    return run_artifact_service.upload_run_artifact(session, task_id, payload)
+    return run_artifact_service.upload_run_artifact(session, run_id, payload)

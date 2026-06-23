@@ -67,7 +67,7 @@ def add_command(session: Session, idempotency_key: str = "cmd-a") -> AgentComman
     command = AgentCommand(
         device_id="device-a",
         command_type="codex.exec",
-        aggregate_type="task",
+        aggregate_type="run",
         aggregate_id="1",
         idempotency_key=idempotency_key,
         payload_json='{"prompt":"hello"}',
@@ -88,21 +88,21 @@ def test_create_command_reuses_same_idempotency_key_for_same_payload() -> None:
             session,
             device_id="device-a",
             command_type="codex.exec",
-            aggregate_type="task",
+            aggregate_type="run",
             aggregate_id="1",
             idempotency_key="retry-key",
             workspace_id=workspace.id,
-            payload={"task_id": 1, "workspace_id": workspace.id, "options": {"model": "gpt-5"}},
+            payload={"run_id": 1, "workspace_id": workspace.id, "options": {"model": "gpt-5"}},
         )
         second = agent_command_service.create_command(
             session,
             device_id="device-a",
             command_type="codex.exec",
-            aggregate_type="task",
+            aggregate_type="run",
             aggregate_id="1",
             idempotency_key="retry-key",
             workspace_id=workspace.id,
-            payload={"options": {"model": "gpt-5"}, "workspace_id": workspace.id, "task_id": 1},
+            payload={"options": {"model": "gpt-5"}, "workspace_id": workspace.id, "run_id": 1},
         )
 
         assert second.id == first.id
@@ -120,7 +120,7 @@ def test_create_command_conflicting_payload_has_stable_error_code() -> None:
             device_id="device-a",
             command_type="codex.exec",
             idempotency_key="same-key",
-            payload={"task_id": 1},
+            payload={"run_id": 1},
         )
 
         with pytest.raises(agent_command_service.AgentCommandServiceError) as exc:
@@ -129,7 +129,7 @@ def test_create_command_conflicting_payload_has_stable_error_code() -> None:
                 device_id="device-a",
                 command_type="codex.exec",
                 idempotency_key="same-key",
-                payload={"task_id": 2},
+                payload={"run_id": 2},
             )
 
         assert exc.value.code == "agent_command_idempotency_conflict"
@@ -151,7 +151,7 @@ def test_create_command_rejects_disabled_device() -> None:
                 device_id="device-a",
                 command_type="codex.exec",
                 idempotency_key="device-disabled",
-                payload={"task_id": 1},
+                payload={"run_id": 1},
             )
 
         assert exc.value.code == "device_disabled"

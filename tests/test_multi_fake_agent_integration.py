@@ -155,21 +155,21 @@ def test_two_fake_agents_route_commands_events_and_reconcile(monkeypatch) -> Non
             session,
             device_id="fake-a",
             command_type="RUN_EXECUTE",
-            aggregate_type="task",
-            aggregate_id="task-a",
+            aggregate_type="run",
+            aggregate_id="run-a",
             idempotency_key="run-a",
             workspace_id=workspace_a.id,
-            payload={"task_id": "task-a", "workspace_id": workspace_a.id},
+            payload={"run_id": "run-a", "workspace_id": workspace_a.id},
         )
         command_b = agent_command_service.create_command(
             session,
             device_id="fake-b",
             command_type="RUN_EXECUTE",
-            aggregate_type="task",
-            aggregate_id="task-b",
+            aggregate_type="run",
+            aggregate_id="run-b",
             idempotency_key="run-b",
             workspace_id=workspace_b.id,
-            payload={"task_id": "task-b", "workspace_id": workspace_b.id},
+            payload={"run_id": "run-b", "workspace_id": workspace_b.id},
         )
 
         a_claim = claim(client, "fake-a", "claim-a")

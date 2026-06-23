@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listAppThreads } from "../../api/appThreads";
 import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
-import { listTasks } from "../../api/tasks";
-import type { AppThread, Device, Project, Task, Workspace } from "../../api/types";
+import { listRuns } from "../../api/runs";
+import type { AppThread, Device, Project, Run, Workspace } from "../../api/types";
 import { listWorkspaces } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { UI_STATE_KEYS } from "../../state/storage";
@@ -34,7 +34,7 @@ export function ProjectsPage({ showToast }: PageProps) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [threads, setThreads] = useState<AppThread[]>([]);
-  const [runs, setRuns] = useState<Task[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -99,7 +99,7 @@ export function ProjectsPage({ showToast }: PageProps) {
       if (effectiveProject) {
         const [threadData, runData] = await Promise.all([
           listAppThreads({ limit: 5, projectId: effectiveProject.id }),
-          listTasks({ limit: 5, projectId: effectiveProject.id })
+          listRuns({ limit: 5, projectId: effectiveProject.id })
         ]);
         setThreads(threadData);
         setRuns(runData);
@@ -235,7 +235,6 @@ export function ProjectsPage({ showToast }: PageProps) {
             <Meta label="路径" value={currentProject.path_label} />
             <Meta label="设备" value={currentDevice?.display_name || "未选择"} />
             <Meta label="Workspace" value={currentWorkspace?.name || "未选择"} />
-            <Meta label="Runner" value={currentProject.default_runner_id || "项目默认"} />
             <Meta label="模型" value={currentProject.default_model || "未指定"} />
             <Meta label="sandbox" value={currentProject.default_sandbox || "workspace-write"} />
           </div>
@@ -257,7 +256,7 @@ export function ProjectsPage({ showToast }: PageProps) {
           <Meta label="项目启用" value={currentProject?.enabled ? "是" : "否"} />
           <Meta label="会话范围" value={currentProject ? "当前工作空间" : "-"} />
           <Meta label="运行范围" value={currentProject ? "当前工作空间" : "-"} />
-          <Meta label="Bridge cwd" value={currentProject ? "跟随工作空间" : "-"} />
+          <Meta label="会话模式" value={currentProject ? "Device Agent" : "-"} />
         </div>
       </section>
 
@@ -330,7 +329,7 @@ export function ProjectsPage({ showToast }: PageProps) {
               <div className="wechat-row" key={run.id}>
                 <div className={`wechat-avatar ${statusTone(run.status)}`}>运</div>
                 <div className="wechat-row-main">
-                  <strong>#{run.id} · {run.task_type}</strong>
+                  <strong>#{run.id} · {run.run_type}</strong>
                   <span>{formatRelativeTime(run.updated_at)} · {run.prompt}</span>
                 </div>
                 <Badge tone={statusTone(run.status)}>{run.status}</Badge>

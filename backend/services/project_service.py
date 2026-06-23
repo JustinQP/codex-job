@@ -6,7 +6,7 @@ import os
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from backend.models import Project, RunnerRecord, WorkspaceBindingStatus, utc_now
+from backend.models import Project, WorkspaceBindingStatus, utc_now
 from backend.schemas import ProjectCreate
 
 
@@ -35,15 +35,6 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="project path must be a directory",
         )
-    if (
-        payload.default_runner_id
-        and session.get(RunnerRecord, payload.default_runner_id) is None
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"default runner not found: {payload.default_runner_id}",
-        )
-
     project = Project(
         name=project_name,
         path=str(project_path),
@@ -52,7 +43,6 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
         smoke_check_command=payload.smoke_check_command,
         default_branch=payload.default_branch,
         require_clean_worktree=payload.require_clean_worktree,
-        default_runner_id=payload.default_runner_id,
         default_model=payload.default_model,
         default_reasoning_effort=payload.default_reasoning_effort,
         default_sandbox=payload.default_sandbox,
@@ -143,7 +133,6 @@ def to_project_read(project: Project):
         smoke_check_command=project.smoke_check_command,
         default_branch=project.default_branch,
         require_clean_worktree=project.require_clean_worktree,
-        default_runner_id=project.default_runner_id,
         workspace_id=project.workspace_id,
         workspace_binding_status=project.workspace_binding_status,
         default_model=project.default_model,

@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models import AgentCommandStatus, DeviceStatus, TaskStatus, TaskType, WorkspaceBindingStatus
+from backend.models import AgentCommandStatus, DeviceStatus, RunStatus, RunType, WorkspaceBindingStatus
 
 
 class ProjectCreate(BaseModel):
@@ -16,7 +16,6 @@ class ProjectCreate(BaseModel):
     smoke_check_command: Optional[str] = None
     default_branch: Optional[str] = None
     require_clean_worktree: Optional[bool] = None
-    default_runner_id: Optional[str] = None
     default_model: Optional[str] = None
     default_reasoning_effort: Optional[str] = None
     default_sandbox: Optional[str] = None
@@ -31,7 +30,6 @@ class ProjectRead(BaseModel):
     smoke_check_command: Optional[str]
     default_branch: Optional[str]
     require_clean_worktree: Optional[bool]
-    default_runner_id: Optional[str]
     workspace_id: Optional[int]
     workspace_binding_status: WorkspaceBindingStatus
     default_model: Optional[str]
@@ -41,13 +39,12 @@ class ProjectRead(BaseModel):
     updated_at: datetime
 
 
-class TaskCreate(BaseModel):
+class RunCreate(BaseModel):
     project_id: int
     prompt: str = Field(..., min_length=1)
     timeout_seconds: int = Field(default=7200, ge=30, le=21600)
-    task_type: TaskType = TaskType.IMPLEMENT
-    assigned_runner_id: Optional[str] = None
-    workspace_id: Optional[int] = None
+    run_type: RunType = RunType.IMPLEMENT
+    workspace_id: int
     device_id: Optional[str] = None
     client_request_id: Optional[str] = None
     model: Optional[str] = None
@@ -55,16 +52,12 @@ class TaskCreate(BaseModel):
     sandbox: Optional[str] = None
 
 
-class RunCreate(TaskCreate):
-    workspace_id: int
-
-
-class TaskRead(BaseModel):
+class RunRead(BaseModel):
     id: int
     project_id: int
     prompt: str
-    task_type: TaskType
-    status: TaskStatus
+    run_type: RunType
+    status: RunStatus
     timeout_seconds: int
     model: Optional[str]
     reasoning_effort: Optional[str]
@@ -72,9 +65,6 @@ class TaskRead(BaseModel):
     exit_code: Optional[int]
     error_message: Optional[str]
     cancel_requested: bool
-    assigned_runner_id: Optional[str]
-    runner_id: Optional[str]
-    runner_pid: Optional[int]
     lease_expires_at: Optional[datetime]
     device_id: Optional[str]
     device_display_name: Optional[str]
@@ -93,7 +83,7 @@ class TaskRead(BaseModel):
     finished_at: Optional[datetime]
 
 
-class TaskArtifactsRead(BaseModel):
+class RunArtifactsRead(BaseModel):
     log_url: str
     result_url: str
     diff_url: str
@@ -101,88 +91,10 @@ class TaskArtifactsRead(BaseModel):
     report_url: str
 
 
-class TaskTemplateRead(BaseModel):
-    task_type: TaskType
+class RunTemplateRead(BaseModel):
+    run_type: RunType
     title: str
     template: str
-
-
-class RunnerRegister(BaseModel):
-    runner_id: str = Field(..., min_length=1, max_length=100)
-    pid: int = Field(..., ge=1)
-    hostname: str = Field(..., min_length=1, max_length=200)
-    supported_models: Optional[str] = None
-
-
-class RunnerHeartbeat(BaseModel):
-    runner_id: str = Field(..., min_length=1, max_length=100)
-    pid: int = Field(..., ge=1)
-    hostname: str = Field(..., min_length=1, max_length=200)
-    supported_models: Optional[str] = None
-
-
-class RunnerRead(BaseModel):
-    runner_id: str
-    pid: int
-    hostname: str
-    supported_models: Optional[str]
-    status: str
-    registered_at: datetime
-    last_heartbeat_at: datetime
-    lease_expires_at: Optional[datetime]
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class RunnerTaskClaimRequest(BaseModel):
-    runner_id: str = Field(..., min_length=1, max_length=100)
-
-
-class RunnerTaskClaimResponse(BaseModel):
-    task_id: int
-    project_id: int
-    project_path: str
-    prompt: str
-    timeout_seconds: int
-    task_type: TaskType
-    model: Optional[str]
-    reasoning_effort: Optional[str]
-    sandbox: str
-    require_clean_worktree: Optional[bool]
-    test_command: Optional[str]
-    smoke_check_command: Optional[str]
-    default_branch: Optional[str]
-
-
-class RunnerTaskLogUpload(BaseModel):
-    runner_id: str = Field(..., min_length=1, max_length=100)
-    content: str
-    append: bool = True
-
-
-class RunnerTaskArtifactsUpload(BaseModel):
-    runner_id: str = Field(..., min_length=1, max_length=100)
-    result: Optional[str] = None
-    diff: Optional[str] = None
-    git_status: Optional[str] = None
-    diff_unstaged: Optional[str] = None
-    diff_staged: Optional[str] = None
-    untracked_files: Optional[str] = None
-    test_output: Optional[str] = None
-    task_report: Optional[str] = None
-
-
-class RunnerTaskFinishRequest(BaseModel):
-    runner_id: str = Field(..., min_length=1, max_length=100)
-    status: TaskStatus
-    exit_code: Optional[int] = None
-    error_message: Optional[str] = None
-
-
-class RunnerTaskCancelState(BaseModel):
-    task_id: int
-    cancel_requested: bool
-    status: TaskStatus
 
 
 class DeviceRegister(BaseModel):
@@ -408,8 +320,7 @@ class AppThreadRead(BaseModel):
     approval_policy: Optional[str] = None
     network_access: bool = False
     command_id: Optional[str] = None
-    bridge_thread_id: Optional[str]
-    app_thread_id: Optional[str]
+    codex_thread_id: Optional[str]
     status: str
     last_error: Optional[str]
     latest_assistant_final: Optional[str] = None
@@ -430,7 +341,7 @@ class AppTurnRead(BaseModel):
     assistant_final: Optional[str]
     status: str
     error_message: Optional[str]
-    bridge_turn_id: Optional[str]
+    codex_turn_id: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]

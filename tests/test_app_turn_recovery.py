@@ -37,8 +37,7 @@ def add_thread(session: Session) -> AppThread:
     app_thread = AppThread(
         project_id=project.id,
         title="Chat",
-        bridge_thread_id="bridge-1",
-        app_thread_id="app-1",
+        codex_thread_id="codex-thread-1",
         status="ACTIVE",
         created_at=utc_now(),
         updated_at=utc_now(),

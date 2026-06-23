@@ -3,32 +3,23 @@ from __future__ import annotations
 from backend.main import app
 
 
-def test_openapi_keeps_core_routes_after_router_split() -> None:
+def test_openapi_exposes_v2_mainline_routes() -> None:
     schema = app.openapi()
     paths = set(schema["paths"])
-
     expected_paths = {
         "/health",
         "/projects",
-        "/tasks",
         "/runs",
-        "/tasks/{task_id}",
-        "/tasks/{task_id}/rerun",
-        "/tasks/{task_id}/cancel",
-        "/tasks/{task_id}/artifacts",
-        "/tasks/{task_id}/log",
-        "/tasks/{task_id}/result",
-        "/tasks/{task_id}/diff",
-        "/tasks/{task_id}/artifacts/git-status",
-        "/tasks/{task_id}/artifacts/report",
-        "/task-templates",
-        "/runners",
-        "/runner/register",
-        "/runner/heartbeat",
-        "/runner/tasks/claim",
-        "/runner/tasks/{task_id}/finish",
-        "/runner/tasks/{task_id}/cancel-state",
-        "/app-server-bridge/health",
+        "/runs/{run_id}",
+        "/runs/{run_id}/rerun",
+        "/runs/{run_id}/cancel",
+        "/runs/{run_id}/artifacts",
+        "/runs/{run_id}/log",
+        "/runs/{run_id}/result",
+        "/runs/{run_id}/diff",
+        "/runs/{run_id}/artifacts/git-status",
+        "/runs/{run_id}/artifacts/report",
+        "/run-templates",
         "/agent/register",
         "/agent/heartbeat",
         "/agent/workspaces/sync",
@@ -38,8 +29,8 @@ def test_openapi_keeps_core_routes_after_router_split() -> None:
         "/agent/commands/{command_id}/complete",
         "/agent/commands/{command_id}/events",
         "/agent/reconcile",
-        "/agent/runs/{task_id}/log-chunks",
-        "/agent/runs/{task_id}/artifacts",
+        "/agent/runs/{run_id}/log-chunks",
+        "/agent/runs/{run_id}/artifacts",
         "/devices",
         "/devices/{device_id}",
         "/workspaces",
@@ -56,20 +47,32 @@ def test_openapi_keeps_core_routes_after_router_split() -> None:
     }
 
     assert expected_paths <= paths
-    assert len(paths) >= len(expected_paths)
 
 
-def test_legacy_runner_routes_are_marked_deprecated() -> None:
+def test_openapi_removes_legacy_runner_task_bridge_routes() -> None:
     schema = app.openapi()
-    deprecated_operations = [
-        ("post", "/runner/register"),
-        ("post", "/runner/heartbeat"),
-        ("post", "/runner/tasks/claim"),
-        ("post", "/runner/tasks/{task_id}/log"),
-        ("post", "/runner/tasks/{task_id}/artifacts"),
-        ("post", "/runner/tasks/{task_id}/finish"),
-        ("get", "/runner/tasks/{task_id}/cancel-state"),
-    ]
+    paths = set(schema["paths"])
+    removed_paths = {
+        "/tasks",
+        "/tasks/{task_id}",
+        "/tasks/{task_id}/rerun",
+        "/tasks/{task_id}/cancel",
+        "/tasks/{task_id}/artifacts",
+        "/tasks/{task_id}/log",
+        "/tasks/{task_id}/result",
+        "/tasks/{task_id}/diff",
+        "/tasks/{task_id}/artifacts/git-status",
+        "/tasks/{task_id}/artifacts/report",
+        "/task-templates",
+        "/runners",
+        "/runner/register",
+        "/runner/heartbeat",
+        "/runner/tasks/claim",
+        "/runner/tasks/{task_id}/log",
+        "/runner/tasks/{task_id}/artifacts",
+        "/runner/tasks/{task_id}/finish",
+        "/runner/tasks/{task_id}/cancel-state",
+        "/app-server-bridge/health",
+    }
 
-    for method, path in deprecated_operations:
-        assert schema["paths"][path][method]["deprecated"] is True
+    assert paths.isdisjoint(removed_paths)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from runner.codex_executor import (
+from agent.codex_executor import (
     build_codex_command,
     check_clean_worktree,
     collect_git_artifacts,
@@ -101,7 +101,7 @@ def test_check_clean_worktree_rejects_non_git_directory(
             stderr="fatal: not a git repository",
         )
 
-    monkeypatch.setattr("runner.codex_executor._run_git", fake_run_git)
+    monkeypatch.setattr("agent.codex_executor._run_git", fake_run_git)
 
     error = check_clean_worktree(tmp_path)
 
@@ -177,7 +177,7 @@ def test_execute_codex_stops_process_when_on_tick_fails(
 
     process = FakeProcess()
     monkeypatch.setattr(
-        "runner.codex_executor.subprocess.Popen",
+        "agent.codex_executor.subprocess.Popen",
         lambda *args, **kwargs: process,
     )
 
@@ -229,7 +229,7 @@ def test_execute_codex_stops_process_when_should_cancel_fails(
 
     process = FakeProcess()
     monkeypatch.setattr(
-        "runner.codex_executor.subprocess.Popen",
+        "agent.codex_executor.subprocess.Popen",
         lambda *args, **kwargs: process,
     )
 

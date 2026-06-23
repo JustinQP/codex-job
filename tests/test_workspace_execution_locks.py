@@ -6,13 +6,12 @@ from sqlmodel import select
 
 from backend.models import AgentCommandStatus, AppThread, WorkspaceExecutionLock, utc_now
 from backend.services import workspace_lock_service
-from tests.test_app_threads_api import make_client
 from tests.test_runs_api import add_device, add_project, add_workspace
+from tests.test_runs_api import make_client
 
 
-def test_workspace_write_run_conflicts_with_write_session(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
-    for client, session, _fake in make_client(monkeypatch):
+def test_workspace_write_run_conflicts_with_write_session() -> None:
+    for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")
@@ -44,9 +43,8 @@ def test_workspace_write_run_conflicts_with_write_session(monkeypatch) -> None:
         assert detail["owner_id"] == str(run.json()["id"])
 
 
-def test_different_workspace_write_runs_can_start(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
-    for client, session, _fake in make_client(monkeypatch):
+def test_different_workspace_write_runs_can_start() -> None:
+    for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
         add_device(session, "device-b")
@@ -76,9 +74,8 @@ def test_different_workspace_write_runs_can_start(monkeypatch) -> None:
         assert second.status_code == 200
 
 
-def test_expired_workspace_lock_is_recovered(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
-    for client, session, _fake in make_client(monkeypatch):
+def test_expired_workspace_lock_is_recovered() -> None:
+    for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")
@@ -111,9 +108,8 @@ def test_expired_workspace_lock_is_recovered(monkeypatch) -> None:
         assert locks[0].owner_id == str(response.json()["id"])
 
 
-def test_read_only_session_does_not_take_write_lock(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
-    for client, session, _fake in make_client(monkeypatch):
+def test_read_only_session_does_not_take_write_lock() -> None:
+    for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")
@@ -142,9 +138,8 @@ def test_read_only_session_does_not_take_write_lock(monkeypatch) -> None:
 
 
 def test_run_completion_releases_workspace_lock(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
     monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
-    for client, session, _fake in make_client(monkeypatch):
+    for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")
@@ -191,9 +186,8 @@ def test_run_completion_releases_workspace_lock(monkeypatch) -> None:
         assert second.status_code == 200
 
 
-def test_closing_write_session_releases_workspace_lock(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
-    for client, session, _fake in make_client(monkeypatch):
+def test_closing_write_session_releases_workspace_lock() -> None:
+    for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")

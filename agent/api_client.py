@@ -73,15 +73,15 @@ class AgentApiClient:
     def reconcile(self, payload: AgentReconcileRequest) -> dict[str, Any]:
         return self._json_request("/agent/reconcile", payload.model_dump(exclude_none=True))
 
-    def upload_run_log_chunk(self, task_id: int, payload: RunLogChunkUpload) -> dict[str, Any]:
+    def upload_run_log_chunk(self, run_id: int, payload: RunLogChunkUpload) -> dict[str, Any]:
         return self._json_request(
-            f"/agent/runs/{task_id}/log-chunks",
+            f"/agent/runs/{run_id}/log-chunks",
             payload.model_dump(exclude_none=True),
         )
 
-    def upload_run_artifact(self, task_id: int, payload: RunArtifactUpload) -> dict[str, Any]:
+    def upload_run_artifact(self, run_id: int, payload: RunArtifactUpload) -> dict[str, Any]:
         return self._json_request(
-            f"/agent/runs/{task_id}/artifacts",
+            f"/agent/runs/{run_id}/artifacts",
             payload.model_dump(exclude_none=True),
         )
 

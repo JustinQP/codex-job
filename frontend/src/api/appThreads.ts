@@ -7,8 +7,7 @@ import type {
   AppTurn,
   TurnEventList,
   AppTurnStreamEvent,
-  AppTurnRecovery,
-  BridgeHealth
+  AppTurnRecovery
 } from "./types";
 
 export type ListAppThreadsOptions = {
@@ -17,10 +16,6 @@ export type ListAppThreadsOptions = {
   status?: string;
   includeArchived?: boolean;
 };
-
-export function getBridgeHealth() {
-  return apiRequest<BridgeHealth>("/app-server-bridge/health");
-}
 
 export function listAppThreads(options: ListAppThreadsOptions = {}) {
   const params = new URLSearchParams({ limit: String(options.limit ?? 20) });

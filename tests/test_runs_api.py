@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 
 from fastapi.testclient import TestClient
@@ -8,7 +9,7 @@ from sqlmodel.pool import StaticPool
 
 from backend.db import get_session
 from backend.main import app
-from backend.models import Device, DeviceStatus, Project, RunnerRecord, Task, TaskStatus, Workspace, utc_now
+from backend.models import AgentCommand, Device, DeviceStatus, Project, Run, RunStatus, Workspace, WorkspaceExecutionLock, utc_now
 
 
 def make_client() -> Generator[tuple[TestClient, Session], None, None]:
@@ -75,7 +76,7 @@ def add_workspace(session: Session, device_id: str, *, enabled: bool = True) -> 
     return workspace
 
 
-def test_create_run_binds_device_from_workspace_and_ignores_client_device_id() -> None:
+def test_create_run_generates_device_scoped_agent_command() -> None:
     for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
@@ -88,8 +89,8 @@ def test_create_run_binds_device_from_workspace_and_ignores_client_device_id() -
                 "project_id": project.id,
                 "workspace_id": workspace.id,
                 "device_id": "device-b",
-                "prompt": "run on workspace device",
-                "client_request_id": "client-1",
+                "prompt": "execute through agent",
+                "client_request_id": "run-client-1",
             },
         )
 
@@ -97,11 +98,18 @@ def test_create_run_binds_device_from_workspace_and_ignores_client_device_id() -
         body = response.json()
         assert body["workspace_id"] == workspace.id
         assert body["device_id"] == "device-a"
-        assert body["device_display_name"] == "device-a"
-        assert body["device_status"] == "ONLINE"
-        assert body["workspace_name"] == "Repo"
-        assert body["workspace_path_label"] == "codex-job"
-        assert body["client_request_id"] == "client-1"
+        assert body["run_type"] == "IMPLEMENT"
+        assert body["log_url"] == f"/runs/{body['id']}/log"
+        command = session.get(AgentCommand, body["command_id"])
+        assert command is not None
+        assert command.command_type == "RUN_EXECUTE"
+        assert command.aggregate_type == "run"
+        assert command.aggregate_id == str(body["id"])
+        payload = json.loads(command.payload_json)
+        assert payload["run_id"] == body["id"]
+        assert payload["workspace_key"] == workspace.workspace_key
+        assert "cwd" not in payload
+        assert "project_path" not in payload
 
 
 def test_create_run_rejects_disabled_workspace_and_offline_device() -> None:
@@ -114,19 +122,11 @@ def test_create_run_rejects_disabled_workspace_and_offline_device() -> None:
 
         disabled_response = client.post(
             "/runs",
-            json={
-                "project_id": project.id,
-                "workspace_id": disabled_workspace.id,
-                "prompt": "disabled workspace",
-            },
+            json={"project_id": project.id, "workspace_id": disabled_workspace.id, "prompt": "disabled workspace"},
         )
         offline_response = client.post(
             "/runs",
-            json={
-                "project_id": project.id,
-                "workspace_id": offline_workspace.id,
-                "prompt": "offline device",
-            },
+            json={"project_id": project.id, "workspace_id": offline_workspace.id, "prompt": "offline device"},
         )
 
         assert disabled_response.status_code == 400
@@ -135,29 +135,7 @@ def test_create_run_rejects_disabled_workspace_and_offline_device() -> None:
         assert offline_response.json()["detail"] == "device is offline"
 
 
-def test_legacy_task_history_without_binding_is_still_readable() -> None:
-    for client, session in make_client():
-        project = add_project(session)
-        task = Task(
-            project_id=project.id,
-            prompt="legacy task",
-            status=TaskStatus.SUCCESS,
-            created_at=utc_now(),
-            updated_at=utc_now(),
-        )
-        session.add(task)
-        session.commit()
-        session.refresh(task)
-
-        response = client.get(f"/tasks/{task.id}")
-
-        assert response.status_code == 200
-        assert response.json()["device_id"] is None
-        assert response.json()["workspace_id"] is None
-        assert response.json()["command_id"] is None
-
-
-def test_list_tasks_can_filter_runs_by_workspace() -> None:
+def test_list_runs_can_filter_by_workspace() -> None:
     for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
@@ -166,76 +144,72 @@ def test_list_tasks_can_filter_runs_by_workspace() -> None:
         workspace_b = add_workspace(session, "device-b")
         run_a = client.post(
             "/runs",
-            json={
-                "project_id": project.id,
-                "workspace_id": workspace_a.id,
-                "prompt": "run a",
-                "client_request_id": "workspace-filter-a",
-            },
+            json={"project_id": project.id, "workspace_id": workspace_a.id, "prompt": "run a", "client_request_id": "filter-a"},
         ).json()
         run_b = client.post(
             "/runs",
-            json={
-                "project_id": project.id,
-                "workspace_id": workspace_b.id,
-                "prompt": "run b",
-                "client_request_id": "workspace-filter-b",
-            },
+            json={"project_id": project.id, "workspace_id": workspace_b.id, "prompt": "run b", "client_request_id": "filter-b"},
         ).json()
 
-        filtered = client.get(f"/tasks?workspace_id={workspace_a.id}&limit=20")
-        all_runs = client.get("/tasks?limit=20")
+        filtered = client.get(f"/runs?workspace_id={workspace_a.id}&limit=20")
+        all_runs = client.get("/runs?limit=20")
 
         assert filtered.status_code == 200
         assert [item["id"] for item in filtered.json()] == [run_a["id"]]
         assert {item["id"] for item in all_runs.json()} >= {run_a["id"], run_b["id"]}
 
 
-def test_agent_run_is_not_claimed_by_legacy_runner_when_agent_mode_enabled(
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("AGENT_COMMAND_MODE", "true")
+def test_cancel_pending_run_cancels_command_and_releases_workspace_lock() -> None:
     for client, session in make_client():
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")
-        runner = RunnerRecord(
-            runner_id="legacy-runner",
-            pid=1,
-            hostname="host",
-            status="ONLINE",
-            registered_at=utc_now(),
-            last_heartbeat_at=utc_now(),
-        )
-        session.add(runner)
+        created = client.post(
+            "/runs",
+            json={"project_id": project.id, "workspace_id": workspace.id, "prompt": "cancel me"},
+        ).json()
+
+        response = client.post(f"/runs/{created['id']}/cancel")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == RunStatus.CANCELLED.value
+        assert session.get(WorkspaceExecutionLock, 1) is None
+        command = session.get(AgentCommand, body["command_id"])
+        assert command is not None
+        assert command.status.value == "CANCELLED"
+
+
+def test_rerun_creates_new_run_and_agent_command() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        original = client.post(
+            "/runs",
+            json={"project_id": project.id, "workspace_id": workspace.id, "prompt": "rerun me"},
+        ).json()
+        db_run = session.get(Run, original["id"])
+        db_run.status = RunStatus.SUCCESS
+        session.add(db_run)
+        session.commit()
+        lock = session.get(WorkspaceExecutionLock, 1)
+        session.delete(lock)
         session.commit()
 
-        agent_run = client.post(
-            "/runs",
-            json={
-                "project_id": project.id,
-                "workspace_id": workspace.id,
-                "prompt": "agent run",
-            },
-        )
-        legacy_task = client.post(
-            "/tasks",
-            json={
-                "project_id": project.id,
-                "prompt": "legacy task",
-            },
-        )
-        claim = client.post(
-            "/runner/tasks/claim",
-            json={"runner_id": "legacy-runner"},
-        )
+        response = client.post(f"/runs/{original['id']}/rerun")
 
-        assert agent_run.status_code == 200
-        assert legacy_task.status_code == 200
-        assert claim.status_code == 200
-        assert claim.json()["task_id"] == legacy_task.json()["id"]
-        db_agent_run = session.get(Task, agent_run.json()["id"])
-        assert db_agent_run.status == TaskStatus.PENDING
-        assert db_agent_run.runner_id is None
-        assert db_agent_run.workspace_id == workspace.id
-        assert db_agent_run.device_id == "device-a"
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] != original["id"]
+        assert body["prompt"] == "rerun me"
+        assert body["command_id"]
+
+
+def test_run_templates_are_exposed_with_run_type() -> None:
+    for client, _session in make_client():
+        response = client.get("/run-templates")
+
+        assert response.status_code == 200
+        run_types = {item["run_type"] for item in response.json()}
+        assert {"PLAN", "IMPLEMENT"} <= run_types

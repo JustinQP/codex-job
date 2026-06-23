@@ -12,7 +12,7 @@ from agent.workspace_lock import LocalWorkspaceLock, is_write_sandbox
 from agent.workspace_registry import WorkspaceRegistry, WorkspaceRegistryError
 from backend.models import AgentCommandStatus
 from backend.schemas import AgentCommandLeaseRequest, AgentReconcileRequest
-from runner.codex_executor import check_clean_worktree, collect_git_artifacts, execute_codex
+from agent.codex_executor import check_clean_worktree, collect_git_artifacts, execute_codex
 
 
 class RunExecutor:
@@ -46,7 +46,8 @@ class RunExecutor:
         lease_token = str(command.get("lease_token") or "")
 
         sandbox = str(payload.get("sandbox") or "workspace-write")
-        owner = command_id or str(payload.get("task_id") or "run")
+        run_id = payload.get("run_id")
+        owner = command_id or str(run_id or "run")
         try:
             with self.workspace_lock.acquire(project_path, owner=f"run:{owner}", write=is_write_sandbox(sandbox)):
                 if os.environ.get("CODEX_AGENT_FAKE_RUN") == "1":
@@ -58,7 +59,7 @@ class RunExecutor:
                     if clean_error:
                         return CommandResult(False, clean_error)
 
-                job_dir = Path("data") / "agent-runs" / str(payload.get("task_id", command.get("id")))
+                job_dir = Path("data") / "agent-runs" / str(run_id or command.get("id"))
                 log_file = job_dir / "run.log"
                 result_file = job_dir / "result.md"
                 execution = execute_codex(
@@ -86,7 +87,7 @@ class RunExecutor:
     def _fake_execute(self, project_path: Path, payload: dict[str, Any]) -> CommandResult:
         return CommandResult(
             True,
-            f"fake run executed in {project_path} for task {payload.get('task_id')}",
+            f"fake run executed in {project_path} for run {payload.get('run_id')}",
         )
 
     def _should_cancel(self, command_id: str, lease_token: str) -> bool:

@@ -13,7 +13,7 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class TaskStatus(str, Enum):
+class RunStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
@@ -21,7 +21,7 @@ class TaskStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
-class TaskType(str, Enum):
+class RunType(str, Enum):
     PLAN = "PLAN"
     IMPLEMENT = "IMPLEMENT"
     REVIEW = "REVIEW"
@@ -62,7 +62,6 @@ class Project(SQLModel, table=True):
     smoke_check_command: Optional[str] = None
     default_branch: Optional[str] = None
     require_clean_worktree: Optional[bool] = None
-    default_runner_id: Optional[str] = Field(default=None, index=True)
     workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
     workspace_binding_status: WorkspaceBindingStatus = Field(
         default=WorkspaceBindingStatus.UNBOUND,
@@ -75,14 +74,14 @@ class Project(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
-class Task(SQLModel, table=True):
-    __tablename__ = "tasks"
+class Run(SQLModel, table=True):
+    __tablename__ = "runs"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="projects.id", index=True)
     prompt: str
-    task_type: TaskType = Field(default=TaskType.IMPLEMENT, index=True)
-    status: TaskStatus = Field(default=TaskStatus.PENDING, index=True)
+    run_type: RunType = Field(default=RunType.IMPLEMENT, index=True)
+    status: RunStatus = Field(default=RunStatus.PENDING, index=True)
     timeout_seconds: int = Field(default=7200)
     model: Optional[str] = None
     reasoning_effort: Optional[str] = None
@@ -90,9 +89,6 @@ class Task(SQLModel, table=True):
     exit_code: Optional[int] = None
     error_message: Optional[str] = None
     cancel_requested: bool = Field(default=False, index=True)
-    assigned_runner_id: Optional[str] = Field(default=None, index=True)
-    runner_id: Optional[str] = Field(default=None, index=True)
-    runner_pid: Optional[int] = None
     lease_expires_at: Optional[datetime] = Field(default=None, index=True)
     device_id: Optional[str] = Field(default=None, foreign_key="devices.device_id", index=True)
     workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
@@ -105,19 +101,6 @@ class Task(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
-
-
-class RunnerRecord(SQLModel, table=True):
-    __tablename__ = "runner_records"
-
-    runner_id: str = Field(primary_key=True)
-    pid: int
-    hostname: str
-    supported_models: Optional[str] = None
-    status: str = Field(default="ONLINE", index=True)
-    registered_at: datetime = Field(default_factory=utc_now)
-    last_heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
-    lease_expires_at: Optional[datetime] = Field(default=None, index=True)
 
 
 class Device(SQLModel, table=True):
@@ -241,8 +224,7 @@ class AppThread(SQLModel, table=True):
     approval_policy: Optional[str] = None
     network_access: bool = Field(default=False)
     command_id: Optional[str] = Field(default=None, foreign_key="agent_commands.id", index=True)
-    bridge_thread_id: Optional[str] = Field(default=None, index=True)
-    app_thread_id: Optional[str] = None
+    codex_thread_id: Optional[str] = Field(default=None, index=True)
     status: str = Field(default="CREATED", index=True)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -267,7 +249,7 @@ class AppTurn(SQLModel, table=True):
     assistant_final: Optional[str] = None
     status: str = Field(default="PENDING", index=True)
     error_message: Optional[str] = None
-    bridge_turn_id: Optional[str] = None
+    codex_turn_id: Optional[str] = None
     event_summary_json: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     started_at: Optional[datetime] = None
