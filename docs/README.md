@@ -6,6 +6,7 @@
 
 ### 使用与验收
 
+- [功能与用法说明](feature-usage.md)
 - [API 概览](api-overview.md)
 - [App Server 会话说明](app-server-session.md)
 - [状态机](state-machines.md)

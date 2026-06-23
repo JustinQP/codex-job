@@ -20,6 +20,7 @@ def test_readme_v2_overview_contains_key_sections() -> None:
 def test_current_docs_exist() -> None:
     expected = [
         "docs/README.md",
+        "docs/feature-usage.md",
         "docs/api-overview.md",
         "docs/app-server-session.md",
         "docs/state-machines.md",
@@ -42,6 +43,7 @@ def test_docs_root_contains_only_current_entry_documents() -> None:
         "README.md",
         "api-overview.md",
         "app-server-session.md",
+        "feature-usage.md",
         "smoke-checklist.md",
         "state-machines.md",
     }
