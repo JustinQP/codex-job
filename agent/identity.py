@@ -48,7 +48,7 @@ def load_or_create_identity(identity_path: Path, *, display_name: str) -> AgentI
 
 def load_identity(identity_path: Path) -> AgentIdentity:
     try:
-        raw = json.loads(identity_path.read_text(encoding="utf-8"))
+        raw = json.loads(identity_path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError as exc:
         raise AgentIdentityError(f"identity file not found: {identity_path}") from exc
     except json.JSONDecodeError as exc:

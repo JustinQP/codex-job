@@ -42,6 +42,22 @@ def test_corrupt_identity_reports_clear_error(tmp_path) -> None:
         load_or_create_identity(identity_path, display_name="Desk")
 
 
+def test_identity_file_with_utf8_bom_is_supported(tmp_path) -> None:
+    identity_path = tmp_path / "identity.json"
+    payload = {
+        "device_id": "device-a",
+        "display_name": "Desk",
+        "created_at": "2026-06-23T00:00:00+00:00",
+    }
+    identity_path.write_text(json.dumps(payload), encoding="utf-8-sig")
+
+    identity = load_or_create_identity(identity_path, display_name="Ignored")
+
+    assert identity.device_id == "device-a"
+    assert identity.display_name == "Desk"
+    assert identity.created_at == "2026-06-23T00:00:00+00:00"
+
+
 @pytest.mark.parametrize(
     "payload, message",
     [

@@ -16,10 +16,17 @@ def test_dual_fake_agent_script_has_safe_isolated_defaults() -> None:
     assert 'CODEX_AGENT_DATA_DIR' in script
     assert 'CODEX_AGENT_WORKSPACES_FILE' in script
     assert 'CODEX_AGENT_DISPLAY_NAME' in script
+    assert 'Write-Utf8NoBomJson' in script
+    assert '[System.Text.UTF8Encoding]::new($false)' in script
     assert '--register' in script
     assert '--sync-workspaces' in script
     assert '--run-loop' in script
     assert 'Start-Process' in script
+    assert 'agent-$($Agent.Name.ToLower()).out.log' in script
+    assert 'agent-$($Agent.Name.ToLower()).err.log' in script
+    assert '1> $stdoutLiteral 2> $stderrLiteral' in script
+    assert '-RedirectStandardOutput' not in script
+    assert '-RedirectStandardError' not in script
     assert '-WindowStyle Hidden' in script
     assert 'Stop-Process' in script
     assert 'Remove-Item -LiteralPath $DataRoot -Recurse -Force' in script

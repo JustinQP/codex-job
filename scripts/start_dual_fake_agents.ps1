@@ -51,6 +51,26 @@ function Ensure-Directory {
     }
 }
 
+function Write-Utf8NoBomJson {
+    param(
+        [string]$Path,
+        [object]$Value,
+        [int]$Depth = 4
+    )
+
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    [System.IO.File]::WriteAllText(
+        $Path,
+        "$json$([Environment]::NewLine)",
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
+function ConvertTo-PowerShellSingleQuotedLiteral {
+    param([string]$Value)
+    return "'$($Value -replace "'", "''")'"
+}
+
 function Write-AgentFiles {
     param([hashtable]$Agent)
 
@@ -59,15 +79,16 @@ function Write-AgentFiles {
 
     $identityPath = Join-Path $Agent.DataDir "identity.json"
     if (-not (Test-Path -LiteralPath $identityPath)) {
-        @{
+        $identity = @{
             device_id = $Agent.DeviceId
             display_name = $Agent.DisplayName
             created_at = (Get-Date).ToUniversalTime().ToString("o")
-        } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $identityPath
+        }
+        Write-Utf8NoBomJson -Path $identityPath -Value $identity -Depth 4
     }
 
     $workspaceFile = Join-Path $Agent.DataDir "workspaces.json"
-    @{
+    $workspaces = @{
         allowed_roots = @($WorkspaceRoot)
         workspaces = @(
             @{
@@ -77,7 +98,8 @@ function Write-AgentFiles {
                 enabled = $true
             }
         )
-    } | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -Path $workspaceFile
+    }
+    Write-Utf8NoBomJson -Path $workspaceFile -Value $workspaces -Depth 8
 }
 
 function Invoke-AgentOnce {
@@ -110,19 +132,20 @@ function Start-AgentLoop {
     }
 
     $envScript = ($envBlock.GetEnumerator() | ForEach-Object {
-        '$env:{0} = "{1}"' -f $_.Key, ($_.Value -replace '"', '\"')
+        '$env:{0} = {1}' -f $_.Key, (ConvertTo-PowerShellSingleQuotedLiteral ([string]$_.Value))
     }) -join "; "
-    $agentCommand = "$envScript; python -m agent.main --run-loop"
-    $logPath = Join-Path $LogRoot "agent-$($Agent.Name.ToLower()).log"
+    $stdoutLogPath = Join-Path $LogRoot "agent-$($Agent.Name.ToLower()).out.log"
+    $stderrLogPath = Join-Path $LogRoot "agent-$($Agent.Name.ToLower()).err.log"
+    $stdoutLiteral = ConvertTo-PowerShellSingleQuotedLiteral $stdoutLogPath
+    $stderrLiteral = ConvertTo-PowerShellSingleQuotedLiteral $stderrLogPath
+    $agentCommand = "$envScript; python -m agent.main --run-loop 1> $stdoutLiteral 2> $stderrLiteral"
     $process = Start-Process -FilePath "powershell.exe" `
         -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $agentCommand) `
         -WorkingDirectory $RootDir `
-        -RedirectStandardOutput $logPath `
-        -RedirectStandardError $logPath `
         -WindowStyle Hidden `
         -PassThru
     Set-Content -Encoding ASCII -Path (Join-Path $PidRoot "agent-$($Agent.Name.ToLower()).pid") -Value $process.Id
-    Write-Host "Started $($Agent.DisplayName) pid=$($process.Id) log=$logPath"
+    Write-Host "Started $($Agent.DisplayName) pid=$($process.Id) stdout=$stdoutLogPath stderr=$stderrLogPath"
 }
 
 function Stop-Agents {
