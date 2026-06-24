@@ -152,6 +152,7 @@ python scripts\verify_data_migration.py
 ```powershell
 python -m compileall backend agent scripts
 pytest -q tests --basetemp .pytest-tmp-v2-mainline
+python scripts\smoke_local_e2e.py
 cd frontend
 npm.cmd run typecheck
 npm.cmd run build
@@ -159,7 +160,14 @@ cd ..
 git diff --check
 ```
 
-## 7. 当前限制
+## 7. 部署安全边界
+
+- 只在本机或可信局域网运行，不按公网服务部署。
+- API_TOKEN 和 AGENT_TOKEN 必须配置且不能相同。
+- 后端绑定 `0.0.0.0` 时，必须确认网络边界可信，并避免把端口暴露到公网。
+- Token 只提供单用户工具级保护，不等同于多用户权限系统或审计系统。
+
+## 8. 当前限制
 
 - 面向本地或可信局域网，不建议公网部署。
 - API Token 不是完整多用户权限系统。

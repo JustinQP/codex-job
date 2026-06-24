@@ -170,6 +170,43 @@ def test_complete_retry_does_not_execute_handler_twice(tmp_path) -> None:
     assert state.load_current_command() is None
 
 
+def test_completion_pending_after_process_restart_does_not_execute_handler_again(tmp_path) -> None:
+    client = FakeClient()
+    client.fail_complete_once = True
+    state = AgentLocalState(tmp_path / "state.json")
+    first_handler = CountingHandler()
+    first_loop = AgentCommandLoop(
+        client=client,
+        identity=identity(),
+        local_state=state,
+        handlers=type("Handlers", (), {"handle": first_handler.handle})(),
+        poll_interval_seconds=0,
+        max_retries=1,
+    )
+
+    try:
+        first_loop.run_once()
+    except AgentApiError:
+        pass
+    else:
+        raise AssertionError("expected first complete to fail")
+
+    second_handler = CountingHandler()
+    restarted_loop = AgentCommandLoop(
+        client=client,
+        identity=identity(),
+        local_state=state,
+        handlers=type("Handlers", (), {"handle": second_handler.handle})(),
+        poll_interval_seconds=0,
+    )
+    restarted_loop.run_once()
+
+    assert first_handler.count == 1
+    assert second_handler.count == 0
+    assert len(client.completed) == 1
+    assert state.load_current_command() is None
+
+
 def test_executing_command_after_agent_restart_completes_failed_without_rerun(tmp_path) -> None:
     client = FakeClient()
     state = AgentLocalState(tmp_path / "state.json")

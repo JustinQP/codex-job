@@ -264,6 +264,62 @@ def test_renew_run_command_extends_workspace_lock(monkeypatch) -> None:
         assert renewed_lock.lease_expires_at > old_lock_expiry
 
 
+def test_cancelled_running_run_releases_workspace_lock_after_agent_completion(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+        created = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "prompt": "long write",
+                "sandbox": "workspace-write",
+            },
+        ).json()
+        claim = client.post(
+            "/agent/commands/claim",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "claim_request_id": "claim-cancel"},
+        ).json()
+        client.post(
+            f"/agent/commands/{created['command_id']}/ack",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={"device_id": "device-a", "lease_token": claim["lease_token"]},
+        )
+        cancel = client.post(f"/runs/{created['id']}/cancel")
+        complete = client.post(
+            f"/agent/commands/{created['command_id']}/complete",
+            headers={"X-Agent-Token": "agent-secret"},
+            json={
+                "device_id": "device-a",
+                "lease_token": claim["lease_token"],
+                "status": AgentCommandStatus.FAILED.value,
+                "error_message": "run cancelled",
+            },
+        )
+        next_run = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "prompt": "after cancel",
+                "sandbox": "workspace-write",
+            },
+        )
+
+        assert cancel.status_code == 200
+        assert cancel.json()["cancel_requested"] is True
+        assert complete.status_code == 200
+        assert complete.json()["status"] == AgentCommandStatus.CANCELLED.value
+        run = session.get(Run, created["id"])
+        assert run.status == RunStatus.CANCELLED
+        assert session.exec(select(WorkspaceExecutionLock)).all()[0].owner_id == str(next_run.json()["id"])
+        assert next_run.status_code == 200
+
+
 def test_closing_write_session_releases_workspace_lock() -> None:
     for client, session in make_client():
         project = add_project(session)

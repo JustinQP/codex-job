@@ -14,6 +14,8 @@ def test_readme_v2_overview_contains_key_sections() -> None:
     assert "/mobile" in readme
     assert "Device Agent" in readme
     assert "python -m compileall backend agent scripts" in readme
+    assert "API_TOKEN 和 AGENT_TOKEN 必须配置且不能相同" in readme
+    assert "只在本机或可信局域网运行" in readme
     assert "/runs" in readme
 
 
@@ -84,3 +86,15 @@ def test_engineering_baseline_is_not_a_copy_of_docs_governance() -> None:
     assert engineering != governance
     assert "异步任务与进程" in engineering
     assert "计划生命周期" in governance
+
+
+def test_smoke_checklist_documents_local_e2e_script() -> None:
+    smoke = (DOCS / "smoke-checklist.md").read_text(encoding="utf-8")
+
+    assert "python scripts\\smoke_local_e2e.py" in smoke
+    assert "Control Plane" in smoke
+    assert "Device Agent" in smoke
+    assert "read-only Run" in smoke
+    assert "Session Turn" in smoke
+    assert "取消" in smoke
+    assert "关闭" in smoke

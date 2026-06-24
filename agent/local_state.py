@@ -33,6 +33,7 @@ class PendingCommandEvent:
 class AgentLocalState:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.backup_path = path.with_suffix(path.suffix + ".bak")
 
     def load_current_command(self) -> CurrentCommandState | None:
         raw = self._load_raw()
@@ -122,22 +123,77 @@ class AgentLocalState:
 
     def _load_raw(self) -> dict:
         if not self.path.exists():
+            if self.backup_path.exists():
+                return self._load_backup_raw()
             return {}
         try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            raw = self._read_json_object(self.path)
         except json.JSONDecodeError as exc:
+            if self.backup_path.exists():
+                return self._load_backup_raw()
             raise AgentLocalStateError(f"agent state is not valid JSON: {self.path}") from exc
         except OSError as exc:
+            if self.backup_path.exists():
+                return self._load_backup_raw()
             raise AgentLocalStateError(f"agent state cannot be read: {self.path}") from exc
-        if not isinstance(raw, dict):
-            raise AgentLocalStateError(f"agent state must contain a JSON object: {self.path}")
         return raw
 
     def _write_raw(self, raw: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp_path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+        _write_json_atomic_source(tmp_path, raw)
+        if self.path.exists():
+            backup_tmp_path = self.backup_path.with_suffix(self.backup_path.suffix + ".tmp")
+            _copy_file_with_fsync(self.path, backup_tmp_path)
+            os.replace(backup_tmp_path, self.backup_path)
         os.replace(tmp_path, self.path)
+        _fsync_directory(self.path.parent)
+
+    def _load_backup_raw(self) -> dict:
+        try:
+            raw = self._read_json_object(self.backup_path)
+        except json.JSONDecodeError as exc:
+            raise AgentLocalStateError(
+                f"agent state and backup are not valid JSON: {self.path}"
+            ) from exc
+        except OSError as exc:
+            raise AgentLocalStateError(f"agent state backup cannot be read: {self.backup_path}") from exc
+        self._write_raw(raw)
+        return raw
+
+    def _read_json_object(self, path: Path) -> dict:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise AgentLocalStateError(f"agent state must contain a JSON object: {path}")
+        return raw
+
+
+def _write_json_atomic_source(path: Path, raw: dict) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as file:
+        json.dump(raw, file, indent=2)
+        file.write("\n")
+        file.flush()
+        os.fsync(file.fileno())
+
+
+def _copy_file_with_fsync(source_path: Path, target_path: Path) -> None:
+    with source_path.open("rb") as source, target_path.open("wb") as target:
+        target.write(source.read())
+        target.flush()
+        os.fsync(target.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    try:
+        directory_fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def _required_string(raw: dict, key: str, path: Path) -> str:
