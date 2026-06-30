@@ -81,6 +81,14 @@ export type Run = {
   finished_at?: string | null;
 };
 
+export type RunArtifacts = {
+  log_url: string;
+  result_url: string;
+  diff_url: string;
+  git_status_url: string;
+  report_url: string;
+};
+
 export type RunTemplate = {
   run_type: RunType;
   title: string;

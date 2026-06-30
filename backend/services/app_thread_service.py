@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from backend.models import AgentCommand, AgentCommandStatus, AppThread, AppTurn, Device, DeviceStatus, Project, Workspace, utc_now
+from backend.models import AgentCommand, AgentCommandStatus, AppThread, AppTurn, Device, Project, Workspace, utc_now
 from backend.schemas import (
     AppThreadCreate,
     AppThreadEventsRead,
@@ -18,7 +18,7 @@ from backend.schemas import (
     AppTurnCreate,
     AppTurnRead,
 )
-from backend.services import agent_command_service, project_service, turn_event_service, workspace_lock_service
+from backend.services import agent_command_service, device_service, project_service, turn_event_service, workspace_lock_service
 
 
 APP_THREAD_CREATED = "CREATED"
@@ -443,10 +443,21 @@ def create_async_app_turn(session: Session, app_thread_id: int, payload: AppTurn
     message = str(payload.message or "").strip()
     if not message:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="message cannot be empty")
-    return create_agent_async_app_turn(session, app_thread, message)
+    return create_agent_async_app_turn(
+        session,
+        app_thread,
+        message,
+        timeout_seconds=payload.timeout_seconds,
+    )
 
 
-def create_agent_async_app_turn(session: Session, app_thread: AppThread, message: str) -> AppTurn:
+def create_agent_async_app_turn(
+    session: Session,
+    app_thread: AppThread,
+    message: str,
+    *,
+    timeout_seconds: int | None = None,
+) -> AppTurn:
     if app_thread.id is None:
         raise ValueError("app thread id is required")
     _ensure_app_thread_can_accept_turn(app_thread)
@@ -485,6 +496,7 @@ def create_agent_async_app_turn(session: Session, app_thread: AppThread, message
                 "workspace_key": workspace.workspace_key,
                 "generation": app_thread.generation,
                 "message": message,
+                "timeout_seconds": timeout_seconds,
                 "sandbox": app_thread.sandbox,
                 "approval_policy": app_thread.approval_policy,
                 "network_access": app_thread.network_access,
@@ -742,14 +754,7 @@ def _get_usable_workspace(session: Session, workspace_id: int) -> Workspace:
 
 
 def _get_usable_device(session: Session, device_id: str) -> Device:
-    device = session.get(Device, device_id)
-    if device is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="device not found")
-    if device.status == DeviceStatus.DISABLED:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device is disabled")
-    if device.status != DeviceStatus.ONLINE:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device is offline")
-    return device
+    return device_service.ensure_online_device(session, device_id)
 
 
 def _get_aggregate_app_thread(session: Session, command: AgentCommand) -> AppThread | None:

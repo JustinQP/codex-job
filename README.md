@@ -96,6 +96,8 @@ python -m agent.main --sync-workspaces
 python -m agent.main --run-loop
 ```
 
+`CODEX_AGENT_DATA_DIR` 是 Agent 本地状态根目录：`identity.json`、`state.json`、默认 `workspaces.json`、app-server 会话数据和 Run 本地产物都在此目录下管理。其中一次性 Run 的日志和产物会写入 `CODEX_AGENT_DATA_DIR\runs\{run_id}`，避免从不同 cwd 启动 Agent 时落到相对 `data\agent-runs`。
+
 开发期双 fake Agent 可用：
 
 ```powershell

@@ -26,12 +26,14 @@ class RunExecutor:
         device_id: str | None = None,
         process_registry: ProcessRegistry | None = None,
         workspace_lock: LocalWorkspaceLock | None = None,
+        run_data_dir: Path = Path("data") / "agent-runs",
     ) -> None:
         self.workspace_registry = workspace_registry
         self.client = client
         self.device_id = device_id
         self.process_registry = process_registry or ProcessRegistry()
         self.workspace_lock = workspace_lock or LocalWorkspaceLock()
+        self.run_data_dir = run_data_dir
 
     def handle(self, command: dict[str, Any]) -> CommandResult:
         try:
@@ -61,7 +63,7 @@ class RunExecutor:
                     if clean_error:
                         return CommandResult(False, clean_error)
 
-                job_dir = Path("data") / "agent-runs" / str(run_id or command.get("id"))
+                job_dir = self.run_data_dir / str(run_id or command.get("id"))
                 log_file = job_dir / "run.log"
                 result_file = job_dir / "result.md"
                 log_uploader = self._build_log_uploader(log_file)

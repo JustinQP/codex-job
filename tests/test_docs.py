@@ -27,6 +27,7 @@ def test_current_docs_exist() -> None:
         "docs/app-server-session.md",
         "docs/state-machines.md",
         "docs/smoke-checklist.md",
+        "docs/real-dual-device-smoke.md",
         "docs/30-rules/ai-workflow.md",
         "docs/30-rules/docs-governance.md",
         "docs/30-rules/engineering-baseline.md",
@@ -46,6 +47,7 @@ def test_docs_root_contains_only_current_entry_documents() -> None:
         "api-overview.md",
         "app-server-session.md",
         "feature-usage.md",
+        "real-dual-device-smoke.md",
         "smoke-checklist.md",
         "state-machines.md",
     }
@@ -92,6 +94,7 @@ def test_smoke_checklist_documents_local_e2e_script() -> None:
     smoke = (DOCS / "smoke-checklist.md").read_text(encoding="utf-8")
 
     assert "python scripts\\smoke_local_e2e.py" in smoke
+    assert "real-dual-device-smoke.md" in smoke
     assert "Control Plane" in smoke
     assert "Device Agent" in smoke
     assert "read-only Run" in smoke
@@ -105,3 +108,16 @@ def test_pytest_defaults_do_not_use_data_runtime_paths() -> None:
 
     assert "data/pytest-tmp-current" not in pytest_ini
     assert "data/pytest-cache" not in pytest_ini
+
+
+def test_real_dual_device_smoke_checklist_documents_required_evidence() -> None:
+    checklist = (DOCS / "real-dual-device-smoke.md").read_text(encoding="utf-8")
+
+    assert "two real devices" in checklist
+    assert "workspace_key" in checklist
+    assert "read-only session" in checklist
+    assert "workspace-write run" in checklist
+    assert "cancel" in checklist
+    assert "reopen" in checklist
+    assert "PASS/FAIL" in checklist
+    assert "not automated" in checklist

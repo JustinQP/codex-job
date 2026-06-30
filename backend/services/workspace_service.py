@@ -8,6 +8,7 @@ from backend.schemas import (
     WorkspaceRead,
     WorkspaceSyncRead,
     WorkspaceSyncRequest,
+    WorkspaceUpdate,
     WorkspaceUpsert,
 )
 
@@ -83,6 +84,30 @@ def get_workspace_or_404(session: Session, workspace_id: int) -> Workspace:
     return workspace
 
 
+def update_workspace(session: Session, workspace_id: int, payload: WorkspaceUpdate) -> Workspace:
+    workspace = get_workspace_or_404(session, workspace_id)
+    fields = payload.model_dump(exclude_unset=True)
+    if "name" in fields and payload.name is not None:
+        workspace.name = payload.name.strip()
+    if "enabled" in fields and payload.enabled is not None:
+        workspace.enabled = payload.enabled
+    if "default_model" in fields:
+        workspace.default_model = payload.default_model
+    if "default_reasoning_effort" in fields:
+        workspace.default_reasoning_effort = payload.default_reasoning_effort
+    if "default_sandbox" in fields:
+        workspace.default_sandbox = payload.default_sandbox
+    if "default_approval_policy" in fields:
+        workspace.default_approval_policy = payload.default_approval_policy
+    if "require_clean_worktree" in fields:
+        workspace.require_clean_worktree = payload.require_clean_worktree
+    workspace.updated_at = utc_now()
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+    return workspace
+
+
 def ensure_workspace_enabled(session: Session, workspace_id: int) -> Workspace:
     workspace = get_workspace_or_404(session, workspace_id)
     if not workspace.enabled:
@@ -101,7 +126,6 @@ def sync_device_workspaces(session: Session, payload: WorkspaceSyncRequest) -> W
         )
 
     seen_keys = set()
-    synced: list[Workspace] = []
     for item in payload.workspaces:
         if item.workspace_key in seen_keys:
             raise HTTPException(
@@ -109,38 +133,39 @@ def sync_device_workspaces(session: Session, payload: WorkspaceSyncRequest) -> W
                 detail=f"duplicate workspace key: {item.workspace_key}",
             )
         seen_keys.add(item.workspace_key)
-        synced.append(
-            upsert_workspace(
-                session,
-                WorkspaceUpsert(
-                    device_id=payload.device_id,
-                    workspace_key=item.workspace_key,
-                    name=item.name,
-                    path_label=item.path_label,
-                    enabled=item.enabled,
-                    default_model=item.default_model,
-                    default_reasoning_effort=item.default_reasoning_effort,
-                    default_sandbox=item.default_sandbox,
-                    default_approval_policy=item.default_approval_policy,
-                    require_clean_worktree=item.require_clean_worktree,
-                ),
+
+    existing_by_key = {
+        workspace.workspace_key: workspace
+        for workspace in session.exec(
+            select(Workspace).where(Workspace.device_id == payload.device_id)
+        ).all()
+    }
+    now = utc_now()
+    synced: list[Workspace] = []
+    for item in payload.workspaces:
+        workspace = existing_by_key.get(item.workspace_key)
+        if workspace is None:
+            workspace = Workspace(
+                workspace_key=item.workspace_key,
+                device_id=payload.device_id,
+                created_at=now,
+                updated_at=now,
             )
-        )
+        _apply_workspace_sync_item(workspace, item, now=now)
+        session.add(workspace)
+        synced.append(workspace)
 
     disabled_count = 0
-    now = utc_now()
-    existing = session.exec(
-        select(Workspace).where(Workspace.device_id == payload.device_id)
-    ).all()
-    for workspace in existing:
+    for workspace in existing_by_key.values():
         if workspace.workspace_key in seen_keys or not workspace.enabled:
             continue
         workspace.enabled = False
         workspace.updated_at = now
         session.add(workspace)
         disabled_count += 1
-    if disabled_count:
-        session.commit()
+    session.commit()
+    for workspace in synced:
+        session.refresh(workspace)
 
     return WorkspaceSyncRead(
         synced_count=len(synced),
@@ -150,3 +175,15 @@ def sync_device_workspaces(session: Session, payload: WorkspaceSyncRequest) -> W
             for workspace in list_workspaces(session, device_id=payload.device_id)
         ],
     )
+
+
+def _apply_workspace_sync_item(workspace: Workspace, item, *, now) -> None:
+    workspace.name = item.name
+    workspace.path_label = item.path_label
+    workspace.enabled = item.enabled
+    workspace.default_model = item.default_model
+    workspace.default_reasoning_effort = item.default_reasoning_effort
+    workspace.default_sandbox = item.default_sandbox
+    workspace.default_approval_policy = item.default_approval_policy
+    workspace.require_clean_worktree = item.require_clean_worktree
+    workspace.updated_at = now

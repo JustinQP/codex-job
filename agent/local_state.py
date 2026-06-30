@@ -90,6 +90,12 @@ class AgentLocalState:
             )
         return sorted(result, key=lambda item: item.sequence)
 
+    def latest_pending_event_sequence(self, command_id: str) -> int | None:
+        pending = self.load_pending_events(command_id)
+        if not pending:
+            return None
+        return max(event.sequence for event in pending)
+
     def append_pending_event(self, event: PendingCommandEvent) -> None:
         raw = self._load_raw()
         events = raw.setdefault("pending_events", [])
@@ -117,6 +123,27 @@ class AgentLocalState:
                 isinstance(event, dict)
                 and event.get("command_id") == command_id
                 and int(event.get("sequence", 0)) <= through_sequence
+            )
+        ]
+        self._write_raw(raw)
+
+    def clear_pending_events_range(
+        self,
+        command_id: str,
+        *,
+        from_sequence: int,
+        through_sequence: int,
+    ) -> None:
+        raw = self._load_raw()
+        events = raw.get("pending_events", [])
+        if not isinstance(events, list):
+            raise AgentLocalStateError(f"pending_events must be a list: {self.path}")
+        raw["pending_events"] = [
+            event for event in events
+            if not (
+                isinstance(event, dict)
+                and event.get("command_id") == command_id
+                and from_sequence <= int(event.get("sequence", 0)) <= through_sequence
             )
         ]
         self._write_raw(raw)

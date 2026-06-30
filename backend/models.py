@@ -156,6 +156,19 @@ class WorkspaceExecutionLock(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class AuditEvent(SQLModel, table=True):
+    __tablename__ = "audit_events"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    action: str = Field(index=True)
+    entity_type: str = Field(index=True)
+    entity_id: str = Field(index=True)
+    actor_type: str = Field(default="system", index=True)
+    actor_id: Optional[str] = Field(default=None, index=True)
+    payload_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class AgentCommand(SQLModel, table=True):
     __tablename__ = "agent_commands"
     __table_args__ = (

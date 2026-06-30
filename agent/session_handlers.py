@@ -73,6 +73,7 @@ class TurnStartHandler:
             agent_session_id = str(payload["agent_session_id"])
             app_turn_id = int(payload["app_turn_id"])
             message = str(payload["message"])
+            timeout_seconds = int(payload.get("timeout_seconds") or 180)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return CommandResult(False, f"invalid turn start payload: {exc}")
 
@@ -93,6 +94,7 @@ class TurnStartHandler:
             result = self.session_manager.run_turn(
                 agent_session_id=agent_session_id,
                 message=message,
+                timeout=float(timeout_seconds),
                 command_id=command_id,
                 uploader=self.event_uploader,
                 device_id=device_id,

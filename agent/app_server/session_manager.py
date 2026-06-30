@@ -57,11 +57,13 @@ class AgentAppSessionManager:
         codex_command: str | None = None,
         data_dir: Path = Path("data") / "agent-app-server",
         client_factory: Callable[[list[str], Path, Path, Path], JsonlRpcClient] = JsonlRpcClient,
+        max_client_messages: int = 200,
     ) -> None:
         self.workspace_registry = workspace_registry
         self.codex_command = codex_command or find_codex_bin()
         self.data_dir = data_dir
         self.client_factory = client_factory
+        self.max_client_messages = max_client_messages
         self._sessions: dict[str, AgentAppSession] = {}
         self._lock = RLock()
 
@@ -261,6 +263,7 @@ class AgentAppSessionManager:
                 },
             )
             _flush_events_safely(uploader, command_id=command_id, device_id=device_id, lease_token=lease_token)
+        _trim_client_messages(session.client, self.max_client_messages)
         return AgentAppTurnResult(
             codex_turn_id=codex_turn_id,
             assistant_final=assistant_final,
@@ -381,6 +384,19 @@ def _sandbox_policy(sandbox: str, network_access: bool) -> dict:
 def _client_messages(client: JsonlRpcClient) -> list[dict]:
     with client._condition:
         return list(client._messages)
+
+
+def _trim_client_messages(client: JsonlRpcClient, max_messages: int) -> None:
+    if max_messages < 1:
+        return
+    trim = getattr(client, "trim_messages", None)
+    if callable(trim):
+        trim(max_messages)
+        return
+    with client._condition:
+        excess = len(client._messages) - max_messages
+        if excess > 0:
+            del client._messages[:excess]
 
 
 def _events_for_turn(events: list[dict], turn_id: str, request_id: str) -> list[dict]:

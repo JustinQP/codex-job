@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  APP_THREAD_TITLE_MAX_LENGTH,
+  APP_TURN_MESSAGE_MAX_LENGTH,
+  APP_TURN_TIMEOUT_DEFAULT_SECONDS,
+  APP_TURN_TIMEOUT_MAX_SECONDS,
+  APP_TURN_TIMEOUT_MIN_SECONDS,
   cancelAppTurn,
   cleanupAppThreads,
   closeAppThread,
@@ -61,6 +66,7 @@ export function SessionPage({ showToast }: PageProps) {
   const [currentWorkspaceIdText, setCurrentWorkspaceIdText] = useLocalStorage(UI_STATE_KEYS.currentWorkspaceId, "");
   const [sendMode, setSendMode] = useLocalStorage(UI_STATE_KEYS.appSendMode, "async");
   const [message, setMessage] = useState("");
+  const [turnTimeoutSeconds, setTurnTimeoutSeconds] = useState(APP_TURN_TIMEOUT_DEFAULT_SECONDS);
   const [waitingText, setWaitingText] = useState("");
   const [error, setError] = useState("");
   const [sheet, setSheet] = useState<"switch" | "more" | "final" | "events" | null>(null);
@@ -412,7 +418,11 @@ export function SessionPage({ showToast }: PageProps) {
     startTurnStream(runningTurn.id);
   }, [runningTurn?.id]);
 
-  async function handleCreateThread(projectId: number, title: string) {
+  async function handleCreateThread(
+    projectId: number,
+    title: string,
+    options: { sandbox?: string; approvalPolicy?: string; networkAccess?: boolean } = {}
+  ) {
     if (executionDisabledReason) {
       showToast(executionDisabledReason, "warning");
       return;
@@ -426,7 +436,12 @@ export function SessionPage({ showToast }: PageProps) {
       const effectiveWorkspaceId = currentWorkspace?.id || null;
       setCurrentProjectIdText(String(effectiveProjectId));
       if (effectiveWorkspaceId) setCurrentWorkspaceIdText(String(effectiveWorkspaceId));
-      const thread = await createAppThread(effectiveProjectId, title, effectiveWorkspaceId);
+      const thread = await createAppThread(effectiveProjectId, title, {
+        workspaceId: effectiveWorkspaceId,
+        sandbox: options.sandbox,
+        approvalPolicy: options.approvalPolicy,
+        networkAccess: options.networkAccess
+      });
       setSelectedThreadIdText(String(thread.id));
       setSheet(null);
       showToast("会话已创建", "success");
@@ -442,11 +457,11 @@ export function SessionPage({ showToast }: PageProps) {
   }
 
   async function handleSend() {
-    if (!selectedThreadId || !message.trim()) return;
+    if (!selectedThreadId || !message.trim() || message.length > APP_TURN_MESSAGE_MAX_LENGTH) return;
     setWaitingText("正在等待 App Server 返回，请不要刷新页面。");
     try {
       const sender = sendMode === "async" ? sendAsyncAppTurn : sendAppTurn;
-      const turn = await sender(selectedThreadId, message.trim());
+      const turn = await sender(selectedThreadId, message.trim(), clampTurnTimeout(turnTimeoutSeconds));
       setMessage("");
       forceScrollAfterSendRef.current = true;
       setTurns((current) => [...current, turn]);
@@ -589,11 +604,14 @@ export function SessionPage({ showToast }: PageProps) {
         <Composer
           disabled={Boolean(disabledReason)}
           disabledReason={disabledReason}
+          maxMessageLength={APP_TURN_MESSAGE_MAX_LENGTH}
           message={message}
           onMessageChange={setMessage}
           onSend={handleSend}
+          onTimeoutSecondsChange={(value) => setTurnTimeoutSeconds(clampTurnTimeout(value))}
           onToggleMode={() => setSendMode(sendMode === "async" ? "sync" : "async")}
           sendMode={sendMode}
+          timeoutSeconds={turnTimeoutSeconds}
           waitingText={waitingText || (runningTurn ? "正在等待回复，可以继续编辑，但暂时不能发送" : "")}
         />
       </div>
@@ -602,6 +620,7 @@ export function SessionPage({ showToast }: PageProps) {
         <Sheet onClose={() => setSheet(null)} title="切换会话">
           <ThreadSwitcherSheet
             createDisabledReason={executionDisabledReason}
+            maxTitleLength={APP_THREAD_TITLE_MAX_LENGTH}
             onCreate={handleCreateThread}
             onRefresh={() => void loadAll()}
             onIncludeArchivedChange={(nextIncludeArchived) => {
@@ -717,4 +736,12 @@ function stringFromPayload(payload: Record<string, unknown>, key: string): strin
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function clampTurnTimeout(value: number): number {
+  if (!Number.isFinite(value)) return APP_TURN_TIMEOUT_DEFAULT_SECONDS;
+  return Math.min(
+    APP_TURN_TIMEOUT_MAX_SECONDS,
+    Math.max(APP_TURN_TIMEOUT_MIN_SECONDS, Math.round(value))
+  );
 }

@@ -7,9 +7,9 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from backend.db import JOBS_DIR
-from backend.models import AgentCommand, AgentCommandStatus, Device, DeviceStatus, Project, Run, RunStatus, RunType, Workspace, utc_now
+from backend.models import AgentCommand, AgentCommandStatus, Device, Project, Run, RunStatus, RunType, Workspace, utc_now
 from backend.schemas import RunCreate
-from backend.services import agent_command_service, project_service, workspace_lock_service
+from backend.services import audit_service, agent_command_service, device_service, project_service, workspace_lock_service
 
 
 RUN_TEMPLATES: dict[RunType, tuple[str, str]] = {
@@ -65,13 +65,7 @@ def create_run(session: Session, payload: RunCreate) -> Run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workspace not found")
     if not workspace.enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace is disabled")
-    device = session.get(Device, workspace.device_id)
-    if device is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="device not found")
-    if device.status == DeviceStatus.DISABLED:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device is disabled")
-    if device.status != DeviceStatus.ONLINE:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device is offline")
+    device_service.ensure_online_device(session, workspace.device_id)
     project = session.get(Project, payload.project_id)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
@@ -133,6 +127,13 @@ def create_run(session: Session, payload: RunCreate) -> Run:
         session.rollback()
         raise
     run.command_id = command.id
+    audit_service.record_event(
+        session,
+        action="run.created",
+        entity_type="run",
+        entity_id=run.id,
+        payload={"command_id": command.id, "workspace_id": workspace.id},
+    )
     session.add(run)
     session.commit()
     session.refresh(run)
@@ -260,6 +261,13 @@ def mark_run_running(session: Session, *, command_id: str) -> Run | None:
     run.lease_expires_at = command.lease_expires_at
     run.updated_at = now
     session.add(run)
+    audit_service.record_event(
+        session,
+        action="run.running",
+        entity_type="run",
+        entity_id=run.id,
+        payload={"command_id": command.id},
+    )
     session.commit()
     session.refresh(run)
     return run
@@ -316,6 +324,13 @@ def complete_run_command(session: Session, *, command_id: str) -> Run | None:
     run.lease_expires_at = None
     run.updated_at = now
     session.add(run)
+    audit_service.record_event(
+        session,
+        action="run.completed",
+        entity_type="run",
+        entity_id=run.id,
+        payload={"command_id": command.id, "status": run.status.value},
+    )
     session.commit()
     session.refresh(run)
     return run

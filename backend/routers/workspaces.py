@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from backend.db import get_session
 from backend.dependencies import require_api_token
-from backend.schemas import WorkspaceRead
+from backend.schemas import WorkspaceRead, WorkspaceUpdate
 from backend.services import workspace_service
 
 
@@ -33,3 +33,13 @@ def get_workspace(
     _: None = Depends(require_api_token),
 ):
     return workspace_service.get_workspace_or_404(session, workspace_id)
+
+
+@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceRead)
+def update_workspace(
+    workspace_id: int,
+    payload: WorkspaceUpdate,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    return workspace_service.update_workspace(session, workspace_id, payload)

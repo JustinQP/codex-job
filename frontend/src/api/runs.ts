@@ -1,6 +1,8 @@
 import { apiRequest } from "./client";
 import type { Run, RunTemplate, RunType } from "./types";
 
+export type RunArtifactKind = "log" | "result" | "diff" | "git_status" | "report";
+
 export type RunCreatePayload = {
   project_id: number;
   prompt: string;
@@ -28,6 +30,17 @@ export function listRuns(options: ListRunsOptions = {}) {
 
 export function getRun(runId: number) {
   return apiRequest<Run>(`/runs/${runId}`);
+}
+
+export function fetchRunArtifactText(runId: number, artifact: RunArtifactKind) {
+  const paths: Record<RunArtifactKind, string> = {
+    log: `/runs/${runId}/log`,
+    result: `/runs/${runId}/result`,
+    diff: `/runs/${runId}/diff`,
+    git_status: `/runs/${runId}/artifacts/git-status`,
+    report: `/runs/${runId}/artifacts/report`,
+  };
+  return apiRequest<string>(paths[artifact]);
 }
 
 export function createRun(payload: RunCreatePayload) {

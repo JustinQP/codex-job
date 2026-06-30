@@ -13,8 +13,13 @@ type ThreadSwitcherSheetProps = {
   currentProjectId: number | null;
   statusFilter: string;
   includeArchived: boolean;
+  maxTitleLength: number;
   createDisabledReason?: string;
-  onCreate: (projectId: number, title: string) => void;
+  onCreate: (
+    projectId: number,
+    title: string,
+    options: { sandbox?: string; approvalPolicy?: string; networkAccess?: boolean }
+  ) => void;
   onIncludeArchivedChange: (includeArchived: boolean) => void;
   onSelect: (thread: AppThread) => void;
   onRefresh: () => void;
@@ -31,12 +36,17 @@ export function ThreadSwitcherSheet({
   projects,
   createDisabledReason = "",
   currentProjectId,
+  maxTitleLength,
   selectedThreadId,
   statusFilter,
   threads
 }: ThreadSwitcherSheetProps) {
   const [projectId, setProjectId] = useState(currentProjectId || projects[0]?.id || 0);
   const [title, setTitle] = useState("");
+  const [sandbox, setSandbox] = useState("read-only");
+  const [approvalPolicy, setApprovalPolicy] = useState("never");
+  const [networkAccess, setNetworkAccess] = useState(false);
+  const titleOverLimit = title.length > maxTitleLength;
 
   useEffect(() => {
     const fallbackProjectId = currentProjectId || projects[0]?.id || 0;
@@ -57,12 +67,39 @@ export function ThreadSwitcherSheet({
         </label>
         <label>
           会话标题
-          <input value={title} onChange={(event) => setTitle(event.target.value)} />
+          <input maxLength={maxTitleLength + 1} value={title} onChange={(event) => setTitle(event.target.value)} />
         </label>
+        <span className={`message-count ${titleOverLimit ? "danger" : ""}`}>
+          {title.length ? `${title.length}/${maxTitleLength}` : ""}
+        </span>
+        <details>
+          <summary>高级配置</summary>
+          <label>
+            sandbox
+            <select value={sandbox} onChange={(event) => setSandbox(event.target.value)}>
+              <option value="read-only">read-only</option>
+              <option value="workspace-write">workspace-write</option>
+            </select>
+          </label>
+          <label>
+            approval
+            <select value={approvalPolicy} onChange={(event) => setApprovalPolicy(event.target.value)}>
+              <option value="never">never</option>
+            </select>
+          </label>
+          <label className="inline">
+            <input
+              checked={networkAccess}
+              onChange={(event) => setNetworkAccess(event.target.checked)}
+              type="checkbox"
+            />{" "}
+            network access
+          </label>
+        </details>
         {createDisabledReason ? <div className="inline-error">{createDisabledReason}</div> : null}
         <Button
-          disabled={!projectId || Boolean(createDisabledReason)}
-          onClick={() => onCreate(projectId, title)}
+          disabled={!projectId || Boolean(createDisabledReason) || titleOverLimit}
+          onClick={() => onCreate(projectId, title, { sandbox, approvalPolicy, networkAccess })}
           title={createDisabledReason}
           variant="primary"
         >

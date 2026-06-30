@@ -55,6 +55,14 @@ class JsonlRpcClient:
     def invalid_stdout_lines(self) -> list[str]:
         return list(self._invalid_stdout_lines)
 
+    def trim_messages(self, max_messages: int) -> None:
+        if max_messages < 1:
+            return
+        with self._condition:
+            excess = len(self._messages) - max_messages
+            if excess > 0:
+                del self._messages[:excess]
+
     def send(self, payload: dict[str, Any]) -> None:
         if self.process.stdin is None:
             raise RuntimeError("app-server stdin is not available")

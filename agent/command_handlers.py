@@ -51,6 +51,7 @@ class CommandHandlerRegistry:
         app_session_manager: Any | None = None,
         event_uploader: Any | None = None,
         workspace_lock: LocalWorkspaceLock | None = None,
+        run_data_dir=None,
     ) -> None:
         local_workspace_lock = workspace_lock or LocalWorkspaceLock()
         self._handlers: dict[str, CommandHandler] = {
@@ -59,13 +60,15 @@ class CommandHandlerRegistry:
         if workspace_registry is not None:
             from agent.run_executor import RunExecutor
 
-            self._handlers["RUN_EXECUTE"] = RunExecutor(
-                workspace_registry,
-                client=client,
-                device_id=device_id,
-                process_registry=process_registry,
-                workspace_lock=local_workspace_lock,
-            )
+            run_executor_kwargs = {
+                "client": client,
+                "device_id": device_id,
+                "process_registry": process_registry,
+                "workspace_lock": local_workspace_lock,
+            }
+            if run_data_dir is not None:
+                run_executor_kwargs["run_data_dir"] = run_data_dir
+            self._handlers["RUN_EXECUTE"] = RunExecutor(workspace_registry, **run_executor_kwargs)
         if app_session_manager is not None:
             from agent.session_handlers import SessionCloseHandler, SessionOpenHandler, TurnStartHandler
 

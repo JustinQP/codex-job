@@ -391,3 +391,72 @@ def test_list_commands_for_device_filters_by_status() -> None:
         assert [item.idempotency_key for item in commands] == ["pending-key"]
     finally:
         session.close()
+
+
+def test_claimed_command_expiry_requeues_until_max_attempts() -> None:
+    session = make_session()
+    try:
+        add_device(session)
+        command = agent_command_service.create_command(
+            session,
+            device_id="device-a",
+            command_type="fake.echo",
+            idempotency_key="retry-claimed",
+            payload={"message": "hello"},
+            max_attempts=2,
+        )
+        first_claim = agent_command_service.transition_command(
+            session,
+            command,
+            AgentCommandStatus.CLAIMED,
+            lease_token="lease-a",
+            lease_expires_at=utc_now() - timedelta(seconds=1),
+        )
+
+        [requeued] = agent_command_service.expire_stale_active_commands(session)
+
+        assert requeued.status == AgentCommandStatus.PENDING
+        assert requeued.attempt_count == 1
+        assert requeued.lease_token is None
+        assert requeued.lease_expires_at is None
+
+        second_claim = agent_command_service.transition_command(
+            session,
+            requeued,
+            AgentCommandStatus.CLAIMED,
+            lease_token="lease-b",
+            lease_expires_at=utc_now() - timedelta(seconds=1),
+        )
+        [expired] = agent_command_service.expire_stale_active_commands(session)
+
+        assert second_claim.attempt_count == 2
+        assert expired.status == AgentCommandStatus.EXPIRED
+        assert expired.last_error == "agent command lease expired"
+    finally:
+        session.close()
+
+
+def test_running_command_expiry_does_not_requeue() -> None:
+    session = make_session()
+    try:
+        command = add_command(session)
+        claimed = agent_command_service.transition_command(
+            session,
+            command,
+            AgentCommandStatus.CLAIMED,
+            lease_token="lease-a",
+            lease_expires_at=utc_now() + timedelta(seconds=30),
+        )
+        running = agent_command_service.transition_command(
+            session,
+            claimed,
+            AgentCommandStatus.RUNNING,
+            lease_expires_at=utc_now() - timedelta(seconds=1),
+        )
+
+        [expired] = agent_command_service.expire_stale_active_commands(session)
+
+        assert running.attempt_count == 1
+        assert expired.status == AgentCommandStatus.EXPIRED
+    finally:
+        session.close()

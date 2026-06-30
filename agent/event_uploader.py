@@ -24,8 +24,17 @@ class CommandEventUploader:
             )
         )
 
-    def flush(self, *, command_id: str, device_id: str, lease_token: str) -> dict[str, Any] | None:
+    def flush(
+        self,
+        *,
+        command_id: str,
+        device_id: str,
+        lease_token: str,
+        from_sequence: int | None = None,
+    ) -> dict[str, Any] | None:
         pending = self.local_state.load_pending_events(command_id)
+        if from_sequence is not None:
+            pending = [event for event in pending if event.sequence >= from_sequence]
         if not pending:
             return None
         response = self.client.upload_command_events(
@@ -46,5 +55,12 @@ class CommandEventUploader:
         )
         latest_sequence = response.get("latest_sequence")
         if isinstance(latest_sequence, int):
-            self.local_state.clear_pending_events(command_id, latest_sequence)
+            if from_sequence is None:
+                self.local_state.clear_pending_events(command_id, latest_sequence)
+            else:
+                self.local_state.clear_pending_events_range(
+                    command_id,
+                    from_sequence=from_sequence,
+                    through_sequence=latest_sequence,
+                )
         return response

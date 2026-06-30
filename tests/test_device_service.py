@@ -140,6 +140,63 @@ def test_mark_offline_devices_updates_expired_online_only() -> None:
         session.close()
 
 
+def test_refresh_device_status_marks_expired_online_device_offline() -> None:
+    session = make_session()
+    try:
+        now = utc_now()
+        device = Device(
+            device_id="expired",
+            display_name="Expired",
+            hostname="host",
+            os_name="Windows",
+            agent_version="0.1.0",
+            status=DeviceStatus.ONLINE,
+            last_heartbeat_at=now - timedelta(minutes=5),
+            lease_expires_at=now - timedelta(seconds=1),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(device)
+        session.commit()
+
+        refreshed = device_service.refresh_device_status(session, "expired")
+
+        assert refreshed is not None
+        assert refreshed.status == DeviceStatus.OFFLINE
+        assert session.get(Device, "expired").status == DeviceStatus.OFFLINE
+    finally:
+        session.close()
+
+
+def test_ensure_online_device_rejects_expired_online_device() -> None:
+    session = make_session()
+    try:
+        now = utc_now()
+        device = Device(
+            device_id="expired",
+            display_name="Expired",
+            hostname="host",
+            os_name="Windows",
+            agent_version="0.1.0",
+            status=DeviceStatus.ONLINE,
+            last_heartbeat_at=now - timedelta(minutes=5),
+            lease_expires_at=now - timedelta(seconds=1),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(device)
+        session.commit()
+
+        with pytest.raises(HTTPException) as exc:
+            device_service.ensure_online_device(session, "expired")
+
+        assert exc.value.status_code == 409
+        assert exc.value.detail == "device is offline"
+        assert session.get(Device, "expired").status == DeviceStatus.OFFLINE
+    finally:
+        session.close()
+
+
 def test_disabled_device_cannot_heartbeat_or_auto_recover() -> None:
     session = make_session()
     try:
@@ -168,5 +225,22 @@ def test_unknown_device_heartbeat_returns_404() -> None:
             device_service.heartbeat_device(session, DeviceHeartbeat(device_id="missing"))
 
         assert exc.value.status_code == 404
+    finally:
+        session.close()
+
+
+def test_update_disable_and_delete_stale_device() -> None:
+    session = make_session()
+    try:
+        device = device_service.register_device(session, register_payload())
+
+        renamed = device_service.update_device(session, "device-a", display_name="Desk Renamed")
+        disabled = device_service.disable_device(session, "device-a")
+        deleted = device_service.delete_device(session, "device-a")
+
+        assert renamed.display_name == "Desk Renamed"
+        assert disabled.status == DeviceStatus.DISABLED
+        assert deleted.device_id == device.device_id
+        assert session.get(Device, "device-a") is None
     finally:
         session.close()

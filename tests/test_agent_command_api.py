@@ -162,6 +162,46 @@ def test_ack_renew_and_complete_require_valid_lease_token(monkeypatch) -> None:
         assert repeated_complete.json()["id"] == claim["id"]
 
 
+def test_illegal_ack_state_returns_stable_409(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        add_device(session, "device-a")
+        command = create_command(session, "device-a", "cmd-1")
+        command.lease_token = "lease-a"
+        command.lease_expires_at = utc_now() + timedelta(seconds=30)
+        session.add(command)
+        session.commit()
+
+        response = client.post(
+            f"/agent/commands/{command.id}/ack",
+            headers=auth_headers(),
+            json={"device_id": "device-a", "lease_token": "lease-a"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "invalid_agent_command_state"
+
+
+def test_illegal_complete_state_returns_stable_409(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
+    for client, session in make_client():
+        add_device(session, "device-a")
+        command = create_command(session, "device-a", "cmd-1")
+        command.lease_token = "lease-a"
+        command.lease_expires_at = utc_now() + timedelta(seconds=30)
+        session.add(command)
+        session.commit()
+
+        response = client.post(
+            f"/agent/commands/{command.id}/complete",
+            headers=auth_headers(),
+            json={"device_id": "device-a", "lease_token": "lease-a", "status": "SUCCESS"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "invalid_agent_command_state"
+
+
 def test_expired_lease_marks_command_expired_without_requeue(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_TOKEN", "agent-secret")
     for client, session in make_client():

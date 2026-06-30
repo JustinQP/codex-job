@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from backend.models import Project, WorkspaceBindingStatus, utc_now
-from backend.schemas import ProjectCreate
+from backend.schemas import ProjectCreate, ProjectUpdate
 
 
 def create_project(session: Session, payload: ProjectCreate) -> Project:
@@ -129,6 +129,48 @@ def bind_project_workspace(session: Session, project_id: int, workspace_id: int)
         )
     project.workspace_id = workspace_id
     project.workspace_binding_status = WorkspaceBindingStatus.BOUND
+    project.updated_at = utc_now()
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return project
+
+
+def update_project(session: Session, project_id: int, payload: ProjectUpdate) -> Project:
+    from backend.models import Workspace
+
+    project = get_project_or_404(session, project_id)
+    fields = payload.model_dump(exclude_unset=True)
+    if "name" in fields and payload.name is not None:
+        project.name = payload.name.strip()
+    if "enabled" in fields and payload.enabled is not None:
+        project.enabled = payload.enabled
+    if "test_command" in fields:
+        project.test_command = payload.test_command
+    if "smoke_check_command" in fields:
+        project.smoke_check_command = payload.smoke_check_command
+    if "default_branch" in fields:
+        project.default_branch = payload.default_branch
+    if "require_clean_worktree" in fields:
+        project.require_clean_worktree = payload.require_clean_worktree
+    if "default_model" in fields:
+        project.default_model = payload.default_model
+    if "default_reasoning_effort" in fields:
+        project.default_reasoning_effort = payload.default_reasoning_effort
+    if "default_sandbox" in fields:
+        project.default_sandbox = payload.default_sandbox
+    if "workspace_id" in fields:
+        if payload.workspace_id is None:
+            project.workspace_id = None
+            project.workspace_binding_status = WorkspaceBindingStatus.UNBOUND
+        else:
+            if session.get(Workspace, payload.workspace_id) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="workspace not found",
+                )
+            project.workspace_id = payload.workspace_id
+            project.workspace_binding_status = WorkspaceBindingStatus.BOUND
     project.updated_at = utc_now()
     session.add(project)
     session.commit()

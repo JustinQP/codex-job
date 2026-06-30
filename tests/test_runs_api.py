@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import timedelta
 from collections.abc import Generator
 
 from fastapi.testclient import TestClient
@@ -14,7 +15,7 @@ from backend.models import AgentCommand, Device, DeviceStatus, Project, Run, Run
 import pytest
 
 from backend.services import agent_command_service, run_service
-from backend.schemas import RunCreate
+from backend.schemas import RUN_PROMPT_MAX_LENGTH, RunCreate
 
 
 def make_client(*, include_api_token: bool = True) -> Generator[tuple[TestClient, Session], None, None]:
@@ -182,6 +183,43 @@ def test_create_run_rejects_disabled_workspace_and_offline_device() -> None:
         assert disabled_response.json()["detail"] == "workspace is disabled"
         assert offline_response.status_code == 409
         assert offline_response.json()["detail"] == "device is offline"
+
+
+def test_create_run_rejects_expired_online_device() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        device = add_device(session, "device-a")
+        device.lease_expires_at = utc_now() - timedelta(seconds=1)
+        session.add(device)
+        session.commit()
+        workspace = add_workspace(session, "device-a")
+
+        response = client.post(
+            "/runs",
+            json={"project_id": project.id, "workspace_id": workspace.id, "prompt": "expired lease"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "device is offline"
+        assert session.get(Device, "device-a").status == DeviceStatus.OFFLINE
+
+
+def test_create_run_rejects_oversized_prompt() -> None:
+    for client, session in make_client():
+        project = add_project(session)
+        add_device(session, "device-a")
+        workspace = add_workspace(session, "device-a")
+
+        response = client.post(
+            "/runs",
+            json={
+                "project_id": project.id,
+                "workspace_id": workspace.id,
+                "prompt": "x" * (RUN_PROMPT_MAX_LENGTH + 1),
+            },
+        )
+
+        assert response.status_code == 422
 
 
 def test_list_runs_can_filter_by_workspace() -> None:

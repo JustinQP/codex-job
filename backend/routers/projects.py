@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from backend.db import get_session
 from backend.dependencies import require_api_token
-from backend.schemas import ProjectCreate, ProjectRead
+from backend.schemas import ProjectCreate, ProjectRead, ProjectUpdate
 from backend.services import project_service
 
 
@@ -31,3 +31,14 @@ def list_projects(
         project_service.to_project_read(project)
         for project in project_service.list_projects(session)
     ]
+
+
+@router.patch("/projects/{project_id}", response_model=ProjectRead)
+def update_project(
+    project_id: int,
+    payload: ProjectUpdate,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_api_token),
+):
+    project = project_service.update_project(session, project_id, payload)
+    return project_service.to_project_read(project)
