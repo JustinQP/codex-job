@@ -32,3 +32,18 @@ def test_frontend_does_not_call_legacy_routes() -> None:
     assert "app-server-bridge" not in source
     assert "Bridge" not in source
     assert "Runner" not in source
+
+
+def test_vite_dev_proxy_covers_frontend_api_routes() -> None:
+    vite_config = Path("frontend/vite.config.ts").read_text(encoding="utf-8")
+
+    for route in [
+        "/devices",
+        "/workspaces",
+        "/projects",
+        "/runs",
+        "/app-threads",
+        "/app-turns",
+        "/run-templates",
+    ]:
+        assert f'"{route}"' in vite_config

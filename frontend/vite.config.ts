@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/health": "http://127.0.0.1:8000",
+      "/devices": "http://127.0.0.1:8000",
+      "/workspaces": "http://127.0.0.1:8000",
       "/projects": "http://127.0.0.1:8000",
       "/runs": "http://127.0.0.1:8000",
       "/app-threads": "http://127.0.0.1:8000",

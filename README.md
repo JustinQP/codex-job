@@ -54,7 +54,7 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 也可以使用脚本启动后端窗口：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start_app_server_stack.ps1 -ApiToken dev-token -AgentToken agent-dev-token
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start_app_server_stack.ps1 -ApiToken dev-token -AgentToken agent-dev-token -ProjectPathWhitelist F:\JustinKing
 ```
 
 访问：

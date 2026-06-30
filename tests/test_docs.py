@@ -98,3 +98,10 @@ def test_smoke_checklist_documents_local_e2e_script() -> None:
     assert "Session Turn" in smoke
     assert "取消" in smoke
     assert "关闭" in smoke
+
+
+def test_pytest_defaults_do_not_use_data_runtime_paths() -> None:
+    pytest_ini = (ROOT / "pytest.ini").read_text(encoding="utf-8")
+
+    assert "data/pytest-tmp-current" not in pytest_ini
+    assert "data/pytest-cache" not in pytest_ini

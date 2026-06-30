@@ -1,6 +1,7 @@
 param(
   [string]$ApiToken = "dev-token",
   [string]$AgentToken = "agent-dev-token",
+  [string]$ProjectPathWhitelist = $env:PROJECT_PATH_WHITELIST,
   [string]$BackendHost = "127.0.0.1",
   [int]$BackendPort = 8000,
   [switch]$BuildFrontend
@@ -60,16 +61,21 @@ if ($ApiToken -eq $AgentToken) {
 $BackendBaseUrl = "http://${BackendHost}:$BackendPort"
 $env:API_TOKEN = $ApiToken
 $env:AGENT_TOKEN = $AgentToken
+if (-not [string]::IsNullOrWhiteSpace($ProjectPathWhitelist)) {
+  $env:PROJECT_PATH_WHITELIST = $ProjectPathWhitelist
+}
 
 $QuotedProjectRoot = Quote-ForPowerShell $ProjectRoot
 $QuotedApiToken = Quote-ForPowerShell $ApiToken
 $QuotedAgentToken = Quote-ForPowerShell $AgentToken
+$QuotedProjectPathWhitelist = Quote-ForPowerShell $ProjectPathWhitelist
 $QuotedBackendHost = Quote-ForPowerShell $BackendHost
 
 $BackendCommand = @"
 Set-Location -LiteralPath $QuotedProjectRoot
 `$env:API_TOKEN = $QuotedApiToken
 `$env:AGENT_TOKEN = $QuotedAgentToken
+`$env:PROJECT_PATH_WHITELIST = $QuotedProjectPathWhitelist
 python -m uvicorn backend.main:app --host $QuotedBackendHost --port $BackendPort
 "@
 

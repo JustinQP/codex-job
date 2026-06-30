@@ -32,3 +32,11 @@ def test_windows_agent_install_script_covers_install_contract() -> None:
     assert 'Workspace config, and project files were not deleted' in script
     assert 'Remove-Item -LiteralPath $DataDir' not in script
     assert 'Remove-Item -LiteralPath $WorkspaceConfig' not in script
+
+
+def test_start_app_server_stack_sets_project_path_whitelist() -> None:
+    script = Path("scripts/start_app_server_stack.ps1").read_text(encoding="utf-8")
+
+    assert '[string]$ProjectPathWhitelist = $env:PROJECT_PATH_WHITELIST' in script
+    assert '$env:PROJECT_PATH_WHITELIST = $ProjectPathWhitelist' in script
+    assert '`$env:PROJECT_PATH_WHITELIST = $QuotedProjectPathWhitelist' in script
