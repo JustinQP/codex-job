@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from sqlmodel import Session
 
 from agent.api_client import AgentApiError
 from agent.command_handlers import CommandHandlerRegistry
 from agent.run_executor import RunExecutor
-from agent.session_handlers import SessionOpenHandler
+from agent.session_handlers import SessionOpenHandler, TurnStartHandler
 from agent.workspace_lock import LocalWorkspaceLock
 from agent.workspace_registry import WorkspaceRegistry
 from backend.models import Device, DeviceStatus, Project, Workspace, utc_now
@@ -247,6 +248,50 @@ def test_run_executor_uploads_log_and_artifacts(monkeypatch, tmp_path) -> None:
     assert {"result", "diff", "git_status"} <= artifact_types
 
 
+def test_run_executor_writes_outputs_under_configured_run_data_dir(monkeypatch, tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_data_dir = tmp_path / "agent-data" / "runs"
+    registry = WorkspaceRegistry.load(_write_registry(tmp_path, repo))
+    executor = RunExecutor(registry, run_data_dir=run_data_dir)
+
+    class Execution:
+        error_message = None
+
+    observed_paths = {}
+
+    def fake_execute(**kwargs):
+        observed_paths["log_file"] = kwargs["log_file"]
+        observed_paths["result_file"] = kwargs["result_file"]
+        kwargs["log_file"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["log_file"].write_text("hello log", encoding="utf-8")
+        kwargs["result_file"].write_text("result text", encoding="utf-8")
+        return Execution()
+
+    monkeypatch.setattr("agent.run_executor.check_clean_worktree", lambda project_path: None)
+    monkeypatch.setattr("agent.run_executor.execute_codex", fake_execute)
+    monkeypatch.setattr("agent.run_executor.collect_git_artifacts", lambda project_path, job_dir: _git_artifacts(job_dir))
+
+    result = executor.handle(
+        {
+            "id": "cmd-1",
+            "lease_token": "lease-a",
+            "command_type": "RUN_EXECUTE",
+            "payload_json": json.dumps(
+                {
+                    "run_id": 42,
+                    "workspace_key": "repo",
+                    "prompt": "configured outputs",
+                }
+            ),
+        }
+    )
+
+    assert result.success is True
+    assert observed_paths["log_file"] == run_data_dir / "42" / "run.log"
+    assert observed_paths["result_file"] == run_data_dir / "42" / "result.md"
+
+
 def test_run_executor_stops_process_when_command_is_cancelled(monkeypatch, tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -322,6 +367,39 @@ def test_local_workspace_lock_blocks_write_session_when_write_run_active(monkeyp
     assert "workspace busy" in (result.message or "")
 
 
+def test_local_workspace_lock_blocks_write_across_instances(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    lock_dir = tmp_path / "locks"
+    first = LocalWorkspaceLock(lock_dir=lock_dir)
+    second = LocalWorkspaceLock(lock_dir=lock_dir)
+
+    first.acquire_write(repo, "run:active")
+    try:
+        with pytest.raises(RuntimeError, match="workspace busy"):
+            second.acquire_write(repo, "session:next")
+    finally:
+        first.release(repo, "run:active")
+
+    second.acquire_write(repo, "session:next")
+    second.release(repo, "session:next")
+
+
+def test_local_workspace_lock_recovers_stale_file_lock(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    lock_dir = tmp_path / "locks"
+    stale = LocalWorkspaceLock(lock_dir=lock_dir, stale_after_seconds=0)
+    recovered = LocalWorkspaceLock(lock_dir=lock_dir, stale_after_seconds=0)
+
+    stale.acquire_write(repo, "run:stale")
+    try:
+        recovered.acquire_write(repo, "run:recovered")
+        recovered.release(repo, "run:recovered")
+    finally:
+        stale.release(repo, "run:stale")
+
+
 def test_local_workspace_lock_allows_read_only_session_when_write_run_active(tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -355,6 +433,53 @@ def test_local_workspace_lock_allows_read_only_session_when_write_run_active(tmp
     )
 
     assert result.success is True
+
+
+def test_turn_start_handler_passes_timeout_to_session_manager() -> None:
+    class FakeSession:
+        workspace_key = "repo"
+
+    class FakeSessionManager:
+        def __init__(self) -> None:
+            self.timeout = None
+
+        def get_session(self, agent_session_id):
+            return FakeSession()
+
+        def run_turn(self, **kwargs):
+            self.timeout = kwargs["timeout"]
+
+            class Result:
+                codex_turn_id = "codex-turn"
+                assistant_final = "done"
+                event_summary = {}
+                turn_count = 1
+
+            return Result()
+
+    manager = FakeSessionManager()
+    handler = TurnStartHandler(manager)
+
+    result = handler.handle(
+        {
+            "id": "cmd-turn",
+            "device_id": "device-a",
+            "lease_token": "lease-a",
+            "command_type": "TURN_START",
+            "payload_json": json.dumps(
+                {
+                    "app_turn_id": 1,
+                    "agent_session_id": "agent-session",
+                    "workspace_key": "repo",
+                    "message": "hello",
+                    "timeout_seconds": 900,
+                }
+            ),
+        }
+    )
+
+    assert result.success is True
+    assert manager.timeout == 900
 
 
 def _write_registry(tmp_path, repo):

@@ -54,7 +54,12 @@ def main() -> None:
             base_url=config.backend_url,
             agent_token=config.agent_token,
         )
-        result = register_agent(client, identity) if args.register else send_heartbeat(client, identity)
+        app_server_enabled = config.workspace_config_path.exists()
+        result = (
+            register_agent(client, identity, app_server_enabled=app_server_enabled)
+            if args.register
+            else send_heartbeat(client, identity, app_server_enabled=app_server_enabled)
+        )
         print(json.dumps(result, ensure_ascii=False))
     if args.sync_workspaces:
         client = AgentApiClient(
@@ -89,6 +94,8 @@ def main() -> None:
             local_state=AgentLocalState(config.state_path),
             workspace_registry=registry,
             app_session_manager=app_session_manager,
+            run_data_dir=config.run_data_dir,
+            workspace_lock_dir=config.lock_data_dir,
         )
         if args.run_once:
             loop.bootstrap()

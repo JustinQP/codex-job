@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
@@ -99,17 +99,90 @@ def mark_offline_devices(session: Session) -> int:
     return len(devices)
 
 
+def refresh_device_status(session: Session, device_id: str) -> Device | None:
+    device = session.get(Device, device_id)
+    if device is None:
+        return None
+    if (
+        device.status == DeviceStatus.ONLINE
+        and device.lease_expires_at is not None
+        and _as_utc(device.lease_expires_at) < utc_now()
+    ):
+        device.status = DeviceStatus.OFFLINE
+        device.updated_at = utc_now()
+        session.add(device)
+        session.commit()
+        session.refresh(device)
+    return device
+
+
+def ensure_online_device(session: Session, device_id: str) -> Device:
+    device = refresh_device_status(session, device_id)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="device not found",
+        )
+    if device.status == DeviceStatus.DISABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="device is disabled",
+        )
+    if device.status != DeviceStatus.ONLINE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="device is offline")
+    return device
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def list_devices(session: Session) -> list[Device]:
     mark_offline_devices(session)
     return list(session.exec(select(Device).order_by(Device.display_name)).all())
 
 
 def get_device_or_404(session: Session, device_id: str) -> Device:
-    mark_offline_devices(session)
-    device = session.get(Device, device_id)
+    device = refresh_device_status(session, device_id)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="device not found",
         )
+    return device
+
+
+def update_device(session: Session, device_id: str, *, display_name: str | None = None) -> Device:
+    device = get_device_or_404(session, device_id)
+    if display_name is not None:
+        device.display_name = display_name.strip()
+    device.updated_at = utc_now()
+    session.add(device)
+    session.commit()
+    session.refresh(device)
+    return device
+
+
+def disable_device(session: Session, device_id: str) -> Device:
+    device = get_device_or_404(session, device_id)
+    device.status = DeviceStatus.DISABLED
+    device.lease_expires_at = None
+    device.updated_at = utc_now()
+    session.add(device)
+    session.commit()
+    session.refresh(device)
+    return device
+
+
+def delete_device(session: Session, device_id: str) -> Device:
+    device = get_device_or_404(session, device_id)
+    if device.status != DeviceStatus.DISABLED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="device must be disabled before deletion",
+        )
+    session.delete(device)
+    session.commit()
     return device

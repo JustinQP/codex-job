@@ -169,3 +169,14 @@
   border-radius: var(--radius-md);
   background: var(--surface);
 }
+
+.run-artifacts {
+  min-width: 0;
+}
+
+.run-artifact-text {
+  max-height: 320px;
+  min-height: 140px;
+  overflow: auto;
+  white-space: pre;
+}

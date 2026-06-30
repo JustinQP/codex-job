@@ -7,7 +7,7 @@ from agent.api_client import AgentApiError
 from agent.command_handlers import CommandResult
 from agent.command_loop import AgentCommandLoop
 from agent.identity import AgentIdentity
-from agent.local_state import AgentLocalState, CurrentCommandState
+from agent.local_state import AgentLocalState, CurrentCommandState, PendingCommandEvent
 from agent.process_registry import ProcessRegistry
 from agent.workspace_registry import WorkspaceRegistry
 
@@ -24,6 +24,8 @@ class FakeClient:
             "lease_token": "lease-a",
         }
         self.completed: list[dict[str, Any]] = []
+        self.reconciliations: list[Any] = []
+        self.event_uploads: list[tuple[str, Any]] = []
         self.fail_complete_once = False
 
     def register(self, payload):
@@ -43,6 +45,7 @@ class FakeClient:
 
     def reconcile(self, payload):
         self.calls.append("reconcile")
+        self.reconciliations.append(payload)
         return {"action": "IDLE"}
 
     def claim_command(self, payload):
@@ -65,6 +68,16 @@ class FakeClient:
         self.completed.append(payload.model_dump())
         self.command = None
         return {"id": command_id, "status": payload.status}
+
+    def upload_command_events(self, command_id, payload):
+        self.calls.append(f"events:{command_id}")
+        self.event_uploads.append((command_id, payload))
+        latest_sequence = max((event.sequence for event in payload.events), default=None)
+        return {
+            "accepted_count": len(payload.events),
+            "duplicate_count": 0,
+            "latest_sequence": latest_sequence,
+        }
 
 
 class CountingHandler:
@@ -306,3 +319,80 @@ def test_command_loop_injects_process_registry_into_run_executor(tmp_path) -> No
     assert run_executor.client is loop.client
     assert run_executor.device_id == "device-a"
     assert run_executor.process_registry is process_registry
+
+
+def test_bootstrap_reconcile_reports_pending_event_sequence(tmp_path) -> None:
+    client = FakeClient()
+    state = AgentLocalState(tmp_path / "state.json")
+    state.save_current_command(
+        CurrentCommandState(
+            command_id="cmd-1",
+            claim_request_id="claim-1",
+            lease_token="lease-a",
+        )
+    )
+    state.append_pending_event(
+        PendingCommandEvent(
+            command_id="cmd-1",
+            sequence=3,
+            kind="log",
+            payload={"text": "three"},
+            created_at="2026-06-22T00:00:03+00:00",
+        )
+    )
+
+    loop = AgentCommandLoop(
+        client=client,
+        identity=identity(),
+        local_state=state,
+        poll_interval_seconds=0,
+    )
+    loop.bootstrap()
+
+    assert client.reconciliations[-1].last_uploaded_sequence == 3
+
+
+def test_bootstrap_reconcile_uploads_missing_pending_events(tmp_path) -> None:
+    class UploadRequestClient(FakeClient):
+        def reconcile(self, payload):
+            self.calls.append("reconcile")
+            self.reconciliations.append(payload)
+            return {
+                "action": "UPLOAD_EVENTS",
+                "command_id": "cmd-1",
+                "upload_from_sequence": 2,
+                "latest_sequence": 1,
+            }
+
+    client = UploadRequestClient()
+    state = AgentLocalState(tmp_path / "state.json")
+    state.save_current_command(
+        CurrentCommandState(
+            command_id="cmd-1",
+            claim_request_id="claim-1",
+            lease_token="lease-a",
+        )
+    )
+    for sequence in (1, 2, 3):
+        state.append_pending_event(
+            PendingCommandEvent(
+                command_id="cmd-1",
+                sequence=sequence,
+                kind="log",
+                payload={"text": str(sequence)},
+                created_at=f"2026-06-22T00:00:0{sequence}+00:00",
+            )
+        )
+
+    loop = AgentCommandLoop(
+        client=client,
+        identity=identity(),
+        local_state=state,
+        poll_interval_seconds=0,
+    )
+    loop.bootstrap()
+
+    assert client.event_uploads
+    _command_id, upload_payload = client.event_uploads[-1]
+    assert [event.sequence for event in upload_payload.events] == [2, 3]
+    assert [event.sequence for event in state.load_pending_events("cmd-1")] == [1]

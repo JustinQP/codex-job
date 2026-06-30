@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listAppThreads } from "../../api/appThreads";
-import { listDevices } from "../../api/devices";
-import { listProjects } from "../../api/projects";
+import { disableDevice, listDevices, updateDevice } from "../../api/devices";
+import { listProjects, updateProject } from "../../api/projects";
 import { listRuns } from "../../api/runs";
 import type { AppThread, Device, Project, Run, Workspace } from "../../api/types";
-import { listWorkspaces } from "../../api/workspaces";
+import { listWorkspaces, updateWorkspace } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { UI_STATE_KEYS } from "../../state/storage";
 import { formatRelativeTime } from "../../utils/date";
 import { errorText, isRunningStatus } from "../../utils/error";
 import { statusTone } from "../../utils/text";
 import { Badge } from "../common/Badge";
+import { Button } from "../common/Button";
 import { EmptyState } from "../common/EmptyState";
 import type { PageProps } from "../types";
 
@@ -155,6 +156,73 @@ export function ProjectsPage({ showToast }: PageProps) {
     setActiveTab("app");
   }
 
+  async function handleRenameDevice(device: Device) {
+    const displayName = window.prompt("设备名称", device.display_name);
+    if (!displayName?.trim()) return;
+    try {
+      await updateDevice(device.device_id, { display_name: displayName.trim() });
+      showToast("设备已重命名", "success");
+      await loadWorkspace();
+    } catch (err) {
+      showToast(errorText(err), "error");
+    }
+  }
+
+  async function handleDisableDevice(device: Device) {
+    if (!window.confirm(`确认禁用设备 ${device.display_name}？`)) return;
+    try {
+      await disableDevice(device.device_id);
+      showToast("设备已禁用", "success");
+      await loadWorkspace();
+    } catch (err) {
+      showToast(errorText(err), "error");
+    }
+  }
+
+  async function handleToggleWorkspace(workspace: Workspace) {
+    try {
+      await updateWorkspace(workspace.id, { enabled: !workspace.enabled });
+      showToast(workspace.enabled ? "Workspace 已停用" : "Workspace 已启用", "success");
+      await loadWorkspace();
+    } catch (err) {
+      showToast(errorText(err), "error");
+    }
+  }
+
+  async function handleWorkspaceDefaults(workspace: Workspace) {
+    const defaultModel = window.prompt("默认模型", workspace.default_model || "");
+    if (defaultModel === null) return;
+    const defaultSandbox = window.prompt("默认 sandbox", workspace.default_sandbox || "workspace-write");
+    if (defaultSandbox === null) return;
+    try {
+      await updateWorkspace(workspace.id, {
+        default_model: defaultModel.trim() || null,
+        default_sandbox: defaultSandbox.trim() || null
+      });
+      showToast("Workspace 默认配置已更新", "success");
+      await loadWorkspace();
+    } catch (err) {
+      showToast(errorText(err), "error");
+    }
+  }
+
+  async function handleProjectDefaults(project: Project) {
+    const defaultModel = window.prompt("默认模型", project.default_model || "");
+    if (defaultModel === null) return;
+    const defaultSandbox = window.prompt("默认 sandbox", project.default_sandbox || "workspace-write");
+    if (defaultSandbox === null) return;
+    try {
+      await updateProject(project.id, {
+        default_model: defaultModel.trim() || null,
+        default_sandbox: defaultSandbox.trim() || null
+      });
+      showToast("项目默认配置已更新", "success");
+      await loadWorkspace();
+    } catch (err) {
+      showToast(errorText(err), "error");
+    }
+  }
+
   return (
     <section className="page active" id="tab-projects">
       <div className="profile-hero">
@@ -186,7 +254,17 @@ export function ProjectsPage({ showToast }: PageProps) {
                   <strong>{device.display_name}</strong>
                   <span>{device.hostname} · {device.os_name}</span>
                 </div>
-                <Badge tone={device.status === "ONLINE" ? "online" : "closed"}>{device.status}</Badge>
+                <div className="row-actions">
+                  <Badge tone={device.status === "ONLINE" ? "online" : "closed"}>{device.status}</Badge>
+                  <Button onClick={(event) => {
+                    event.stopPropagation();
+                    void handleRenameDevice(device);
+                  }} variant="secondary">重命名</Button>
+                  <Button onClick={(event) => {
+                    event.stopPropagation();
+                    void handleDisableDevice(device);
+                  }} variant="secondary">禁用</Button>
+                </div>
               </button>
             ))}
           </div>
@@ -214,7 +292,17 @@ export function ProjectsPage({ showToast }: PageProps) {
                   <strong>{workspace.name}</strong>
                   <span>{workspace.path_label}</span>
                 </div>
-                <Badge tone={workspace.enabled ? "online" : "closed"}>{workspace.enabled ? "启用" : "停用"}</Badge>
+                <div className="row-actions">
+                  <Badge tone={workspace.enabled ? "online" : "closed"}>{workspace.enabled ? "启用" : "停用"}</Badge>
+                  <Button onClick={(event) => {
+                    event.stopPropagation();
+                    void handleWorkspaceDefaults(workspace);
+                  }} variant="secondary">默认</Button>
+                  <Button onClick={(event) => {
+                    event.stopPropagation();
+                    void handleToggleWorkspace(workspace);
+                  }} variant="secondary">{workspace.enabled ? "停用" : "启用"}</Button>
+                </div>
               </button>
             ))}
           </div>
@@ -227,9 +315,12 @@ export function ProjectsPage({ showToast }: PageProps) {
         <section className="wechat-form stack">
           <div className="section-title-row">
             <h3>当前工作空间</h3>
-            <Badge tone={currentProject.enabled ? "online" : "closed"}>
-              {currentProject.enabled ? "可用" : "停用"}
-            </Badge>
+            <div className="row-actions">
+              <Badge tone={currentProject.enabled ? "online" : "closed"}>
+                {currentProject.enabled ? "可用" : "停用"}
+              </Badge>
+              <Button onClick={() => void handleProjectDefaults(currentProject)} variant="secondary">默认配置</Button>
+            </div>
           </div>
           <div className="meta-grid">
             <Meta label="路径" value={currentProject.path_label} />

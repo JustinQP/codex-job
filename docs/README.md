@@ -11,6 +11,7 @@
 - [App Server 会话说明](app-server-session.md)
 - [状态机](state-machines.md)
 - [Smoke 验收清单](smoke-checklist.md)
+- [真实双设备 Smoke](real-dual-device-smoke.md)
 
 ### 当前开发计划
 

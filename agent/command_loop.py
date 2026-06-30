@@ -4,6 +4,7 @@ import time
 from threading import Event
 from typing import Any
 from uuid import uuid4
+from pathlib import Path
 
 from agent.api_client import AgentApiClient, AgentApiError
 from agent.command_handlers import CommandHandlerRegistry
@@ -14,6 +15,7 @@ from agent.identity import AgentIdentity
 from agent.local_state import AgentLocalState, CurrentCommandState
 from agent.process_registry import ProcessRegistry
 from agent.reconciliation import reconcile_local_state
+from agent.workspace_lock import LocalWorkspaceLock
 from agent.workspace_registry import WorkspaceRegistry
 from backend.models import AgentCommandStatus
 from backend.schemas import (
@@ -47,6 +49,8 @@ class AgentCommandLoop:
         process_registry: ProcessRegistry | None = None,
         app_session_manager=None,
         event_uploader: CommandEventUploader | None = None,
+        run_data_dir: Path | None = None,
+        workspace_lock_dir: Path | None = None,
         poll_interval_seconds: float = 2.0,
         heartbeat_interval_seconds: float = 30.0,
         max_retries: int = 3,
@@ -56,11 +60,13 @@ class AgentCommandLoop:
         self.local_state = local_state
         self.workspace_registry = workspace_registry
         self.app_session_manager = app_session_manager
+        self.run_data_dir = run_data_dir
         self.process_registry = process_registry or ProcessRegistry()
         self.event_uploader = event_uploader or CommandEventUploader(
             client=client,
             local_state=local_state,
         )
+        self.workspace_lock = LocalWorkspaceLock(lock_dir=workspace_lock_dir)
         self.handlers = handlers or CommandHandlerRegistry(
             workspace_registry,
             client=client,
@@ -68,17 +74,24 @@ class AgentCommandLoop:
             process_registry=self.process_registry,
             app_session_manager=app_session_manager,
             event_uploader=self.event_uploader,
+            workspace_lock=self.workspace_lock,
+            run_data_dir=run_data_dir,
         )
         self.poll_interval_seconds = poll_interval_seconds
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.max_retries = max_retries
 
     def bootstrap(self) -> None:
-        register_agent(self.client, self.identity)
+        register_agent(
+            self.client,
+            self.identity,
+            app_server_enabled=self.app_session_manager is not None,
+        )
         reconcile_local_state(
             client=self.client,
             identity=self.identity,
             local_state=self.local_state,
+            event_uploader=self.event_uploader,
             process_status="STARTING",
         )
         if self.workspace_registry is not None:
@@ -96,6 +109,7 @@ class AgentCommandLoop:
             client=self.client,
             identity=self.identity,
             interval_seconds=self.heartbeat_interval_seconds,
+            app_server_enabled=self.app_session_manager is not None,
         )
         heartbeat_worker.start()
         try:
@@ -120,7 +134,11 @@ class AgentCommandLoop:
         return self._with_retries(self._run_once)
 
     def _run_once(self) -> dict[str, Any] | None:
-        send_heartbeat(self.client, self.identity)
+        send_heartbeat(
+            self.client,
+            self.identity,
+            app_server_enabled=self.app_session_manager is not None,
+        )
         current = self.local_state.load_current_command()
         if current is not None:
             command = self.client.claim_command(

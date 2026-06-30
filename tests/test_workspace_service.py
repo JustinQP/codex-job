@@ -222,3 +222,25 @@ def test_sync_device_workspaces_rejects_duplicate_payload_keys() -> None:
         assert exc.value.status_code == 400
     finally:
         session.close()
+
+
+def test_sync_device_workspaces_rejects_duplicate_payload_without_partial_commit() -> None:
+    session = make_session()
+    try:
+        add_device(session, "device-a")
+
+        with pytest.raises(HTTPException):
+            workspace_service.sync_device_workspaces(
+                session,
+                WorkspaceSyncRequest(
+                    device_id="device-a",
+                    workspaces=[
+                        WorkspaceSyncItem(workspace_key="repo", name="Repo", path_label="repo"),
+                        WorkspaceSyncItem(workspace_key="repo", name="Repo 2", path_label="repo2"),
+                    ],
+                ),
+            )
+
+        assert workspace_service.list_workspaces(session, device_id="device-a") == []
+    finally:
+        session.close()

@@ -8,10 +8,31 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.models import AgentCommandStatus, DeviceStatus, RunStatus, RunType, WorkspaceBindingStatus
 
 
+RUN_PROMPT_MAX_LENGTH = 20000
+APP_THREAD_TITLE_MAX_LENGTH = 120
+APP_TURN_MESSAGE_MAX_LENGTH = 20000
+APP_TURN_TIMEOUT_DEFAULT_SECONDS = 180
+APP_TURN_TIMEOUT_MIN_SECONDS = 30
+APP_TURN_TIMEOUT_MAX_SECONDS = 21600
+
+
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     path: str = Field(..., min_length=1)
     enabled: bool = True
+    test_command: Optional[str] = None
+    smoke_check_command: Optional[str] = None
+    default_branch: Optional[str] = None
+    require_clean_worktree: Optional[bool] = None
+    default_model: Optional[str] = None
+    default_reasoning_effort: Optional[str] = None
+    default_sandbox: Optional[str] = None
+    workspace_id: Optional[int] = None
+
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    enabled: Optional[bool] = None
     test_command: Optional[str] = None
     smoke_check_command: Optional[str] = None
     default_branch: Optional[str] = None
@@ -42,7 +63,7 @@ class ProjectRead(BaseModel):
 
 class RunCreate(BaseModel):
     project_id: int
-    prompt: str = Field(..., min_length=1)
+    prompt: str = Field(..., min_length=1, max_length=RUN_PROMPT_MAX_LENGTH)
     timeout_seconds: int = Field(default=7200, ge=30, le=21600)
     run_type: RunType = RunType.IMPLEMENT
     workspace_id: int
@@ -116,6 +137,10 @@ class DeviceHeartbeat(BaseModel):
     capabilities_json: Optional[str] = None
 
 
+class DeviceUpdate(BaseModel):
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
 class DeviceRead(BaseModel):
     device_id: str
     display_name: str
@@ -138,6 +163,16 @@ class WorkspaceUpsert(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     path_label: str = Field(..., min_length=1, max_length=300)
     enabled: bool = True
+    default_model: Optional[str] = None
+    default_reasoning_effort: Optional[str] = None
+    default_sandbox: Optional[str] = None
+    default_approval_policy: Optional[str] = None
+    require_clean_worktree: Optional[bool] = None
+
+
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    enabled: Optional[bool] = None
     default_model: Optional[str] = None
     default_reasoning_effort: Optional[str] = None
     default_sandbox: Optional[str] = None
@@ -299,7 +334,7 @@ class RunArtifactUploadRead(BaseModel):
 
 class AppThreadCreate(BaseModel):
     project_id: int
-    title: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=APP_THREAD_TITLE_MAX_LENGTH)
     workspace_id: Optional[int] = None
     sandbox: Optional[str] = None
     approval_policy: Optional[str] = None
@@ -308,7 +343,7 @@ class AppThreadCreate(BaseModel):
 
 
 class AppThreadUpdate(BaseModel):
-    title: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1, max_length=APP_THREAD_TITLE_MAX_LENGTH)
 
 
 class AppThreadRead(BaseModel):
@@ -333,7 +368,12 @@ class AppThreadRead(BaseModel):
 
 
 class AppTurnCreate(BaseModel):
-    message: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=APP_TURN_MESSAGE_MAX_LENGTH)
+    timeout_seconds: int = Field(
+        default=APP_TURN_TIMEOUT_DEFAULT_SECONDS,
+        ge=APP_TURN_TIMEOUT_MIN_SECONDS,
+        le=APP_TURN_TIMEOUT_MAX_SECONDS,
+    )
 
 
 class AppTurnRead(BaseModel):

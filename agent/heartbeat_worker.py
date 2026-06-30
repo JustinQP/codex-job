@@ -14,10 +14,12 @@ class HeartbeatWorker:
         client: AgentApiClient,
         identity: AgentIdentity,
         interval_seconds: float = 30.0,
+        app_server_enabled: bool = False,
     ) -> None:
         self.client = client
         self.identity = identity
         self.interval_seconds = max(1.0, interval_seconds)
+        self.app_server_enabled = app_server_enabled
         self._stop_event = Event()
         self._thread: Thread | None = None
 
@@ -36,6 +38,10 @@ class HeartbeatWorker:
     def _run(self) -> None:
         while not self._stop_event.wait(self.interval_seconds):
             try:
-                send_heartbeat(self.client, self.identity)
+                send_heartbeat(
+                    self.client,
+                    self.identity,
+                    app_server_enabled=self.app_server_enabled,
+                )
             except AgentApiError:
                 continue

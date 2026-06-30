@@ -44,6 +44,38 @@ def test_valid_workspace_can_be_resolved(tmp_path) -> None:
     assert registry.to_sync_items()[0].path_label == "repo"
 
 
+def test_workspace_registry_syncs_default_execution_settings(tmp_path) -> None:
+    allowed = tmp_path / "allowed"
+    workspace_dir = allowed / "repo"
+    workspace_dir.mkdir(parents=True)
+    config = write_registry(
+        tmp_path / "workspaces.json",
+        {
+            "allowed_roots": [str(allowed)],
+            "workspaces": [
+                {
+                    "key": "repo",
+                    "name": "Repo",
+                    "path": str(workspace_dir),
+                    "default_model": "gpt-5",
+                    "default_reasoning_effort": "high",
+                    "default_sandbox": "read-only",
+                    "default_approval_policy": "never",
+                    "require_clean_worktree": True,
+                }
+            ],
+        },
+    )
+
+    item = WorkspaceRegistry.load(config).to_sync_items()[0]
+
+    assert item.default_model == "gpt-5"
+    assert item.default_reasoning_effort == "high"
+    assert item.default_sandbox == "read-only"
+    assert item.default_approval_policy == "never"
+    assert item.require_clean_worktree is True
+
+
 def test_missing_duplicate_and_disabled_workspaces_are_rejected(tmp_path) -> None:
     allowed = tmp_path / "allowed"
     workspace_dir = allowed / "repo"

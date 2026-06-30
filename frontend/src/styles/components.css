@@ -85,6 +85,22 @@
   gap: var(--space-2);
 }
 
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.row-actions button {
+  width: auto;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .wrap-row {
   display: flex;
   flex-wrap: wrap;

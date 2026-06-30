@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
-from backend.db import get_session
+from backend.db import engine, get_session
 from backend.dependencies import require_api_token
 from backend.schemas import (
     AppThreadCleanupRead,
@@ -173,22 +175,15 @@ def list_app_turn_events(
 @router.get("/app-turns/{app_turn_id}/stream")
 def stream_app_turn(
     app_turn_id: int,
+    request: Request,
     since: int = Query(default=0, ge=0),
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
-    session: Session = Depends(get_session),
     _: None = Depends(require_api_token),
 ):
-    app_thread_service.get_app_turn_or_404(session, app_turn_id)
-
     def event_generator():
         cursor = _stream_cursor(since, last_event_id)
         while True:
-            session.expire_all()
-            snapshot = app_thread_service.get_app_turn_stream_snapshot(
-                session,
-                app_turn_id,
-                since=cursor,
-            )
+            snapshot = _load_turn_stream_snapshot(app_turn_id, cursor, request=request)
             for event in snapshot.get("events", []):
                 cursor = max(cursor, int(event.get("sequence") or cursor))
                 yield _sse_event(event)
@@ -202,6 +197,34 @@ def stream_app_turn(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _load_turn_stream_snapshot(app_turn_id: int, since: int, *, request: Request) -> dict:
+    with _short_session(request) as session:
+        app_thread_service.get_app_turn_or_404(session, app_turn_id)
+        return app_thread_service.get_app_turn_stream_snapshot(
+            session,
+            app_turn_id,
+            since=since,
+        )
+
+
+@contextmanager
+def _short_session(request: Request) -> Iterator[Session]:
+    override = request.app.dependency_overrides.get(get_session)
+    if override is not None:
+        generator = override()
+        session = next(generator)
+        try:
+            yield session
+        finally:
+            try:
+                next(generator)
+            except StopIteration:
+                pass
+        return
+    with Session(engine) as session:
+        yield session
 
 
 @router.post("/app-turns/{app_turn_id}/cancel", response_model=AppTurnRead)

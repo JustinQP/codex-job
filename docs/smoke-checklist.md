@@ -17,6 +17,8 @@ git diff --check
 
 `python scripts\smoke_local_e2e.py` 使用内存数据库、TestClient、fake Device Agent 和 fake app-server 执行本机端到端验收，覆盖 Control Plane、Device Agent、Workspace/Project 创建、read-only Run、Session Turn、取消和关闭流程。它不替代真实设备 smoke，但可以作为每次回归的低成本主线检查。
 
+真实双设备验收使用 [Real Dual Device Smoke](real-dual-device-smoke.md) 记录。该检查需要 two real devices，不属于本机自动化 smoke，未拿到真实设备证据时不能记录为通过。
+
 ## 空数据启动
 
 1. 清理 `data`。
@@ -58,4 +60,4 @@ OpenAPI 中不应出现：
 
 ## 未验证项
 
-- F05 真实双设备 smoke 已按用户指令越过，未记录为通过。
+- F05 真实双设备 smoke 需要 two real devices，当前本机自动化未覆盖；按 `real-dual-device-smoke.md` 补充证据前，不记录为通过。

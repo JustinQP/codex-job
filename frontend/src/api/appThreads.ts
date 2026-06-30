@@ -17,6 +17,19 @@ export type ListAppThreadsOptions = {
   includeArchived?: boolean;
 };
 
+export const APP_THREAD_TITLE_MAX_LENGTH = 120;
+export const APP_TURN_MESSAGE_MAX_LENGTH = 20000;
+export const APP_TURN_TIMEOUT_DEFAULT_SECONDS = 180;
+export const APP_TURN_TIMEOUT_MIN_SECONDS = 30;
+export const APP_TURN_TIMEOUT_MAX_SECONDS = 21600;
+
+export type CreateAppThreadOptions = {
+  workspaceId?: number | null;
+  sandbox?: string | null;
+  approvalPolicy?: string | null;
+  networkAccess?: boolean;
+};
+
 export function listAppThreads(options: ListAppThreadsOptions = {}) {
   const params = new URLSearchParams({ limit: String(options.limit ?? 20) });
   if (options.projectId) params.set("project_id", String(options.projectId));
@@ -25,10 +38,17 @@ export function listAppThreads(options: ListAppThreadsOptions = {}) {
   return apiRequest<AppThread[]>(`/app-threads?${params.toString()}`);
 }
 
-export function createAppThread(projectId: number, title?: string, workspaceId?: number | null) {
+export function createAppThread(projectId: number, title?: string, options: CreateAppThreadOptions = {}) {
   return apiRequest<AppThread>("/app-threads", {
     method: "POST",
-    json: { project_id: projectId, title: title || undefined, workspace_id: workspaceId || undefined }
+    json: {
+      project_id: projectId,
+      title: title || undefined,
+      workspace_id: options.workspaceId || undefined,
+      sandbox: options.sandbox || undefined,
+      approval_policy: options.approvalPolicy || undefined,
+      network_access: options.networkAccess ?? false
+    }
   });
 }
 
@@ -55,17 +75,17 @@ export function listAppTurns(threadId: number) {
   return apiRequest<AppTurn[]>(`/app-threads/${threadId}/turns`);
 }
 
-export function sendAppTurn(threadId: number, message: string) {
+export function sendAppTurn(threadId: number, message: string, timeoutSeconds?: number) {
   return apiRequest<AppTurn>(`/app-threads/${threadId}/turns`, {
     method: "POST",
-    json: { message }
+    json: { message, timeout_seconds: timeoutSeconds }
   });
 }
 
-export function sendAsyncAppTurn(threadId: number, message: string) {
+export function sendAsyncAppTurn(threadId: number, message: string, timeoutSeconds?: number) {
   return apiRequest<AppTurn>(`/app-threads/${threadId}/turns/async`, {
     method: "POST",
-    json: { message }
+    json: { message, timeout_seconds: timeoutSeconds }
   });
 }
 

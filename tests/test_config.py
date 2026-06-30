@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from backend.config import get_settings, parse_int_env
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_settings_only_exposes_run_artifact_limits(monkeypatch) -> None:
@@ -40,3 +45,18 @@ def test_db_init_fails_fast_for_legacy_task_tables(monkeypatch, tmp_path) -> Non
     db_module = importlib.reload(db_module)
     with pytest.raises(RuntimeError, match="not compatible with v2.0 mainline"):
         db_module.init_db()
+
+
+def test_requirements_use_expected_httpx_dependency() -> None:
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+
+    assert any(line.startswith("httpx>=") for line in requirements)
+    assert not any(line.startswith("httpx2") for line in requirements)
+
+
+def test_ci_runs_local_e2e_smoke_script() -> None:
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "python scripts/smoke_local_e2e.py" in ci
+    assert 'cache: "npm"' in ci
+    assert "cache-dependency-path: frontend/package-lock.json" in ci

@@ -18,6 +18,11 @@ class LocalWorkspace:
     name: str
     path: Path
     enabled: bool = True
+    default_model: str | None = None
+    default_reasoning_effort: str | None = None
+    default_sandbox: str | None = None
+    default_approval_policy: str | None = None
+    require_clean_worktree: bool | None = None
 
     @property
     def path_label(self) -> str:
@@ -74,6 +79,11 @@ class WorkspaceRegistry:
                 name=workspace.name,
                 path_label=workspace.path_label,
                 enabled=workspace.enabled,
+                default_model=workspace.default_model,
+                default_reasoning_effort=workspace.default_reasoning_effort,
+                default_sandbox=workspace.default_sandbox,
+                default_approval_policy=workspace.default_approval_policy,
+                require_clean_worktree=workspace.require_clean_worktree,
             )
             for workspace in self.list()
         ]
@@ -88,13 +98,41 @@ def _parse_workspace(item: Any, allowed_roots: list[Path]) -> LocalWorkspace:
     path = _resolve_existing_directory(Path(_required_string(item, "path")), key)
     if not _is_under_allowed_roots(path, allowed_roots):
         raise WorkspaceRegistryError(f"workspace path is outside allowed roots: {key}")
-    return LocalWorkspace(key=key, name=name, path=path, enabled=enabled)
+    return LocalWorkspace(
+        key=key,
+        name=name,
+        path=path,
+        enabled=enabled,
+        default_model=_optional_string(item, "default_model"),
+        default_reasoning_effort=_optional_string(item, "default_reasoning_effort"),
+        default_sandbox=_optional_string(item, "default_sandbox"),
+        default_approval_policy=_optional_string(item, "default_approval_policy"),
+        require_clean_worktree=_optional_bool(item, "require_clean_worktree"),
+    )
 
 
 def _required_string(item: dict, key: str) -> str:
     value = item.get(key)
     if not isinstance(value, str) or not value.strip():
         raise WorkspaceRegistryError(f"workspace field {key} is missing or invalid")
+    return value
+
+
+def _optional_string(item: dict, key: str) -> str | None:
+    value = item.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise WorkspaceRegistryError(f"workspace field {key} is invalid")
+    return value
+
+
+def _optional_bool(item: dict, key: str) -> bool | None:
+    value = item.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise WorkspaceRegistryError(f"workspace field {key} is invalid")
     return value
 
 

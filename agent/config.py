@@ -16,6 +16,8 @@ def _env_path(name: str, default: Path) -> Path:
 @dataclass(frozen=True)
 class AgentConfig:
     data_dir: Path
+    run_data_dir: Path
+    lock_data_dir: Path
     display_name: str
     backend_url: str
     agent_token: str | None
@@ -45,6 +47,8 @@ def load_agent_config() -> AgentConfig:
     )
     return AgentConfig(
         data_dir=data_dir,
+        run_data_dir=data_dir / "runs",
+        lock_data_dir=data_dir / "locks",
         display_name=display_name.strip() or socket.gethostname(),
         backend_url=backend_url,
         agent_token=agent_token,

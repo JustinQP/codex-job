@@ -11,6 +11,7 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.models import AgentCommand, AgentCommandStatus, Device, DeviceStatus, Workspace, utc_now
+from backend.services import audit_service
 
 
 COMMAND_LEASE_SECONDS = 60
@@ -51,15 +52,18 @@ ALLOWED_TRANSITIONS: Final[dict[AgentCommandStatus, set[AgentCommandStatus]]] = 
 }
 
 
-class AgentCommandStateError(ValueError):
-    """Raised when an AgentCommand state transition is not allowed."""
-
-
 class AgentCommandServiceError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class AgentCommandStateError(AgentCommandServiceError):
+    """Raised when an AgentCommand state transition is not allowed."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("invalid_agent_command_state", message)
 
 
 ABSOLUTE_PATH_PATTERN = re.compile(r"^([A-Za-z]:[\\/]|/|\\\\)")
@@ -251,7 +255,19 @@ def claim_command(
     session.commit()
     if result.rowcount != 1:
         return None
-    return session.get(AgentCommand, command.id)
+    claimed = session.get(AgentCommand, command.id)
+    if claimed is not None:
+        audit_service.record_event(
+            session,
+            action="agent_command.claimed",
+            entity_type="agent_command",
+            entity_id=claimed.id,
+            actor_type="device",
+            actor_id=device_id,
+            payload={"command_type": claimed.command_type},
+            commit=True,
+        )
+    return claimed
 
 
 def expire_stale_active_commands(session: Session, *, device_id: str | None = None) -> list[AgentCommand]:
@@ -266,6 +282,19 @@ def expire_stale_active_commands(session: Session, *, device_id: str | None = No
     stale_commands = list(session.exec(statement).all())
     expired: list[AgentCommand] = []
     for command in stale_commands:
+        if (
+            command.status == AgentCommandStatus.CLAIMED
+            and command.attempt_count < command.max_attempts
+        ):
+            expired.append(
+                transition_command(
+                    session,
+                    command,
+                    AgentCommandStatus.PENDING,
+                    last_error="agent command lease expired before ack; requeued",
+                )
+            )
+            continue
         expired.append(
             transition_command(
                 session,
@@ -289,7 +318,18 @@ def ack_command(
     _ensure_valid_lease(session, command, lease_token)
     if command.status == AgentCommandStatus.RUNNING:
         return command
-    return transition_command(session, command, AgentCommandStatus.RUNNING)
+    acknowledged = transition_command(session, command, AgentCommandStatus.RUNNING)
+    audit_service.record_event(
+        session,
+        action="agent_command.acknowledged",
+        entity_type="agent_command",
+        entity_id=acknowledged.id,
+        actor_type="device",
+        actor_id=device_id,
+        payload={"command_type": acknowledged.command_type},
+        commit=True,
+    )
+    return acknowledged
 
 
 def renew_command(
@@ -339,13 +379,24 @@ def complete_command(
     if command.cancel_requested:
         status = AgentCommandStatus.CANCELLED
         error_message = error_message or "cancelled by user"
-    return transition_command(
+    completed = transition_command(
         session,
         command,
         status,
         last_error=error_message,
         result_payload=result_payload,
     )
+    audit_service.record_event(
+        session,
+        action="agent_command.completed",
+        entity_type="agent_command",
+        entity_id=completed.id,
+        actor_type="device",
+        actor_id=device_id,
+        payload={"command_type": completed.command_type, "status": completed.status.value},
+        commit=True,
+    )
+    return completed
 
 
 def is_transition_allowed(
@@ -380,6 +431,10 @@ def transition_command(
         command.attempt_count += 1
         command.lease_token = lease_token
         command.lease_expires_at = lease_expires_at
+    elif target_status == AgentCommandStatus.PENDING:
+        command.claim_request_id = None
+        command.lease_token = None
+        command.lease_expires_at = None
     elif target_status == AgentCommandStatus.RUNNING:
         if lease_token is not None:
             command.lease_token = lease_token

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listDevices } from "../../api/devices";
 import { listProjects } from "../../api/projects";
-import { cancelRun, listRuns, rerunRun } from "../../api/runs";
+import { cancelRun, fetchRunArtifactText, listRuns, rerunRun } from "../../api/runs";
+import type { RunArtifactKind } from "../../api/runs";
 import type { Device, Project, Run, RunStatus, Workspace } from "../../api/types";
 import { listWorkspaces } from "../../api/workspaces";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
@@ -19,6 +20,13 @@ import { Sheet } from "../layout/Sheet";
 import type { PageProps } from "../types";
 
 const statuses: Array<"" | RunStatus> = ["", "PENDING", "RUNNING", "SUCCESS", "FAILED", "CANCELLED"];
+const artifactTabs: Array<{ key: RunArtifactKind; label: string }> = [
+  { key: "log", label: "日志" },
+  { key: "result", label: "结果" },
+  { key: "diff", label: "Diff" },
+  { key: "git_status", label: "Git" },
+  { key: "report", label: "报告" },
+];
 
 export function RunsPage({ showToast }: PageProps) {
   const [runs, setRuns] = useState<Run[]>([]);
@@ -235,14 +243,16 @@ function RunCard({
   const running = isRunningStatus(run.status);
   return (
     <div className="task-card">
-      <button className="task-main as-button" onClick={() => onOpen(run)} type="button">
+      <button className="task-card-main as-button" onClick={() => onOpen(run)} type="button">
         <div className={`wechat-avatar ${statusTone(run.status)}`}>运</div>
-        <div className="task-main-text">
-          <strong>#{run.id} · {run.run_type}</strong>
+        <div className="task-card-copy">
+          <div className="task-card-title-row">
+            <strong className="task-title">#{run.id} · {run.run_type}</strong>
+            <Badge tone={statusTone(run.status)}>{run.status}</Badge>
+          </div>
           <span>{shortText(run.prompt, 80)}</span>
           <span>{run.workspace_name || run.workspace_path_label || "Workspace"} · {formatRelativeTime(run.updated_at)}</span>
         </div>
-        <Badge tone={statusTone(run.status)}>{run.status}</Badge>
       </button>
       <div className="task-actions">
         {running ? <Button onClick={() => onCancel(run)} variant="secondary">取消</Button> : null}
@@ -266,6 +276,31 @@ function RunDetail({
   run: Run;
 }) {
   const running = isRunningStatus(run.status);
+  const [artifact, setArtifact] = useState<RunArtifactKind>("log");
+  const [artifactText, setArtifactText] = useState("");
+  const [artifactError, setArtifactError] = useState("");
+  const [artifactLoading, setArtifactLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setArtifactLoading(true);
+    setArtifactError("");
+    setArtifactText("");
+    fetchRunArtifactText(run.id, artifact)
+      .then((text) => {
+        if (!cancelled) setArtifactText(text || "");
+      })
+      .catch((err) => {
+        if (!cancelled) setArtifactError(errorText(err));
+      })
+      .finally(() => {
+        if (!cancelled) setArtifactLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact, run.id]);
+
   return (
     <div className="stack">
       <div className="meta-grid">
@@ -283,6 +318,24 @@ function RunDetail({
         <pre className="code-block">{run.prompt}</pre>
       </div>
       {run.error_message ? <div className="inline-error">{run.error_message}</div> : null}
+      <div className="run-artifacts stack">
+        <div className="segmented-control" aria-label="运行产物">
+          {artifactTabs.map((tab) => (
+            <button
+              className={artifact === tab.key ? "active" : ""}
+              key={tab.key}
+              onClick={() => setArtifact(tab.key)}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {artifactError ? <div className="inline-warning">{artifactError}</div> : null}
+        <pre className="code-block run-artifact-text">
+          {artifactLoading ? "加载中" : artifactError ? "" : artifactText || "暂无内容"}
+        </pre>
+      </div>
       <div className="task-actions">
         {running ? <Button onClick={() => onCancel(run)} variant="secondary">取消</Button> : null}
         <Button disabled={Boolean(rerunDisabledReason)} onClick={() => onRerun(run)} variant="primary">

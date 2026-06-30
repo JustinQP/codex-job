@@ -8,3 +8,18 @@ export function listDevices() {
 export function getDevice(deviceId: string) {
   return apiRequest<Device>(`/devices/${encodeURIComponent(deviceId)}`);
 }
+
+export function updateDevice(deviceId: string, payload: { display_name?: string }) {
+  return apiRequest<Device>(`/devices/${encodeURIComponent(deviceId)}`, {
+    method: "PATCH",
+    json: payload
+  });
+}
+
+export function disableDevice(deviceId: string) {
+  return apiRequest<Device>(`/devices/${encodeURIComponent(deviceId)}/disable`, { method: "POST" });
+}
+
+export function deleteDevice(deviceId: string) {
+  return apiRequest<Device>(`/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE" });
+}

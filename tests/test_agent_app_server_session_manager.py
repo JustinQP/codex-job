@@ -514,6 +514,29 @@ def test_session_manager_reuses_same_codex_thread_for_five_turns(tmp_path: Path)
     assert all(request["params"]["cwd"] == str(repo_a.resolve()) for request in turn_requests)
 
 
+def test_session_manager_trims_client_messages_after_turn_persisted(tmp_path: Path) -> None:
+    FakeJsonlRpcClient.instances.clear()
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manager = AgentAppSessionManager(
+        workspace_registry=WorkspaceRegistry.load(_registry(tmp_path, repo_a, repo_b)),
+        data_dir=tmp_path / "agent-app-server",
+        client_factory=FakeJsonlRpcClient,
+        max_client_messages=4,
+    )
+    session = manager.open_session(workspace_key="repo-a", title="Chat")
+
+    for index in range(5):
+        manager.run_turn(agent_session_id=session.agent_session_id, message=f"hello {index}")
+
+    client = FakeJsonlRpcClient.instances[0]
+    assert len(client._messages) <= 4
+    assert (session.run_dir / "turn-1" / "events.jsonl").exists()
+    assert (session.run_dir / "turn-5" / "events.jsonl").exists()
+
+
 def test_session_manager_keeps_sessions_isolated_when_switching(tmp_path: Path) -> None:
     FakeJsonlRpcClient.instances.clear()
     repo_a = tmp_path / "repo-a"

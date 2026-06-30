@@ -202,3 +202,17 @@ def test_heartbeat_payload_uses_stable_identity() -> None:
     assert heartbeat_payload.device_id == "device-a"
     assert heartbeat_payload.display_name == "Desk"
     assert "codex_exec" in (register_payload.capabilities_json or "")
+
+
+def test_heartbeat_payload_reports_app_server_capability_when_enabled() -> None:
+    identity = AgentIdentity(
+        device_id="device-a",
+        display_name="Desk",
+        created_at="2026-01-01T00:00:00+00:00",
+    )
+
+    payload = build_heartbeat_payload(identity, app_server_enabled=True)
+    capabilities = json.loads(payload.capabilities_json or "{}")
+
+    assert capabilities["codex_exec"] is True
+    assert capabilities["app_server"] is True

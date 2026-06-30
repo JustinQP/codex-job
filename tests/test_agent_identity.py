@@ -94,3 +94,13 @@ def test_config_uses_display_name_env_without_overriding_device_id(monkeypatch, 
     assert first.device_id == second.device_id
     assert first.display_name == "Env Desk"
     assert second.display_name == "Env Desk"
+
+
+def test_config_derives_run_data_dir_from_agent_data_dir(monkeypatch, tmp_path) -> None:
+    data_dir = tmp_path / "agent-data"
+    monkeypatch.setenv("CODEX_AGENT_DATA_DIR", str(data_dir))
+
+    config = load_agent_config()
+
+    assert config.run_data_dir == data_dir.resolve() / "runs"
+    assert config.lock_data_dir == data_dir.resolve() / "locks"

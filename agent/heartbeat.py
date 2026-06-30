@@ -12,7 +12,7 @@ from backend.schemas import DeviceHeartbeat, DeviceRegister
 AGENT_VERSION = "2.0.0"
 
 
-def build_register_payload(identity: AgentIdentity) -> DeviceRegister:
+def build_register_payload(identity: AgentIdentity, *, app_server_enabled: bool = False) -> DeviceRegister:
     return DeviceRegister(
         device_id=identity.device_id,
         display_name=identity.display_name,
@@ -22,15 +22,15 @@ def build_register_payload(identity: AgentIdentity) -> DeviceRegister:
         capabilities_json=json.dumps(
             {
                 "codex_exec": True,
-                "app_server": False,
+                "app_server": app_server_enabled,
             },
             separators=(",", ":"),
         ),
     )
 
 
-def build_heartbeat_payload(identity: AgentIdentity) -> DeviceHeartbeat:
-    register_payload = build_register_payload(identity)
+def build_heartbeat_payload(identity: AgentIdentity, *, app_server_enabled: bool = False) -> DeviceHeartbeat:
+    register_payload = build_register_payload(identity, app_server_enabled=app_server_enabled)
     return DeviceHeartbeat(
         device_id=register_payload.device_id,
         display_name=register_payload.display_name,
@@ -41,9 +41,9 @@ def build_heartbeat_payload(identity: AgentIdentity) -> DeviceHeartbeat:
     )
 
 
-def register_agent(client: AgentApiClient, identity: AgentIdentity) -> dict:
-    return client.register(build_register_payload(identity))
+def register_agent(client: AgentApiClient, identity: AgentIdentity, *, app_server_enabled: bool = False) -> dict:
+    return client.register(build_register_payload(identity, app_server_enabled=app_server_enabled))
 
 
-def send_heartbeat(client: AgentApiClient, identity: AgentIdentity) -> dict:
-    return client.heartbeat(build_heartbeat_payload(identity))
+def send_heartbeat(client: AgentApiClient, identity: AgentIdentity, *, app_server_enabled: bool = False) -> dict:
+    return client.heartbeat(build_heartbeat_payload(identity, app_server_enabled=app_server_enabled))
