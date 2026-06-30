@@ -47,13 +47,14 @@ cd ..
 ```powershell
 $env:API_TOKEN="dev-token"
 $env:AGENT_TOKEN="agent-dev-token"
+$env:PROJECT_PATH_WHITELIST="F:\JustinKing"
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
 也可以使用脚本启动后端窗口：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start_app_server_stack.ps1 -ApiToken dev-token
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start_app_server_stack.ps1 -ApiToken dev-token -AgentToken agent-dev-token
 ```
 
 访问：
@@ -164,6 +165,7 @@ git diff --check
 
 - 只在本机或可信局域网运行，不按公网服务部署。
 - API_TOKEN 和 AGENT_TOKEN 必须配置且不能相同。
+- 创建未绑定 Workspace 的本地 Project 时必须配置 PROJECT_PATH_WHITELIST。
 - 后端绑定 `0.0.0.0` 时，必须确认网络边界可信，并避免把端口暴露到公网。
 - Token 只提供单用户工具级保护，不等同于多用户权限系统或审计系统。
 

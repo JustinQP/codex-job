@@ -1,5 +1,6 @@
 param(
   [string]$ApiToken = "dev-token",
+  [string]$AgentToken = "agent-dev-token",
   [string]$BackendHost = "127.0.0.1",
   [int]$BackendPort = 8000,
   [switch]$BuildFrontend
@@ -44,16 +45,31 @@ if (-not (Test-Path -LiteralPath $FrontendIndex)) {
   }
 }
 
+if ([string]::IsNullOrWhiteSpace($ApiToken)) {
+  throw "API token is required. Pass -ApiToken or provide a non-empty value."
+}
+
+if ([string]::IsNullOrWhiteSpace($AgentToken)) {
+  throw "Agent token is required. Pass -AgentToken or set a non-empty value."
+}
+
+if ($ApiToken -eq $AgentToken) {
+  throw "API token and agent token must be distinct."
+}
+
 $BackendBaseUrl = "http://${BackendHost}:$BackendPort"
 $env:API_TOKEN = $ApiToken
+$env:AGENT_TOKEN = $AgentToken
 
 $QuotedProjectRoot = Quote-ForPowerShell $ProjectRoot
 $QuotedApiToken = Quote-ForPowerShell $ApiToken
+$QuotedAgentToken = Quote-ForPowerShell $AgentToken
 $QuotedBackendHost = Quote-ForPowerShell $BackendHost
 
 $BackendCommand = @"
 Set-Location -LiteralPath $QuotedProjectRoot
 `$env:API_TOKEN = $QuotedApiToken
+`$env:AGENT_TOKEN = $QuotedAgentToken
 python -m uvicorn backend.main:app --host $QuotedBackendHost --port $BackendPort
 "@
 

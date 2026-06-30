@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Generator
 
 from fastapi.testclient import TestClient
@@ -16,7 +17,7 @@ from backend.services import agent_command_service, run_service
 from backend.schemas import RunCreate
 
 
-def make_client() -> Generator[tuple[TestClient, Session], None, None]:
+def make_client(*, include_api_token: bool = True) -> Generator[tuple[TestClient, Session], None, None]:
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -31,6 +32,8 @@ def make_client() -> Generator[tuple[TestClient, Session], None, None]:
     app.dependency_overrides[get_session] = override_get_session
     try:
         with TestClient(app) as client:
+            if include_api_token:
+                client.headers.update({"X-API-Token": os.environ["API_TOKEN"]})
             yield client, session
     finally:
         app.dependency_overrides.clear()

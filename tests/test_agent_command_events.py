@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 
 from fastapi.testclient import TestClient
@@ -28,6 +29,7 @@ def make_client() -> Generator[tuple[TestClient, Session], None, None]:
     app.dependency_overrides[get_session] = override_get_session
     try:
         with TestClient(app) as client:
+            client.headers.update({"X-API-Token": os.environ["API_TOKEN"]})
             yield client, session
     finally:
         app.dependency_overrides.clear()

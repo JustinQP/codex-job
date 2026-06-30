@@ -26,6 +26,7 @@ Control Plane：
 ```powershell
 $env:API_TOKEN="dev-token"
 $env:AGENT_TOKEN="agent-dev-token"
+$env:PROJECT_PATH_WHITELIST="F:\JustinKing"
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 

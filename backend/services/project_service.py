@@ -75,7 +75,7 @@ def create_project(session: Session, payload: ProjectCreate) -> Project:
 def validate_project_whitelist(project_path: Path) -> str | None:
     raw_roots = os.environ.get("PROJECT_PATH_WHITELIST")
     if not raw_roots:
-        return None
+        return "PROJECT_PATH_WHITELIST must be configured for unbound project paths"
 
     allowed_roots = [
         Path(raw_root).expanduser().resolve()
@@ -83,7 +83,7 @@ def validate_project_whitelist(project_path: Path) -> str | None:
         if raw_root.strip()
     ]
     if not allowed_roots:
-        return None
+        return "PROJECT_PATH_WHITELIST must be configured for unbound project paths"
 
     for allowed_root in allowed_roots:
         try:

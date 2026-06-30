@@ -20,10 +20,11 @@ class FakeRun:
 
 def test_api_token_protects_mainline_mutation_endpoints(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
+    monkeypatch.setenv("PROJECT_PATH_WHITELIST", str(tmp_path))
     project_dir = tmp_path / "project"
     project_dir.mkdir()
 
-    for client, session in make_client():
+    for client, session in make_client(include_api_token=False):
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")
@@ -57,7 +58,7 @@ def test_api_token_protects_mainline_mutation_endpoints(monkeypatch, tmp_path: P
 def test_api_token_protects_mainline_read_endpoints(monkeypatch) -> None:
     monkeypatch.setenv("API_TOKEN", "secret")
 
-    for client, session in make_client():
+    for client, session in make_client(include_api_token=False):
         project = add_project(session)
         add_device(session, "device-a")
         workspace = add_workspace(session, "device-a")
@@ -107,6 +108,29 @@ def test_health_remains_public_when_api_token_is_enabled(monkeypatch) -> None:
         }
 
 
+def test_mainline_api_requires_configured_api_token(monkeypatch) -> None:
+    monkeypatch.delenv("API_TOKEN", raising=False)
+
+    for client, session in make_client(include_api_token=False):
+        del session
+        response = client.get("/projects")
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "API token is not configured"
+
+
+def test_api_and_agent_tokens_must_be_distinct(monkeypatch) -> None:
+    monkeypatch.setenv("API_TOKEN", "shared-secret")
+    monkeypatch.setenv("AGENT_TOKEN", "shared-secret")
+
+    for client, session in make_client(include_api_token=False):
+        del session
+        response = client.get("/projects", headers={"X-API-Token": "shared-secret"})
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "API token and agent token must be distinct"
+
+
 def test_project_path_whitelist_rejects_outside_path(monkeypatch, tmp_path: Path) -> None:
     allowed = tmp_path / "allowed"
     outside = tmp_path / "outside"
@@ -123,6 +147,24 @@ def test_project_path_whitelist_rejects_outside_path(monkeypatch, tmp_path: Path
 
         assert response.status_code == 400
         assert response.json()["detail"] == "project path is outside PROJECT_PATH_WHITELIST"
+
+
+def test_unbound_project_creation_requires_path_whitelist(monkeypatch, tmp_path: Path) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    monkeypatch.setenv("API_TOKEN", "secret")
+    monkeypatch.delenv("PROJECT_PATH_WHITELIST", raising=False)
+
+    for client, session in make_client(include_api_token=False):
+        del session
+        response = client.post(
+            "/projects",
+            headers=auth_headers(),
+            json={"name": "project", "path": str(project_dir), "enabled": True},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "PROJECT_PATH_WHITELIST must be configured for unbound project paths"
 
 
 def test_run_artifact_read_rejects_path_outside_jobs_dir(
